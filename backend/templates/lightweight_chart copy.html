@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lightweight Chart - {{ instrument_key }}</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+        }
+
+        #chart-container {
+            width: 100%;
+            height: 100vh;
+        }
+
+        #stats {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 1000;
+        }
+
+        .status {
+            color: #0ECB81;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="stats">
+        <div><strong>{{ instrument_key }}</strong></div>
+        <div id="price-info">Price: -- | Vol: --</div>
+        <div id="time-info">Time: --</div>
+        <div class="status" id="connection-status">Connecting...</div>
+    </div>
+    <div id="chart-container"></div>
+
+    <script>
+        const INSTRUMENT_KEY = "{{ instrument_key }}";
+        const socket = io();
+
+        let tradingChart = echarts.init(document.getElementById('chart-container'), 'dark');
+        let chartData = {
+            timestamps: [],
+            candlesticks: [],
+            buyVolume: [],
+            sellVolume: []
+        };
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const entryTs = parseInt(urlParams.get('entry'));
+        const exitTs = parseInt(urlParams.get('exit'));
+        const slPrice = parseFloat(urlParams.get('sl'));
+
+        // Marker State
+        let entryMarker = null;
+        let exitMarker = null;
+
+        // Chart configuration
+        const option = {
+            backgroundColor: '#1a1a1a',
+            grid: [
+                { left: '5%', right: '5%', top: '5%', height: '70%' },
+                { left: '5%', right: '5%', top: '80%', height: '15%' }
+            ],
+            xAxis: [
+                { type: 'category', data: [], gridIndex: 0, axisLabel: { color: '#888' } },
+                { type: 'category', data: [], gridIndex: 1, axisLabel: { color: '#888' } }
+            ],
+            yAxis: [
+                { scale: true, gridIndex: 0, splitLine: { lineStyle: { color: '#333' } } },
+                { gridIndex: 1, splitLine: { lineStyle: { color: '#333' } } }
+            ],
+            series: [
+                {
+                    name: 'Candlestick',
+                    type: 'candlestick',
+                    data: [],
+                    xAxisIndex: 0,
+                    yAxisIndex: 0,
+                    itemStyle: {
+                        color: '#0ECB81',
+                        color0: '#F6465D',
+                        borderColor: '#0ECB81',
+                        borderColor0: '#F6465D'
+                    },
+                    markPoint: {
+                        label: { color: '#fff' },
+                        data: [], // Populated dynamically
+                        symbolSize: 40
+                    },
+                    markLine: {
+                        symbol: 'none',
+                        data: slPrice ? [
+                            {
+                                yAxis: slPrice,
+                                lineStyle: { type: 'dashed', color: '#F6465D', width: 2 },
+                                label: { formatter: 'SL: ' + slPrice, position: 'end' }
+                            }
+                        ] : []
+                    }
+                },
+                {
+                    name: 'Buy Volume',
+                    type: 'bar',
+                    data: [],
+                    xAxisIndex: 1,
+                    yAxisIndex: 1,
+                    itemStyle: { color: '#0ECB81' }
+                },
+                {
+                    name: 'Sell Volume',
+                    type: 'bar',
+                    data: [],
+                    xAxisIndex: 1,
+                    yAxisIndex: 1,
+                    itemStyle: { color: '#F6465D' }
+                }
+            ],
+            tooltip: {
+                trigger: 'axis',
+                axisPointer: { type: 'cross' },
+                backgroundColor: 'rgba(0,0,0,0.8)',
+                borderColor: '#333',
+                textStyle: { color: '#fff' }
+            }
+        };
+
+        tradingChart.setOption(option);
+
+        // Socket.IO handlers
+        socket.on('connect', () => {
+            document.getElementById('connection-status').innerText = 'Connected';
+            document.getElementById('connection-status').style.color = '#0ECB81';
+            socket.emit('subscribe_to_instrument', { instrument_key: INSTRUMENT_KEY });
+        });
+
+        socket.on('disconnect', () => {
+            document.getElementById('connection-status').innerText = 'Disconnected';
+            document.getElementById('connection-status').style.color = '#F6465D';
+        });
+
+        socket.on('footprint_history', (bars) => {
+            console.log('Received history:', bars.length, 'bars');
+            bars.forEach(bar => addBar(bar));
+            updateChart();
+        });
+
+        socket.on('footprint_update', (bar) => {
+            addBar(bar);
+            updateChart();
+        });
+
+        socket.on('footprint_data', (bar) => {
+            addBar(bar);
+            updateChart();
+        });
+
+        function addBar(bar) {
+            let ts = bar.ts;
+            if (ts < 1000000000000) ts *= 1000;
+
+            const timeStr = new Date(ts).toLocaleTimeString();
+
+            // Check for Markers (Logic: If trade TS is within this bar's minute)
+            // Match if: bar_ts <= trade_ts < bar_ts + 60000
+            if (!entryMarker && entryTs && entryTs >= ts && entryTs < ts + 60000) {
+                entryMarker = {
+                    coord: [timeStr, bar.low], // Put marker at Low
+                    value: 'ENTRY',
+                    itemStyle: { color: '#0ECB81' },
+                    symbol: 'pin',
+                    symbolRotate: 0
+                };
+            }
+            if (!exitMarker && exitTs && exitTs >= ts && exitTs < ts + 60000) {
+                exitMarker = {
+                    coord: [timeStr, bar.high], // Put marker at High
+                    value: 'EXIT',
+                    itemStyle: { color: '#F6465D' },
+                    symbol: 'pin',
+                    symbolRotate: 180
+                };
+            }
+
+            const existingIndex = chartData.timestamps.indexOf(timeStr);
+
+            const candleData = [bar.open, bar.close, bar.low, bar.high];
+            const buyVol = (bar.buy_volume || 0) + (bar.big_buy_volume || 0);
+            const sellVol = (bar.sell_volume || 0) + (bar.big_sell_volume || 0);
+
+            if (existingIndex >= 0) {
+                // Update existing bar
+                chartData.candlesticks[existingIndex] = candleData;
+                chartData.buyVolume[existingIndex] = buyVol;
+                chartData.sellVolume[existingIndex] = sellVol;
+            } else {
+                // Find correct insertion position
+                let insertIndex = chartData.timestamps.length;
+                for (let i = 0; i < chartData.timestamps.length; i++) {
+                    if (ts < new Date('1970-01-01 ' + chartData.timestamps[i]).getTime()) {
+                        insertIndex = i;
+                        break;
+                    }
+                }
+
+                // Insert at correct position
+                chartData.timestamps.splice(insertIndex, 0, timeStr);
+                chartData.candlesticks.splice(insertIndex, 0, candleData);
+                chartData.buyVolume.splice(insertIndex, 0, buyVol);
+                chartData.sellVolume.splice(insertIndex, 0, sellVol);
+            }
+
+            // Update stats
+            document.getElementById('price-info').innerText = `Price: ${bar.close.toFixed(2)} | Vol: ${bar.volume || 0}`;
+            document.getElementById('time-info').innerText = `Time: ${timeStr}`;
+        }
+
+        function updateChart() {
+            tradingChart.setOption({
+                xAxis: [
+                    { data: chartData.timestamps },
+                    { data: chartData.timestamps }
+                ],
+                series: [
+                    {
+                        data: chartData.candlesticks,
+                        markPoint: {
+                            data: [entryMarker, exitMarker].filter(Boolean)
+                        }
+                    },
+                    { data: chartData.buyVolume },
+                    { data: chartData.sellVolume }
+                ]
+            });
+        }
+
+        // Resize handler
+        window.addEventListener('resize', () => {
+            tradingChart.resize();
+        });
+    </script>
+</body>
+
+</html>
