@@ -43,8 +43,8 @@ async function performInitialRequest() {
 }
 
 
-const jsondata = await performInitialRequest();
-console.log('Initial Request JSON Data:', jsondata);
+// const jsondata = await performInitialRequest();
+// console.log('Initial Request JSON Data:', jsondata);
 
 
 /**
