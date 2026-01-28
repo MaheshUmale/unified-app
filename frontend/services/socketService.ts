@@ -12,9 +12,10 @@ class SocketService {
         if (this.socket?.connected || this.isConnecting) return;
         this.isConnecting = true;
 
-        console.log("Connecting to Socket.IO data feed at http://localhost:5050");
+        console.log("Connecting to Socket.IO data feed");
 
-        this.socket = io('http://localhost:5050', {
+        // Use relative URL for single-server deployment
+        this.socket = io('/', {
             transports: ['polling', 'websocket'],
             reconnection: true,
             reconnectionAttempts: Infinity,

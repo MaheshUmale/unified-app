@@ -118,3 +118,4 @@ def getNiftyAndBNFnOKeys():
         return ALL_FNO
     except ApiException as e:
         print("Exception when calling MarketQuoteV3Api->get_ltp: %s\n" % e)
+        return []
