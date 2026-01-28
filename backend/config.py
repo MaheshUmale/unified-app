@@ -1,9 +1,13 @@
+import os
+
 # --- Global Configuration ---
-ACCESS_TOKEN = 'eyJ0eXAiOiJKV1QiLCJrZXlfaWQiOiJza192MS4wIiwiYWxnIjoiSFMyNTYifQ.eyJzdWIiOiI3NkFGMzUiLCJqdGkiOiI2OTc4MzE0OGRmMmJhNTNkMWFiODA4OWIiLCJpc011bHRpQ2xpZW50IjpmYWxzZSwiaXNQbHVzUGxhbiI6ZmFsc2UsImlhdCI6MTc2OTQ4NDYxNiwiaXNzIjoidWRhcGktZ2F0ZXdheS1zZXJ2aWNlIiwiZXhwIjoxNzY5NTUxMjAwfQ.dgPd67_RBXu8vjvaejy56ra-rzYQr3Wf1bhkESVELsM'
-SANDBOX_ACCESS_TOKEN='eyJ0eXAiOiJKV1QiLCJrZXlfaWQiOiJza192MS4wIiwiYWxnIjoiSFMyNTYifQ.eyJzdWIiOiI3NkFGMzUiLCJqdGkiOiI2OTM3YTYyMzdkNjVkMzU1NTQyNzhhMDciLCJpc011bHRpQ2xpZW50IjpmYWxzZSwiaXNQbHVzUGxhbiI6dHJ1ZSwiaWF0IjoxNzY1MjU0NjkxLCJpc3MiOiJ1ZGFwaS1nYXRld2F5LXNlcnZpY2UiLCJleHAiOjE3Njc4MjMyMDB9.bEDBMyY1QX09tlrdpYLlD0tJvNcgrwuV-qlqwmQIxzU'
+# It is recommended to set these in environment variables for security
+ACCESS_TOKEN = os.getenv('UPSTOX_ACCESS_TOKEN', 'YOUR_ACCESS_TOKEN_HERE')
+SANDBOX_ACCESS_TOKEN = os.getenv('UPSTOX_SANDBOX_ACCESS_TOKEN', 'YOUR_SANDBOX_ACCESS_TOKEN_HERE')
+
 # MongoDB Config
-MONGO_URI = "mongodb://localhost:27017/"
-DB_NAME = "upstox_strategy_db"
+MONGO_URI = os.getenv('MONGO_URI', "mongodb://localhost:27017/")
+DB_NAME = os.getenv('DB_NAME', "upstox_strategy_db")
 
 # API Config
 UPSTOX_API_VERSION = "2.0"

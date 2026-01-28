@@ -60,8 +60,8 @@ socketio = SocketIO(
 db = get_db()
 
 # Create indexes for performance
-from database import ensure_indexes
 try:
+    from database import ensure_indexes
     ensure_indexes()
 except Exception as e:
     print(f"Warning: Could not ensure indexes: {e}")
@@ -74,9 +74,11 @@ data_engine.set_socketio(socketio)
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
 def serve(path):
-    if path != '' and os.path.exists(os.path.join(app.static_folder, path)):
+    """Serve the React frontend."""
+    if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
         return send_file(os.path.join(app.static_folder, path))
-    return send_file(os.path.join(app.static_folder, 'index.html'))
+    else:
+        return send_file(os.path.join(app.static_folder, 'index.html'))
 
 @app.route('/legacy')
 def dashboard():
@@ -170,24 +172,6 @@ def get_trade_signals_for_chart(instrument_key  ):
 
     print(query)
 
-# [
-#   {
-#     $match: {
-#       instrumentKey: "NSE_EQ|INE585B01010"
-#     }
-#   },
-#   {
-#     $group: {
-#       _id: "$trade_id",
-#       docs: {
-#         $push: "$$ROOT"
-#       }
-#     }
-#   }
-# ]
-
-
-
     signals_data = []
     try:
         # Sort by timestamp ascending to ensure correct chronological plotting
@@ -232,11 +216,6 @@ def get_trade_signals_for_chart(instrument_key  ):
                         "sl_price" : float(doc['sl_price']),
                         "tp_price" : float(doc['tp_price']),
                         "reason": doc.get('reason_code', "")
-
-                            # exit_price
-                            # 306.55
-                            # entry_price
-                            # 305.85
                     })
 
 
@@ -483,16 +462,23 @@ def get_oi_data_route(instrument_key):
             return jsonify({'error': 'Failed to fetch OI data'}), 500
     return jsonify({'error': 'Data engine not available'}), 500
 
+# --- SocketIO Events ---
+
+@socketio.on('connect')
+def handle_connect():
+    print("Client Connected to Main Platform WS")
+
 @socketio.on('subscribe')
 def handle_frontend_subscribe(data):
+    """Handles subscription request from the React frontend."""
     instrument_keys = data.get('instrumentKeys', [])
     if not instrument_keys:
         return
-    print(f'[SOCKET] Client subscribing to keys: {instrument_keys}')
+
+    print(f"[SOCKET] Client subscribing to keys: {instrument_keys}")
+
     for instrument_key in instrument_keys:
-        join_room(instrument_key)
-        if data_engine:
-            data_engine.subscribe_instrument(instrument_key)
+        handle_subscribe_instrument({'instrument_key': instrument_key})
 
 @socketio.on('subscribe_to_instrument')
 def handle_subscribe_instrument(data):
@@ -542,6 +528,23 @@ def handle_subscribe_instrument(data):
             if current_bar:
                 print(f"[SOCKET] Sending current active bar for {instrument_key}: {current_bar.get('ts')}")
                 emit('footprint_update', current_bar)
+
+@socketio.on('replay_market_data')
+def handle_replay(data):
+    print(f"Replay requested: {data}")
+    instrument_key = data.get('instrument_key')
+    speed = int(data.get('speed', 100))
+    start_ts = data.get('start_ts')
+    timeframe = int(data.get('timeframe', 1))
+
+    if data_engine:
+        data_engine.start_replay_thread(instrument_key, speed, start_ts, timeframe)
+
+@socketio.on('stop_replay')
+def handle_stop_replay():
+    print("Stop replay requested")
+    if data_engine:
+        data_engine.stop_active_replay()
 
 # --- Helpers ---
 
@@ -700,118 +703,6 @@ def get_live_report_data():
         "trade_summary": trade_summary
     }
 
-# --- SocketIO Events ---
-
-@socketio.on('connect')
-def handle_connect():
-    print("Client Connected to Main Platform WS")
-
-@socketio.on('subscribe')
-def handle_frontend_subscribe(data):
-    instrument_keys = data.get('instrumentKeys', [])
-    if not instrument_keys:
-        return
-    print(f'[SOCKET] Client subscribing to keys: {instrument_keys}')
-    for instrument_key in instrument_keys:
-        join_room(instrument_key)
-        if data_engine:
-            data_engine.subscribe_instrument(instrument_key)
-
-@socketio.on('subscribe_to_instrument')
-def handle_subscription(data):
-    """Handles client request to subscribe to an instrument for Live Feed."""
-    instrument_key = data.get('instrument_key')
-    if not instrument_key:
-        return
-
-    print(f"[SOCKET] Client subscribing to {instrument_key}")
-
-    # 1. Join the SocketIO Room for this instrument
-    from flask_socketio import join_room
-    join_room(instrument_key)
-
-    # 2. Trigger Backend Subscription (Upstox WS)
-    if data_engine:
-        data_engine.subscribe_instrument(instrument_key)
-
-        # 3. Load and Emit Intraday History (9:15 AM -> Now)
-        history_bars = data_engine.load_intraday_data(instrument_key)
-        if history_bars:
-            emit('footprint_history', history_bars)
-
-@socketio.on('replay_market_data')
-def handle_replay(data):
-    print(f"Replay requested: {data}")
-    instrument_key = data.get('instrument_key')
-    speed = int(data.get('speed', 100))
-    start_ts = data.get('start_ts')
-    timeframe = int(data.get('timeframe', 1))
-
-    if data_engine:
-        data_engine.start_replay_thread(instrument_key, speed, start_ts, timeframe)
-
-@socketio.on('stop_replay')
-def handle_stop_replay():
-    print("Stop replay requested")
-    if data_engine:
-        data_engine.stop_active_replay()
-
-# --- Dashboard Template ---
-# Storing the template here to keep the single-file structure for now
-# dashboard_template = """
-# <!DOCTYPE html>
-# <html lang="en">
-# <head>
-#     <meta charset="UTF-8">
-#     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-#     <title>Professional Options Dashboard</title>
-#     <script src="https://cdn.tailwindcss.com"></script>
-#     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-#     <style>
-#         body { font-family: 'Inter', sans-serif; background-color: #f4f7f9; }
-#         .card { background: white; border-radius: 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); padding: 24px; }
-#         table { width: 100%; border-collapse: collapse; margin-top: 16px; }
-#         th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #e2e8f0; }
-#         th { background-color: #edf2f7; font-weight: 600; text-transform: uppercase; font-size: 0.85rem; }
-#     </style>
-# </head>
-# <body class="p-8">
-#     <div class="max-w-7xl mx-auto">
-#         <div class="flex justify-between items-center mb-6 border-b pb-2">
-#             <h1 class="text-4xl font-bold text-gray-800">Live Trading Dashboard</h1>
-#             <div class="flex gap-4 items-center">
-#                 <a href="/reports" target="_blank" class="bg-indigo-100 text-indigo-700 px-4 py-2 rounded hover:bg-indigo-200 font-medium">View Reports</a>
-#                 <div class="text-sm text-gray-500">System Status: <span class="text-green-600 font-bold">ONLINE</span></div>
-#             </div>
-#         </div>
-
-#         <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-#             <div class="card">
-#                 <p class="text-sm font-medium text-gray-500">Total P&L (Today)</p>
-#                 <!-- Using Jinja variables directly from render_template_string -->
-#                 <div class="mt-1 text-3xl font-bold {{ 'text-green-600' if data.total_pnl >= 0 else 'text-red-600' }}">{{ data.total_pnl }}</div>
-#             </div>
-#             <div class="card">
-#                 <p class="text-sm font-medium text-gray-500">Open Positions</p>
-#                 <div class="mt-1 text-3xl font-bold text-blue-600">{{ total_open }}</div>
-#             </div>
-#             <div class="card">
-#                 <p class="text-sm font-medium text-gray-500">Total Trades</p>
-#                 <div class="mt-1 text-3xl font-bold text-gray-600">{{ total_trades }}</div>
-#             </div>
-#         </div>
-
-#                     <option value="{{ instr }}">
-#                     {% endfor %}
-#                 </datalist>
-#                 <button onclick="let val = document.getElementById('manual_instr').value; if(val) window.open('/analyze/' + val, '_blank'); else alert('Please enter an instrument key');" class="bg-blue-600 text-white px-4 py-2 rounded">Open Chart</button>
-#             </div>
-#         </div>
-
-#     </div>
-# </body>
-# </html>
-# """
 
 if __name__ == '__main__':
     # Start the Upstox WebSocket Background Thread
@@ -840,40 +731,40 @@ if __name__ == '__main__':
         data_engine.start_websocket_thread(ACCESS_TOKEN, all_instruments)
 
         # ###--- Initialize Strategies ---
-        # if CombinedSignalEngine:
-        #     class DummyWriter:
-        #         def write(self, s): pass
+        if CombinedSignalEngine:
+            class DummyWriter:
+                def write(self, s): pass
 
-        #     dummy_writer = DummyWriter()
+            dummy_writer = DummyWriter()
 
-        #     for key in initial_instruments:
-        #         print(f"Initializing Combined Strategy for {key}...")
-        #         strategy = CombinedSignalEngine(
-        #             instrument_key=key,
-        #             csv_writer=dummy_writer,
-        #             obi_throttle_sec=1.0 # 1s throttling
-        #         )
-        #         data_engine.register_strategy(key, strategy)
+            for key in all_instruments:
+                print(f"Initializing Combined Strategy for {key}...")
+                strategy = CombinedSignalEngine(
+                    instrument_key=key,
+                    csv_writer=dummy_writer,
+                    obi_throttle_sec=1.0 # 1s throttling
+                )
+                data_engine.register_strategy(key, strategy)
 
-        # if CandleCrossStrategy:
-        #     class DummyWriter:
-        #         def write(self, s): pass
+        if CandleCrossStrategy:
+            class DummyWriter:
+                def write(self, s): pass
 
-        #     dummy_writer = DummyWriter()
-        #     persistor_instance = DataPersistor() # Create a single persistor instance
-        #     for key in initial_instruments:
-        #         print(f"Initializing Combined Strategy for {key}...")
-        #         # 2. Connect to the database
+            dummy_writer = DummyWriter()
+            persistor_instance = DataPersistor() # Create a single persistor instance
+            for key in all_instruments:
+                print(f"Initializing Combined Strategy for {key}...")
+                # 2. Connect to the database
 
 
-        #         # 3. Initialize the Strategy, passing the persistor
-        #         strategy = CandleCrossStrategy(
-        #             instrument_key="" + key ,
-        #             csv_writer=None, # Mock CSV writer
-        #             persistor=persistor_instance, # <-- Inject the persistor
-        #             is_backtesting=False
-        #         )
-        #         data_engine.register_strategy(key, strategy)
+                # 3. Initialize the Strategy, passing the persistor
+                strategy = CandleCrossStrategy(
+                    instrument_key="" + key ,
+                    csv_writer=None, # Mock CSV writer
+                    persistor=persistor_instance, # <-- Inject the persistor
+                    is_backtesting=False
+                )
+                data_engine.register_strategy(key, strategy)
 
 
 

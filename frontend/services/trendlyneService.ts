@@ -9,7 +9,7 @@ export interface BuildupData {
 
 export let isSessionInitialized = false;
 // Using the specific CSRF token provided by the user
-const PROVIDED_CSRF = 'TxzIO3d7zB6Mhq7nVxN98vKEPp6qp8BLmtN0ZnuIfHlPNBeWeSue3qqpVym9eKRm';
+const PROVIDED_CSRF = import.meta.env.VITE_TRENDLYNE_CSRF || 'YOUR_CSRF_TOKEN_HERE';
 const TRENDLYNE_ROOT = 'https://smartoptions.trendlyne.com/';
 
 
