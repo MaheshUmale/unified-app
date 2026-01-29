@@ -107,13 +107,7 @@ async def lifespan(app: FastAPI):
         logger.error(f"Error flushing tick buffer during shutdown: {e}")
 
 fastapi_app = FastAPI(title="ProTrade Integrated API", lifespan=lifespan)
-
-# Socket.IO setup
 sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
-app = socketio.ASGIApp(sio, fastapi_app)
-
-# Inject SocketIO into data_engine
-data_engine.set_socketio(sio)
 
 # Initialize Upstox API
 upstox_api = UpstoxAPI(ACCESS_TOKEN)
@@ -597,8 +591,8 @@ if os.path.exists(frontend_dist):
 
     @fastapi_app.get("/{full_path:path}")
     async def serve_frontend(full_path: str):
-        # If the path looks like an API call, let it through
-        if full_path.startswith("api/") or full_path.startswith("socket.io"):
+        # Explicitly ignore API and Socket.IO paths to avoid intercepting them
+        if full_path.startswith("api/") or full_path.startswith("socket.io") or full_path.startswith("docs") or full_path.startswith("openapi.json"):
             raise HTTPException(status_code=404)
 
         # Check if the file exists in the static directory
@@ -610,6 +604,10 @@ if os.path.exists(frontend_dist):
         return FileResponse(os.path.join(frontend_dist, "index.html"))
 else:
     logger.warning(f"Frontend dist directory not found at {frontend_dist}")
+
+# Final Wrap with Socket.io
+app = socketio.ASGIApp(sio, fastapi_app)
+data_engine.set_socketio(sio)
 
 if __name__ == "__main__":
     import uvicorn

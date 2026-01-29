@@ -211,7 +211,7 @@ const App = () => {
     } finally {
         setLoading(false);
     }
-  }, [indexKey, expiryLabel]);
+  }, [indexKey, expiryLabel, isReplayMode]);
 
   useEffect(() => {
     loadData();
