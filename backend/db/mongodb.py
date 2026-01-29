@@ -82,7 +82,8 @@ def ensure_indexes() -> bool:
     # Index on tick_data.instrumentKey for fast instrument-specific queries
     tick_data = db['tick_data']
     tick_data.create_index('instrumentKey', background=True)
-    print("[DB] Created index on tick_data.instrumentKey")
+    tick_data.create_index('ts_ms', background=True)
+    print("[DB] Created index on tick_data.instrumentKey and ts_ms")
 
     # Optional: Compound index for time-based queries
     # tick_data.create_index([('instrumentKey', 1), ('_id', 1)], background=True)

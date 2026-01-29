@@ -191,6 +191,13 @@ def on_message(message: Union[Dict, bytes, str]):
         for inst_key, feed_datum in feeds_map.items():
             feed_datum['instrumentKey'] = inst_key
             feed_datum['_insertion_time'] = current_time
+
+            # Extract common timestamp for easier replay/querying
+            ff = feed_datum.get('fullFeed', {})
+            ltpc = ff.get('marketFF', {}).get('ltpc') or ff.get('indexFF', {}).get('ltpc')
+            if ltpc and ltpc.get('ltt'):
+                feed_datum['ts_ms'] = int(ltpc['ltt'])
+
             new_ticks.append(feed_datum)
 
             if inst_key in active_strategies:

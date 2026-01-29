@@ -111,12 +111,10 @@ The application follows a secure proxy architecture to ensure modularity and sep
 Start the FastAPI server using Uvicorn:
 
 ```bash
-cd backend
-python -m uvicorn api_server:app --port 5051 --reload
-```
+# Recommended: Run from root
+python -m uvicorn api_server:app --app-dir backend --port 5051
 
-Alternatively, run the script directly:
-```bash
+# Alternatively: cd into backend
 cd backend
 python api_server.py
 ```
