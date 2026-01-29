@@ -1,4 +1,5 @@
 import os
+import asyncio
 import logging
 from logging.config import dictConfig
 from typing import List
@@ -29,18 +30,18 @@ from urllib.parse import unquote
 dictConfig(LOGGING_CONFIG)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="ProTrade Integrated API")
+fastapi_app = FastAPI(title="ProTrade Integrated API")
 
 # Socket.IO setup
 sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
-socket_app = socketio.ASGIApp(sio, app)
+app = socketio.ASGIApp(sio, fastapi_app)
 
 # Inject SocketIO into data_engine
 # Loop will be injected during startup
 data_engine.set_socketio(sio)
 
 # Configure CORS
-app.add_middleware(
+fastapi_app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
@@ -49,31 +50,35 @@ app.add_middleware(
 )
 
 # Static Files (Serving Frontend Build)
-# For Angular 17+, the build output is typically in dist/project-name/browser
 frontend_dist = os.path.abspath(os.path.join(os.path.dirname(__file__), "../frontend/angular-ui/dist/angular-ui/browser"))
 if not os.path.exists(frontend_dist):
-    # Fallback for alternative build configurations
     frontend_dist = os.path.abspath(os.path.join(os.path.dirname(__file__), "../frontend/dist"))
 
 if os.path.exists(frontend_dist):
-    app.mount("/static", StaticFiles(directory=frontend_dist), name="static")
+    fastapi_app.mount("/static", StaticFiles(directory=frontend_dist), name="static")
     logger.info(f"Mounted static files from {frontend_dist}")
 else:
     logger.warning(f"Frontend dist directory not found at {frontend_dist}")
 
-@app.on_event("startup")
+@fastapi_app.on_event("startup")
 async def startup_event():
     """Initializes strategies and starts the Upstox WebSocket thread."""
     logger.info("Initializing ProTrade Platform...")
 
     # Capture main loop and inject into data_engine
-    loop = asyncio.get_event_loop()
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.get_event_loop()
+
     data_engine.set_socketio(sio, loop=loop)
+    logger.info("SocketIO injected into data_engine")
 
     # 1. Initialize Strategies
     all_instruments = INITIAL_INSTRUMENTS
 
     if CombinedSignalEngine:
+        logger.info("Initializing CombinedSignalEngine...")
         class DummyWriter:
             def write(self, s): pass
         dummy_writer = DummyWriter()
@@ -86,8 +91,11 @@ async def startup_event():
                 obi_throttle_sec=1.0
             )
             data_engine.register_strategy(key, strategy)
+        logger.info("CombinedSignalEngine initialized")
 
     if CandleCrossStrategy:
+        logger.info("Initializing CandleCrossStrategy...")
+        # NOTE: This might block if MongoDB is not reachable
         persistor_instance = DataPersistor()
         for key in all_instruments:
             logger.info(f"Initializing Candle Cross Strategy for {key}...")
@@ -98,6 +106,7 @@ async def startup_event():
                 is_backtesting=False
             )
             data_engine.register_strategy(key, strategy)
+        logger.info("CandleCrossStrategy initialized")
 
     # 2. Start WebSocket Feed
     if ACCESS_TOKEN and ACCESS_TOKEN != 'YOUR_ACCESS_TOKEN_HERE':
@@ -159,7 +168,7 @@ async def handle_stop_replay(sid, data):
     logger.info(f"Stop replay requested by {sid}")
     data_engine.stop_active_replay()
 
-@app.get("/health")
+@fastapi_app.get("/health")
 async def health_check():
     return {"status": "healthy", "service": "ProTrade API"}
 
@@ -261,7 +270,7 @@ def get_live_report_data():
         "trade_summary": trade_summary
     }
 
-@app.get("/api/live_pnl")
+@fastapi_app.get("/api/live_pnl")
 async def live_pnl_api():
     """Returns the live P&L and trade signals summary."""
     data = get_live_report_data()
@@ -269,7 +278,7 @@ async def live_pnl_api():
         raise HTTPException(status_code=500, detail=data["error"])
     return data
 
-@app.get("/api/trade_signals/{instrument_key}")
+@fastapi_app.get("/api/trade_signals/{instrument_key}")
 async def get_trade_signals(instrument_key: str):
     """Queries MongoDB for trade signals for a specific instrument."""
     try:
@@ -309,7 +318,7 @@ async def get_trade_signals(instrument_key: str):
         logger.error(f"Error fetching trade signals: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/oi_data/{instrument_key}")
+@fastapi_app.get("/api/oi_data/{instrument_key}")
 async def get_oi_data_route(instrument_key: str):
     """Return latest OI data for the given instrument."""
     try:
@@ -337,7 +346,7 @@ async def get_oi_data_route(instrument_key: str):
         logger.error(f"Error fetching OI data: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch OI data")
 
-@app.get("/api/instruments")
+@fastapi_app.get("/api/instruments")
 async def get_instruments():
     """Return list of instrument keys with human readable names."""
     try:
@@ -359,4 +368,4 @@ async def get_instruments():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(socket_app, host="0.0.0.0", port=5051)
+    uvicorn.run("api_server:app", host="0.0.0.0", port=5051, reload=True)
