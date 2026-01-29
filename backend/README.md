@@ -1,69 +1,54 @@
-# Algorithmic Trading Platform - "Scratchpad"
+# ProTrade Algorithmic Trading Backend
 
 ## Overview
-This project is an advanced algorithmic trading platform designed for Order Flow analysis and automated trading on NSE Equities. It focuses on identifying high-probability reversals using "Failed Auctions" and "Absorption" patterns, confirmed by Order Book Imbalance (OBI) and Candlestick patterns.
+This is the core backend for the ProTrade platform, a high-performance algorithmic trading system optimized for Indian Derivatives (NSE). The backend is built with FastAPI and handles real-time data ingestion, strategy execution, and risk management.
 
-## Core Strategy: `CombinedSignalEngine`
-The primary strategy (`strategies/combined_signal_engine.py`) integrates multiple concepts to filter noise and capture quality moves:
+## Modular Architecture
+The project is reorganized into four main functional modules:
 
-### 1. Failed Auction (The Trap)
-- **Logic**: Identifies "Walls" (large limit orders) in the Order Book.
-- **Signal**: When a Wall is broken but price fails to sustain and "Reclaims" the level, it signals a Trap (Failed Auction).
-- **Entry**:
-    - **Long**: Price breaks Support, then reclaims it (Bull Trap).
-    - **Short**: Price breaks Resistance, then falls back below it (Bear Trap).
+### 1. External API Access Module (`external/`)
+Handles all communication with third-party APIs and data providers.
+- **`upstox_feed.py`**: Manages the persistent WebSocket connection to Upstox Market Data Feed V3.
+- **`upstox_helper.py`**: Utilities for instrument lookup and key extraction.
+- **`trendlyne_api.py`**: Service for historical Open Interest (OI) backfilling from Trendlyne.
+- **`data_fetcher.py`**: General purpose HTTP data fetching with retries.
+- **`order_manager.py`**: Interface for order placement and status tracking.
 
-### 2. Confirmations (Confluence)
-- **Order Book Imbalance (OBI)**:
-    - **Buy**: Requires OBI > 1.2 (Buying pressure).
-    - **Sell**: Requires OBI < 0.8 (Selling pressure).
-- **Candlestick Patterns (1-min)**:
-    - **Long**: Requires **Bullish Engulfing** or **Hammer** on the signal candle.
-    - **Short**: Requires **Bearish Engulfing** or **Shooting Star** on the signal candle.
+### 2. DB Access Module (`db/`)
+Centralized database interaction layer using MongoDB.
+- **`mongodb.py`**: Handles connection pooling, collection access, and indexing for `upstox_strategy_db_new`.
 
-### 3. Dynamic Filters
-- **Regime Filter**: Uses 20 EMA and Bollinger Bands (2.5 SD) to classify market mode:
-    - **Trend**: Price near EMA (+/- 0.5 SD). Normal trading.
-    - **Reversion**: Price outside +/- 2.5 SD. Only trades counter-trend (Reversion).
-    - **No-Trade Zone**: Between 0.5 SD and 2.5 SD (Choppy/Noise). Signals are skipped.
-- **VWAP Filter**:
-    - Longs must be below VWAP (Value Buying).
-    - Shorts must be above VWAP (Value Selling).
-- **Time Filters**:
-    - **No Entry**: After 15:00.
-    - **Square-off**: Strict exit at 15:15.
-    - **Gap Protection**: Immediate exit if position carries over to a new date (Data gap safety).
+### 3. Brain/Logic Module (`core/`)
+The decision-making heart of the platform.
+- **`data_engine.py`**: Orchestrates data flow, bar building, and strategy dispatching.
+- **`pcr_logic.py`**: Core engine for PCR calculation and market sentiment analysis.
+- **`strategies/`**: Contains quantitative trading strategies like `CombinedSignalEngine` and `CandleCrossStrategy`.
+- **`risk_controller.py`**: Enforces position limits and daily drawdown protection.
+- **`position_manager.py`**: Tracks live P&L and active positions.
 
-## Project Structure
-- `main_platform.py`: Entry point for the real-time Dashboard/UI.
-- `run_backtest_combined.py`: Script to run backtests using the `CombinedSignalEngine`.
-- `strategies/`: Contains strategy logic.
-    - `combined_signal_engine.py`: The main strategy class.
-- `tape_reading_engine_v2.py`: Base class for Order Flow analysis (Walls, Speed, Aggression).
-- `data_engine.py`: Manages data fetching and storage (MongoDB).
-- `backtest_reports/`: Contains HTML reports and CSV logs from backtests.
-- `backtest_logs/`: Detailed execution logs.
-- `archive/`: Legacy scripts and old test files.
+### 4. UI/API Layer (`api_server.py`)
+Serves as the entry point for the frontend and external clients.
+- **FastAPI**: Provides REST endpoints for instruments, P&L, and data triggers.
+- **Socket.io**: Streams real-time ticks and signals to the Angular frontend.
 
-## Setup & Usage
+## Setup & Installation
 
 ### Prerequisites
 - Python 3.12+
-- MongoDB (running locally)
-- Dependencies: `pip install -r requirements.txt`
+- MongoDB 6.0+ (Running on `localhost:27017` or configured via `MONGO_URI`)
 
-### Running Backtests
-```bash
-python run_backtest_combined.py
-```
-Results will be saved to `backtest_reports/` and `backtest_logs/`.
+### Quick Start
+1. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+2. Configure environment:
+   Set `UPSTOX_ACCESS_TOKEN` in your environment or `.env` file.
+3. Run the server:
+   ```bash
+   python api_server.py
+   ```
 
-### Running the Dashboard
-```bash
-python main_platform.py
-```
-Access the dashboard at `http://localhost:5000`.
-
-## Key Configuration
-- **Instruments**: Defined in `list_instruments.py` or fetched from DB.
-- **Parameters**: Adjustable in `CombinedSignalEngine.__init__` (e.g., `obi_buy_threshold`, `min_hold_time_sec`).
+## Development
+- **Tests**: Run unit tests using `pytest tests/`.
+- **Database**: The system defaults to using the `upstox_strategy_db_new` database.

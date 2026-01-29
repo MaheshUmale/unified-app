@@ -4,8 +4,9 @@ import time
 from pymongo import MongoClient
 import os
 # --- CONFIGURATION ---
-MONGO_URI = "mongodb://localhost:27017/"  # Change as needed
-DB_NAME = "upstox_strategy_db"
+import os
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
+DB_NAME = "upstox_strategy_db_new"
 
 
 SIGNAL_COLLECTION = "trade_signals"

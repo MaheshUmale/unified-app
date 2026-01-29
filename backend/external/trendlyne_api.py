@@ -1,19 +1,29 @@
 """
-Service for interacting with Trendlyne SmartOptions API to fetch historical OI data.
+Trendlyne SmartOptions Service
+Provides functionality to interact with Trendlyne API for searching stocks, fetching expiry dates, and backfilling historical Open Interest (OI) data.
 """
 import requests
 import time
 import logging
+from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta, date
-from database import get_oi_collection, get_stocks_collection
+from db.mongodb import get_oi_collection, get_stocks_collection
 
 logger = logging.getLogger(__name__)
 
-# Cache for stock IDs
-STOCK_ID_CACHE = {}
+# Cache for stock IDs to reduce redundant API calls
+STOCK_ID_CACHE: Dict[str, int] = {}
 
-def get_stock_id_for_symbol(symbol: str):
-    """Automatically lookup Trendlyne stock ID for a given symbol"""
+def get_stock_id_for_symbol(symbol: str) -> Optional[int]:
+    """
+    Automatically lookup the Trendlyne stock ID for a given symbol.
+
+    Args:
+        symbol (str): The trading symbol (e.g., 'NIFTY').
+
+    Returns:
+        Optional[int]: The stock ID if found, otherwise None.
+    """
     if symbol in STOCK_ID_CACHE:
         return STOCK_ID_CACHE[symbol]
 
@@ -40,8 +50,19 @@ def get_stock_id_for_symbol(symbol: str):
         logger.error(f"Error looking up {symbol} on Trendlyne: {e}")
         return None
 
-def fetch_and_save_oi_snapshot(symbol: str, stock_id: int, expiry_date_str: str, timestamp_snapshot: str):
-    """Fetch and save historical OI data snapshot from Trendlyne"""
+def fetch_and_save_oi_snapshot(symbol: str, stock_id: int, expiry_date_str: str, timestamp_snapshot: str) -> bool:
+    """
+    Fetches a snapshot of historical OI data from Trendlyne and persists it to MongoDB.
+
+    Args:
+        symbol (str): The trading symbol.
+        stock_id (int): The Trendlyne stock ID.
+        expiry_date_str (str): The expiry date in YYYY-MM-DD format.
+        timestamp_snapshot (str): The time of the snapshot (HH:MM).
+
+    Returns:
+        bool: True if the operation was successful.
+    """
     url = "https://smartoptions.trendlyne.com/phoenix/api/live-oi-data/"
     params = {
         'stockId': stock_id,
@@ -111,6 +132,29 @@ def fetch_and_save_oi_snapshot(symbol: str, stock_id: int, expiry_date_str: str,
         logger.error(f"Error fetching Trendlyne snapshot for {symbol} at {timestamp_snapshot}: {e}")
         return False
 
+def get_expiry_dates(stock_id: int, mtype: str = 'options'):
+    """
+    Fetches latest expiry dates for options or futures from Trendlyne.
+
+    Args:
+        stock_id (int): Trendlyne stock ID.
+        mtype (str): 'options' or 'futures'.
+
+    Returns:
+        list: List of expiry date strings.
+    """
+    url = f"https://smartoptions.trendlyne.com/phoenix/api/fno/get-expiry-dates/?mtype={mtype}&stock_id={stock_id}"
+    try:
+        resp = requests.get(url, timeout=10)
+        resp.raise_for_status()
+        expiry_data = resp.json()
+        if 'body' in expiry_data and 'expiryDates' in expiry_data['body']:
+            return expiry_data['body']['expiryDates']
+        return []
+    except Exception as e:
+        logger.error(f"Error fetching expiry dates for stock {stock_id}: {e}")
+        return []
+
 def generate_time_intervals(start_time="09:15", end_time="15:30", interval_minutes=15):
     """Generate time strings in HH:MM format"""
     start = datetime.strptime(start_time, "%H:%M")
@@ -129,12 +173,10 @@ def perform_backfill(symbol: str):
         return {"status": "error", "message": f"Stock ID not found for {symbol}"}
 
     try:
-        # Get Nearest Expiry
-        expiry_url = f"https://smartoptions.trendlyne.com/phoenix/api/fno/get-expiry-dates/?mtype=options&stock_id={stock_id}"
-        resp = requests.get(expiry_url, timeout=10)
-        expiry_data = resp.json()
-        if 'body' in expiry_data and 'expiryDates' in expiry_data['body']:
-            default_expiry = expiry_data['body']['expiryDates'][0]
+        # Get Nearest Expiry using new function
+        expiry_list = get_expiry_dates(stock_id, mtype='options')
+        if expiry_list:
+            default_expiry = expiry_list[0]
         else:
             return {"status": "error", "message": f"Could not get expiry for {symbol}"}
 

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Check tick_data in upstox_strategy_db"""
+"""Check tick_data in upstox_strategy_db_new"""
 from pymongo import MongoClient
 from datetime import datetime
 
 client = MongoClient('mongodb://localhost:27017/')
-db = client['upstox_strategy_db']
+db = client['upstox_strategy_db_new']
 collection = db['tick_data']
 
-print("\n=== Checking 'upstox_strategy_db.tick_data' ===\n")
+print("\n=== Checking 'upstox_strategy_db_new.tick_data' ===\n")
 
 count = collection.count_documents({})
 print(f"Total documents: {count}\n")

@@ -5,7 +5,7 @@ from datetime import datetime
 
 # Connect to MongoDB
 client = MongoClient('mongodb://localhost:27017/')
-db = client['upstox_strategy_db']
+db = client['upstox_strategy_db_new']
 tick_collection = db['tick_data']
 
 # Check for NSE_EQ|INE002A01018

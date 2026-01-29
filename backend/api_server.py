@@ -1,14 +1,18 @@
+"""
+ProTrade Integrated API Server
+Handles REST endpoints, Socket.IO real-time streaming, and background strategy orchestration.
+"""
 import os
 import asyncio
 import logging
 from logging.config import dictConfig
-from typing import List
+from typing import List, Dict, Any, Optional
 import socketio
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from config import LOGGING_CONFIG, ACCESS_TOKEN, INITIAL_INSTRUMENTS
-from database import (
+from db.mongodb import (
     get_db,
     get_tick_data_collection,
     get_instruments_collection,
@@ -16,11 +20,11 @@ from database import (
     get_trade_signals_collection,
     SIGNAL_COLLECTION_NAME
 )
-import data_engine
-from services import trendlyne_service
-from CandleCrossStrategy import CandleCrossStrategy, DataPersistor
+from core import data_engine
+from external import trendlyne_api as trendlyne_service
+from core.strategies.candle_cross import CandleCrossStrategy, DataPersistor
 try:
-    from strategies.combined_signal_engine import CombinedSignalEngine
+    from core.strategies.combined_signal import CombinedSignalEngine
 except ImportError:
     CombinedSignalEngine = None
 from collections import defaultdict
@@ -42,9 +46,22 @@ app = socketio.ASGIApp(sio, fastapi_app)
 data_engine.set_socketio(sio)
 
 # Configure CORS
+ALLOWED_ORIGINS = [
+    "http://localhost:5000",
+    "http://localhost:5051",
+    "http://localhost:4200",
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5000",
+    "http://127.0.0.1:5051",
+    "http://127.0.0.1:4200",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
+]
+
 fastapi_app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -173,8 +190,13 @@ async def handle_stop_replay(sid, data):
 async def health_check():
     return {"status": "healthy", "service": "ProTrade API"}
 
-def get_live_report_data():
-    """Queries MongoDB for all trade signals today."""
+def get_live_report_data() -> Dict[str, Any]:
+    """
+    Queries MongoDB for all trade signals generated today and aggregates them into a report.
+
+    Returns:
+        Dict[str, Any]: A dictionary containing total P&L, open positions, completed trades, and summary.
+    """
     db = get_db()
     if db is None:
         return {"error": "Database not connected."}
@@ -271,9 +293,11 @@ def get_live_report_data():
         "trade_summary": trade_summary
     }
 
-@fastapi_app.get("/api/live_pnl")
+@fastapi_app.get("/api/live_pnl", response_model=Dict[str, Any])
 async def live_pnl_api():
-    """Returns the live P&L and trade signals summary."""
+    """
+    API endpoint to retrieve the latest P&L and trade signals summary.
+    """
     data = get_live_report_data()
     if "error" in data:
         raise HTTPException(status_code=500, detail=data["error"])
@@ -347,9 +371,11 @@ async def get_oi_data_route(instrument_key: str):
         logger.error(f"Error fetching OI data: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch OI data")
 
-@fastapi_app.post("/api/backfill/trendlyne")
-async def trigger_trendlyne_backfill(symbol: str = "NIFTY"):
-    """Triggers historical OI backfill from Trendlyne for a symbol."""
+@fastapi_app.post("/api/backfill/trendlyne", response_model=Dict[str, Any])
+async def trigger_trendlyne_backfill(symbol: str = Query("NIFTY", description="The trading symbol to backfill (e.g., NIFTY, BANKNIFTY)")):
+    """
+    Triggers a historical Open Interest (OI) data backfill from the Trendlyne SmartOptions API.
+    """
     try:
         result = trendlyne_service.perform_backfill(symbol)
         if result["status"] == "success":

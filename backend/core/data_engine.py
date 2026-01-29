@@ -1,3 +1,7 @@
+"""
+ProTrade Data Engine
+Manages real-time data ingestion from Upstox, strategy dispatching, and real-time OHLC/Footprint aggregation.
+"""
 import asyncio
 import json
 import logging
@@ -17,17 +21,17 @@ import requests
 import websocket
 import websockets
 from google.protobuf.json_format import MessageToDict
-from upstox_client import ApiClient, Configuration, MarketDataStreamerV3
-
-import ExtractInstrumentKeys
-from database import (
+from external import upstox_helper as ExtractInstrumentKeys
+from external.upstox_feed import UpstoxFeed
+from db.mongodb import (
     get_instruments_collection,
     get_oi_collection,
     get_raw_tick_data_collection,
     get_stocks_collection,
     get_tick_data_collection,
 )
-from services.pcr_engine import calculate_total_pcr, analyze_oi_buildup
+from typing import Dict, Any, List, Optional, Set, Union
+from core.pcr_logic import calculate_total_pcr, analyze_oi_buildup
 
 # Configuration from centralized config (planned migration)
 try:
@@ -111,13 +115,13 @@ def decode_protobuf(buffer: bytes) -> pb.FeedResponse:
     feed_response.ParseFromString(buffer)
     return feed_response
 
-def on_message(message):
+def on_message(message: Union[Dict, bytes, str]):
     """
     Primary callback for incoming WebSocket messages from Upstox.
-    Handles decoding, archiving, and dispatching to strategies and UI.
+    Handles decoding (Protobuf/JSON), archiving to MongoDB, and dispatching to registered strategies and UI.
 
     Args:
-        message: The raw message (dict, bytes, or str) from the WebSocket.
+        message: The raw message from the WebSocket feed.
     """
     global active_bars, session_stats, socketio_instance
 
@@ -176,13 +180,14 @@ def on_message(message):
 
             process_footprint_tick(inst_key, feed_datum)
 
-def process_footprint_tick(instrument_key, data_datum):
+def process_footprint_tick(instrument_key: str, data_datum: Dict[str, Any]):
     """
     Processes a single tick for real-time footprint/OHLC aggregation.
+    Maintains the 'active_bars' state and emits updates to the frontend.
 
     Args:
         instrument_key (str): The key of the instrument.
-        data_datum (dict): The tick data dictionary.
+        data_datum (Dict[str, Any]): The tick data dictionary containing fullFeed details.
     """
     global active_bars, session_stats, socketio_instance
 
@@ -280,39 +285,12 @@ def process_footprint_tick(instrument_key, data_datum):
     except Exception as e:
         logging.error(f"Error processing footprint tick: {e}")
 
-streamer = None
+upstox_feed: Optional[UpstoxFeed] = None
 
-def subscribe_instrument(instrument_key):
-    """
-    Dynamic subscription to an instrument using the Upstox SDK Streamer.
-
-    Args:
-        instrument_key (str): The instrument key to subscribe to.
-    """
-    global streamer
-    if streamer:
-        if instrument_key in subscribed_instruments:
-            return
-        logging.info(f"[SDK] Subscribing to {instrument_key}")
-        try:
-            subscribed_instruments.add(instrument_key)
-            streamer.subscribe([instrument_key], "full")
-        except Exception as e:
-            logging.error(f"[SDK] Subscription Error: {e}")
-    else:
-        logging.warning("[SDK] Streamer not active, cannot subscribe.")
-
-def on_error(error):
-    logging.error(f"WebSocket Error: {error} at {datetime.now()}")
-
-def on_open():
-    logging.info(f"WebSocket Connected (SDK)! at {datetime.now()}")
-
-def on_close(code, reason):
-    logging.info(f"WebSocket Closed: {code} - {reason} at {datetime.now()}")
-
-def on_auto_reconnect_stopped(data):
-    logging.error(f"Auto-reconnect stopped after retries: {data}")
+def subscribe_instrument(instrument_key: str):
+    """Dynamic subscription to an instrument."""
+    if upstox_feed:
+        upstox_feed.subscribe(instrument_key)
 
 def start_pcr_calculation_thread():
     """Starts a background thread to calculate PCR periodically."""
@@ -333,59 +311,28 @@ def start_pcr_calculation_thread():
     t = threading.Thread(target=run_pcr_loop, daemon=True)
     t.start()
 
-def start_websocket_thread(access_token, instrument_keys):
+def start_websocket_thread(access_token: str, instrument_keys: List[str]):
     """
-    Starts the Upstox SDK MarketDataStreamerV3 in a background thread.
-
-    Args:
-        access_token (str): The Upstox access token.
-        instrument_keys (list): Initial list of instrument keys to subscribe to.
-
-    Returns:
-        threading.Thread: The thread instance running the streamer.
+    Starts the Upstox SDK MarketDataStreamerV3 via UpstoxFeed.
     """
-    # Start PCR thread as well
+    global upstox_feed
     start_pcr_calculation_thread()
 
-    def run_streamer():
-        global streamer
-        subscribed_instruments.update(instrument_keys)
-        logging.info(f"Starting UPSTOX SDK Streamer with {len(instrument_keys)} instruments...")
+    upstox_feed = UpstoxFeed(access_token, on_message)
+    upstox_feed.connect(instrument_keys)
 
-        configuration = Configuration()
-        configuration.access_token = access_token
+    def subscription_keep_alive():
+        while True:
+            time.sleep(60)
+            try:
+                new_keys = ExtractInstrumentKeys.getNiftyAndBNFnOKeys()
+                if new_keys and upstox_feed:
+                    for key in new_keys:
+                        upstox_feed.subscribe(key)
+            except Exception as e:
+                logging.error(f"Keep-alive subscription failed: {e}")
 
-        try:
-            api_client = ApiClient(configuration)
-            streamer = MarketDataStreamerV3(api_client, list(subscribed_instruments), "full")
-            streamer.on("message", on_message)
-            streamer.on("open", on_open)
-            streamer.on("error", on_error)
-            streamer.on("close", on_close)
-            streamer.on("autoReconnectStopped", on_auto_reconnect_stopped)
-            streamer.auto_reconnect(True, 5, 5)
-
-            def subscription_keep_alive(streamer_ref):
-                while True:
-                    time.sleep(60)
-                    try:
-                        new_keys = ExtractInstrumentKeys.getNiftyAndBNFnOKeys()
-                        if new_keys:
-                            subscribed_instruments.update(new_keys)
-                            streamer_ref.subscribe(list(subscribed_instruments), "full")
-                    except Exception as e:
-                        logging.error(f"Keep-alive subscription failed: {e}")
-
-            ka_thread = threading.Thread(target=subscription_keep_alive, args=(streamer,), daemon=True)
-            ka_thread.start()
-            streamer.connect()
-        except Exception as e:
-            logging.error(f"SDK Streamer Fatal Error: {e}")
-            traceback.print_exc()
-
-    t = threading.Thread(target=run_streamer, daemon=True)
-    t.start()
-    return t
+    threading.Thread(target=subscription_keep_alive, daemon=True).start()
 
 def load_intraday_data(instrument_key):
     """

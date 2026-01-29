@@ -1,5 +1,10 @@
+"""
+PCR and OI Buildup Engine
+Calculates Put-Call Ratio (PCR) and analyzes Open Interest (OI) buildup patterns to determine market sentiment.
+"""
 import pandas as pd
 import logging
+from typing import Dict, Any
 
 logger = logging.getLogger(__name__)
 

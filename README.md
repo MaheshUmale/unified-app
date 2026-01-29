@@ -10,30 +10,37 @@ The application provides a comprehensive trading dashboard that combines:
 - **Trendlyne Integration**: Backend service to backfill historical OI data using Trendlyne SmartOptions API.
 - **Institutional Tape Flow**: Monitoring futures and options buildup to identify high-probability reversal setups.
 - **Automated Strategies**: Integrated trading agents including `CombinedSignalEngine` and `CandleCrossStrategy`.
-- **Modern UI**: Angular v16+ based dashboard utilizing RxJS for high-performance data streaming.
+- **Modern UI**: Angular v19+ based dashboard utilizing RxJS for high-performance data streaming.
 
 ## 📂 Project Structure
 
-- **`backend/`**: Standalone Python application (FastAPI) responsible for data ingestion, PCR calculation, and real-time streaming.
-- **`frontend/angular-ui/`**: Angular application providing the trading dashboard.
-- **`backend/strategies/`**: Trading logic and signal generation engines.
+- **`backend/`**: Primary FastAPI application containing the API server, data engine, and trading strategies.
+- **`backend/services/`**: Modular services for PCR/OI calculations and Trendlyne integration.
+- **`backend/strategies/`**: Core trading logic (e.g., Combined Signal, Candle Cross).
+- **`frontend/angular-ui/`**: Modern Angular frontend project.
 
 ## 🛠️ Setup & Installation
 
 ### Prerequisites
-- Python 3.12+
-- Node.js & npm
-- MongoDB (running locally)
+- **Python**: 3.12 or higher.
+- **Node.js**: v20 or higher.
+- **MongoDB**: Must be running on `localhost:27017` (default) or configured via environment variables.
 
-### 1. Backend Setup
+### 1. Backend Configuration
+Create a `.env` file in the `backend/` directory or set the following environment variables:
+- `UPSTOX_ACCESS_TOKEN`: Your valid Upstox API V3 token.
+- `MONGO_URI`: (Optional) Custom MongoDB URI.
+- `DB_NAME`: (Optional) Defaults to `upstox_strategy_db_new`.
+
+Install dependencies:
 ```bash
 cd backend
 pip install -r requirements.txt
 ```
 
-### 2. Frontend Setup (Build)
+### 2. Frontend Build
 ```bash
-cd frontend
+cd frontend/angular-ui
 npm install
 npm run build
 ```

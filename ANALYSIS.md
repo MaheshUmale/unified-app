@@ -14,12 +14,10 @@
 - FastAPI-based API and Asynchronous SocketIO server.
 
 **Key Files:**
-- `api_server.py`: FastAPI server entry point and SocketIO event handlers.
-- `data_engine.py`: Manages real-time data streams and strategy dispatching (Thread-safe Async bridge).
-- `services/pcr_engine.py`: PCR/OI calculation logic.
-- `option_chain_fetcher.py`: PCR/OI logic.
-- `strategies/`: Contains trading signal logic.
-- `database.py`: MongoDB utility functions.
+- `api_server.py`: Primary FastAPI server entry point and SocketIO event handlers.
+- `db/mongodb.py`: Centralized DB Access Module.
+- `external/`: External API Access Module (Upstox, Trendlyne).
+- `core/`: Brain/Logic Module (Strategies, PCR Engine, Data Orchestration).
 
 ---
 

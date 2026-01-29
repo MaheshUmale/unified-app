@@ -5,8 +5,9 @@ from pymongo import MongoClient
 from bson import json_util
 
 # Configuration
-MONGO_URI = "mongodb://localhost:27017/"
-DB_NAME = "upstox_strategy_db"
+import os
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
+DB_NAME = "upstox_strategy_db_new"
 COLLECTION_NAME = "raw_tick_data"
 OUTPUT_DIR = "../data"
 TARGET_SIZE_MB = 20

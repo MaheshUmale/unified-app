@@ -3,7 +3,7 @@ import sys
 
 # Connect to the correct database used by data_engine.py
 client = MongoClient('mongodb://localhost:27017/')
-db = client['upstox_strategy_db']
+db = client['upstox_strategy_db_new']
 collection = db['tick_data']
 
 print(f"Checking database: {db.name}")

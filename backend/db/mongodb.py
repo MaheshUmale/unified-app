@@ -2,10 +2,11 @@ from pymongo import MongoClient
 from pymongo.database import Database
 from pymongo.collection import Collection
 import os
+import config
 
 # --- Configuration ---
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
-DB_NAME = "upstox_strategy_db_new"
+MONGO_URI = config.MONGO_URI
+DB_NAME = config.DB_NAME
 
 # --- Database Connection ---
 def get_db_client() -> MongoClient:

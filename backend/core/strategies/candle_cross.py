@@ -6,32 +6,23 @@ from typing import Dict, Any
 from collections import deque
 from typing import Deque
 
-# --- Configuration ---
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
-DB_NAME = "upstox_strategy_db"
-SIGNAL_COLLECTION_NAME ='trade_signals'
+from db.mongodb import get_db, SIGNAL_COLLECTION_NAME
 
 class DataPersistor:
     """Manages MongoDB connection and logging to the 'trade_signals' collection."""
-    def __init__(self, uri: str = MONGO_URI, db_name: str = DB_NAME):
-        self.client = None
-        self.db = None
-        try:
-            self.client = MongoClient(uri)
-            self.db = self.client[db_name]
-            self.client.admin.command('ping')
-            print("MongoDB connection successful. Targeting collection 'trade_signals'")
-        except Exception as e:
-            print(f"MongoDB connection failed. Ensure MongoDB is running: {e}", file=sys.stderr)
-            self.client = None
-            self.db = None
+    def __init__(self):
+        self.db = get_db()
+        if self.db is None:
+             print("MongoDB connection failed in DataPersistor.", file=sys.stderr)
+        else:
+             print("DataPersistor initialized with MongoDB.")
 
     def log_signal(self, log_entry: Dict[str, Any]):
         """Inserts a trade signal document into the 'trade_signals' collection."""
         try:
-            if self.db is None:
-                return
-            self.db[SIGNAL_COLLECTION_NAME].insert_one(log_entry)
+            db = get_db()
+            if db is not None:
+                db[SIGNAL_COLLECTION_NAME].insert_one(log_entry)
         except Exception as e:
             print(f"MongoDB insertion error (trade signal): {e}", file=sys.stderr)
 
