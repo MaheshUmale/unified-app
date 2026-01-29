@@ -32,6 +32,7 @@ const App = () => {
   const [loading, setLoading] = useState(false);
   const [lastSync, setLastSync] = useState<Date>(new Date());
   const [trendlyneReady, setTrendlyneReady] = useState(false);
+  const [isReplayMode, setIsReplayMode] = useState(false);
 
   const atmOptionKeysRef = useRef({ ce: '', pe: '' });
   const indexKeyRef = useRef(indexKey);
@@ -122,6 +123,19 @@ const App = () => {
     };
 
     const cleanupMessage = socket.onMessage((msg) => {
+        if (msg.type === 'replay_status') {
+            setIsReplayMode(msg.active);
+            // If it's a fresh replay start
+            if (msg.active && msg.is_new) {
+                setIndexData([]);
+                setCeData([]);
+                setPeData([]);
+                setHistoricalPcr([]);
+                setFuturesBuildup([]);
+                setCeBuildup([]);
+                setPeBuildup([]);
+            }
+        }
         if (msg.type === 'oi_update') {
             // Replay OI updates
             setHistoricalPcr(prev => {
@@ -139,6 +153,7 @@ const App = () => {
   }, [updateCandle]);
 
   const loadData = useCallback(async () => {
+    if (isReplayMode) return; // Don't load live data in replay mode
     const currentSymbol = indexKey.includes('Nifty 50') ? 'NIFTY' : 'BANKNIFTY';
     // Ensure we are loading data for the correct expiry matching the current index
     if (lastExpiryIndexRef.current !== currentSymbol) {
@@ -196,7 +211,7 @@ const App = () => {
     } finally {
         setLoading(false);
     }
-  }, [indexKey, expiryLabel]);
+  }, [indexKey, expiryLabel, isReplayMode]);
 
   useEffect(() => {
     loadData();

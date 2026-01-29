@@ -45,7 +45,7 @@ class ReplayEngine:
             daemon=True
         )
         self.replay_thread.start()
-        self.emit_fn('replay_status', {'active': True, 'date': date_str, 'paused': False, 'speed': speed})
+        self.emit_fn('replay_status', {'active': True, 'date': date_str, 'paused': False, 'speed': speed, 'is_new': True})
         logger.info(f"Replay started for {date_str} with keys {instrument_keys} at speed {speed}x")
 
     def stop_replay(self):
