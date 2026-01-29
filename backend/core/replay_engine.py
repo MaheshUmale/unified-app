@@ -137,14 +137,16 @@ class ReplayEngine:
                 # We need to find how ticks are indexed by time.
                 # Looking at data_engine, ticks from Upstox have 'ltpc.ltt'
             }
-
+            projection = {'_id': 0}
             # Actually, we should probably query by _id if it's ObjectId containing timestamp,
             # but better use a dedicated time field if available.
             # Let's assume we have a way to filter by date.
             # For now, let's just get all for simplicity of the module structure.
 
             # Better: use a helper to get ticks for a specific day
-            ticks_cursor = self.tick_collection.find(query).sort([('fullFeed.marketFF.ltpc.ltt', 1)])
+            #add projection if needed
+            #ticks_cursor = self.tick_collection.find(query, projection)
+            ticks_cursor = self.tick_collection.find(query,projection).sort([('fullFeed.marketFF.ltpc.ltt', 1)])
 
             # Fetch OI data for the same day
             # We need the underlying symbol for these instruments
