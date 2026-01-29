@@ -9,14 +9,18 @@ MONGO_URI = config.MONGO_URI
 DB_NAME = config.DB_NAME
 
 # --- Database Connection ---
+_client: MongoClient = None
+
 def get_db_client() -> MongoClient:
-    """Initializes and returns a MongoDB client."""
-    return MongoClient(MONGO_URI)
+    """Initializes and returns a singleton MongoDB client."""
+    global _client
+    if _client is None:
+        _client = MongoClient(MONGO_URI)
+    return _client
 
 def get_db() -> Database:
-    """Returns the database instance for the strategy app."""
-    client = get_db_client()
-    return client[DB_NAME]
+    """Returns the database instance for the strategy app using a shared client."""
+    return get_db_client()[DB_NAME]
 
 def get_oi_collection() -> Collection:
     """Returns the collection for Open Interest data."""

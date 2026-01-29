@@ -62,8 +62,14 @@ If you need to provide tokens directly to the built frontend (e.g. for Trendlyne
 
 ## 🏃 Running the Application
 
-Start the FastAPI server:
+Start the FastAPI server using Uvicorn:
 
+```bash
+cd backend
+python -m uvicorn api_server:app --port 5051 --reload
+```
+
+Alternatively, run the script directly:
 ```bash
 cd backend
 python api_server.py
