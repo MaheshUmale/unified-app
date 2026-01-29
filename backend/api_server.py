@@ -17,6 +17,7 @@ from database import (
     SIGNAL_COLLECTION_NAME
 )
 import data_engine
+from services import trendlyne_service
 from CandleCrossStrategy import CandleCrossStrategy, DataPersistor
 try:
     from strategies.combined_signal_engine import CombinedSignalEngine
@@ -345,6 +346,19 @@ async def get_oi_data_route(instrument_key: str):
     except Exception as e:
         logger.error(f"Error fetching OI data: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch OI data")
+
+@fastapi_app.post("/api/backfill/trendlyne")
+async def trigger_trendlyne_backfill(symbol: str = "NIFTY"):
+    """Triggers historical OI backfill from Trendlyne for a symbol."""
+    try:
+        result = trendlyne_service.perform_backfill(symbol)
+        if result["status"] == "success":
+            return result
+        else:
+            raise HTTPException(status_code=500, detail=result["message"])
+    except Exception as e:
+        logger.error(f"Trendlyne backfill error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @fastapi_app.get("/api/instruments")
 async def get_instruments():
