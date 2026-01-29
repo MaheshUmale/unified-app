@@ -45,12 +45,13 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing ProTrade Platform...")
 
     # Capture main loop and inject into data_engine
+    global main_loop
     try:
-        loop = asyncio.get_running_loop()
+        main_loop = asyncio.get_running_loop()
     except RuntimeError:
-        loop = asyncio.get_event_loop()
+        main_loop = asyncio.get_event_loop()
 
-    data_engine.set_socketio(sio, loop=loop)
+    data_engine.set_socketio(sio, loop=main_loop)
     logger.info("SocketIO injected into data_engine")
 
     # 1. Initialize Strategies
@@ -118,8 +119,13 @@ data_engine.set_socketio(sio)
 upstox_api = UpstoxAPI(ACCESS_TOKEN)
 
 # Initialize Replay Engine
+main_loop = None
+
 def emit_replay(event, data, room=None):
-    asyncio.run_coroutine_threadsafe(sio.emit(event, data, room=room), asyncio.get_event_loop())
+    if main_loop:
+        asyncio.run_coroutine_threadsafe(sio.emit(event, data, room=room), main_loop)
+    else:
+        logger.error("Main event loop not captured, cannot emit replay event")
 
 replay_engine = ReplayEngine(emit_fn=emit_replay, db_dependencies={})
 
@@ -145,34 +151,6 @@ fastapi_app.add_middleware(
     allow_headers=["*"],
 )
 
-# Static Files (Serving Frontend Build)
-frontend_dist = os.path.abspath(os.path.join(os.path.dirname(__file__), "../frontend/angular-ui/dist/angular-ui/browser"))
-if not os.path.exists(frontend_dist):
-    frontend_dist = os.path.abspath(os.path.join(os.path.dirname(__file__), "../frontend/dist"))
-
-if os.path.exists(frontend_dist):
-    fastapi_app.mount("/static", StaticFiles(directory=frontend_dist), name="static")
-    logger.info(f"Mounted static files from {frontend_dist}")
-
-    @fastapi_app.get("/")
-    async def serve_index():
-        return FileResponse(os.path.join(frontend_dist, "index.html"))
-
-    @fastapi_app.get("/{full_path:path}")
-    async def serve_frontend(full_path: str):
-        # If the path looks like an API call, let it through (it shouldn't get here though)
-        if full_path.startswith("api/") or full_path.startswith("socket.io"):
-            raise HTTPException(status_code=404)
-
-        # Check if the file exists in the static directory
-        file_path = os.path.join(frontend_dist, full_path)
-        if os.path.isfile(file_path):
-            return FileResponse(file_path)
-
-        # Otherwise serve index.html for SPA routing
-        return FileResponse(os.path.join(frontend_dist, "index.html"))
-else:
-    logger.warning(f"Frontend dist directory not found at {frontend_dist}")
 
 
 @sio.event
@@ -603,6 +581,35 @@ async def get_instruments():
     except Exception as e:
         logger.error(f"Error fetching instruments: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch instruments")
+
+# Static Files (Serving Frontend Build)
+frontend_dist = os.path.abspath(os.path.join(os.path.dirname(__file__), "../frontend/angular-ui/dist/angular-ui/browser"))
+if not os.path.exists(frontend_dist):
+    frontend_dist = os.path.abspath(os.path.join(os.path.dirname(__file__), "../frontend/dist"))
+
+if os.path.exists(frontend_dist):
+    fastapi_app.mount("/static", StaticFiles(directory=frontend_dist), name="static")
+    logger.info(f"Mounted static files from {frontend_dist}")
+
+    @fastapi_app.get("/")
+    async def serve_index():
+        return FileResponse(os.path.join(frontend_dist, "index.html"))
+
+    @fastapi_app.get("/{full_path:path}")
+    async def serve_frontend(full_path: str):
+        # If the path looks like an API call, let it through
+        if full_path.startswith("api/") or full_path.startswith("socket.io"):
+            raise HTTPException(status_code=404)
+
+        # Check if the file exists in the static directory
+        file_path = os.path.join(frontend_dist, full_path)
+        if os.path.isfile(file_path):
+            return FileResponse(file_path)
+
+        # Otherwise serve index.html for SPA routing
+        return FileResponse(os.path.join(frontend_dist, "index.html"))
+else:
+    logger.warning(f"Frontend dist directory not found at {frontend_dist}")
 
 if __name__ == "__main__":
     import uvicorn
