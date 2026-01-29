@@ -4,6 +4,8 @@ Manages real-time data ingestion from Upstox, strategy dispatching, and real-tim
 """
 import asyncio
 import json
+from datetime import datetime, timedelta
+from bson import ObjectId
 import logging
 import random
 import ssl
@@ -51,6 +53,14 @@ TICK_BATCH_SIZE = 50
 tick_buffer = []
 buffer_lock = threading.Lock()
 
+class MongoJSONEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        if isinstance(obj, ObjectId):
+            return str(obj)
+        return super().default(obj)
+
 def set_socketio(sio, loop=None):
     """
     Allows the main app to inject the SocketIO instance and the main event loop.
@@ -71,6 +81,10 @@ def emit_event(event: str, data: Any, room: Optional[str] = None):
     global socketio_instance, main_event_loop
     if not socketio_instance:
         return
+
+    # Ensure data is JSON serializable (handles datetimes/ObjectIds)
+    if isinstance(data, (dict, list)):
+        data = json.loads(json.dumps(data, cls=MongoJSONEncoder))
 
     try:
         if main_event_loop and main_event_loop.is_running():
