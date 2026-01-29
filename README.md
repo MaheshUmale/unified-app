@@ -38,13 +38,53 @@ cd backend
 pip install -r requirements.txt
 ```
 
-### 2. Frontend Build
+### 2. Frontend Setup
+The project contains two frontend implementations: a primary React-based dashboard and an Angular-based UI.
+
+#### Option A: React Dashboard (Recommended)
+This is the primary UI located in the `frontend/` directory.
+
+**Production Build:**
+```bash
+cd frontend
+npm install
+npm run build
+```
+Build artifacts will be in `frontend/dist`.
+
+**Development Mode:**
+```bash
+cd frontend
+npm run dev
+```
+
+#### Option B: Angular UI
+Located in `frontend/angular-ui/`.
+
+**Production Build:**
 ```bash
 cd frontend/angular-ui
 npm install
 npm run build
 ```
-The build artifacts will be placed in `frontend/dist` and served by the backend.
+Build artifacts will be in `frontend/angular-ui/dist`.
+
+> **Note:** The FastAPI backend is configured to serve the Angular build by default if present, otherwise it serves the React build from `frontend/dist`.
+
+#### Serving Frontend via Backend
+Once you have built the frontend (React or Angular), you can run the backend server, and it will automatically serve the UI at `http://localhost:5051`.
+
+1. Build the UI:
+   ```bash
+   cd frontend
+   npm run build
+   ```
+2. Start the Backend:
+   ```bash
+   cd ../backend
+   python api_server.py
+   ```
+3. Access the app at `http://localhost:5051`.
 
 ## 🔑 Configuration & Security
 
