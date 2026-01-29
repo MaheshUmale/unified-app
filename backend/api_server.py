@@ -10,6 +10,7 @@ from typing import List, Dict, Any, Optional
 import socketio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from config import LOGGING_CONFIG, ACCESS_TOKEN, INITIAL_INSTRUMENTS
@@ -141,6 +142,24 @@ if not os.path.exists(frontend_dist):
 if os.path.exists(frontend_dist):
     fastapi_app.mount("/static", StaticFiles(directory=frontend_dist), name="static")
     logger.info(f"Mounted static files from {frontend_dist}")
+
+    @fastapi_app.get("/")
+    async def serve_index():
+        return FileResponse(os.path.join(frontend_dist, "index.html"))
+
+    @fastapi_app.get("/{full_path:path}")
+    async def serve_frontend(full_path: str):
+        # If the path looks like an API call, let it through (it shouldn't get here though)
+        if full_path.startswith("api/") or full_path.startswith("socket.io"):
+            raise HTTPException(status_code=404)
+
+        # Check if the file exists in the static directory
+        file_path = os.path.join(frontend_dist, full_path)
+        if os.path.isfile(file_path):
+            return FileResponse(file_path)
+
+        # Otherwise serve index.html for SPA routing
+        return FileResponse(os.path.join(frontend_dist, "index.html"))
 else:
     logger.warning(f"Frontend dist directory not found at {frontend_dist}")
 
