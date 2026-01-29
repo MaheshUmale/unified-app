@@ -37,12 +37,20 @@ def get_stock_id_for_symbol(symbol: str) -> Optional[int]:
         data = response.json()
 
         if data and 'body' in data and 'data' in data['body'] and len(data['body']['data']) > 0:
-            stock_id = data['body']['data'][0]['stock_id']
-            if stock_id:
-                STOCK_ID_CACHE[symbol] = stock_id
-                logger.info(f"Found Trendlyne stock ID {stock_id} for {symbol}")
-                return stock_id
+            # stock_id = data['body']['data'][0]['stock_id']
+            for item in data['body']['data']:
+                if item['symbol'].lower() == symbol.lower():
+                    stock_id = item['stockId']
+                    break
+            else:
+                stock_id = None
+        else:
+            stock_id = None
 
+        if stock_id:
+            STOCK_ID_CACHE[symbol] = stock_id
+            logger.info(f"Found Trendlyne stock ID {stock_id} for {symbol}")
+            return stock_id
         logger.warning(f"Could not find Trendlyne stock ID for {symbol}")
         return None
 
