@@ -71,6 +71,21 @@ Build artifacts will be in `frontend/angular-ui/dist`.
 
 > **Note:** The FastAPI backend is configured to serve the Angular build by default if present, otherwise it serves the React build from `frontend/dist`.
 
+#### Serving Frontend via Backend
+Once you have built the frontend (React or Angular), you can run the backend server, and it will automatically serve the UI at `http://localhost:5051`.
+
+1. Build the UI:
+   ```bash
+   cd frontend
+   npm run build
+   ```
+2. Start the Backend:
+   ```bash
+   cd ../backend
+   python api_server.py
+   ```
+3. Access the app at `http://localhost:5051`.
+
 ## 🔑 Configuration & Security
 
 For security, sensitive tokens must be provided via environment variables.
