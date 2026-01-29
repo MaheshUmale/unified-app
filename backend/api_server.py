@@ -556,20 +556,100 @@ async def get_replay_dates():
         logger.error(f"Error fetching replay dates: {e}")
         return []
 
+@fastapi_app.get("/api/replay/session_info/{date}/{index_key}")
+async def get_replay_session_info(date: str, index_key: str):
+    """Discovers the initial state and available instruments for a historical date."""
+    try:
+        tick_coll = get_tick_data_collection()
+        instr_coll = get_instruments_collection()
+
+        clean_key = unquote(index_key)
+
+        # 1. Find the first index tick for this date to get starting price
+        # Approximation: first tick after 09:15 IST
+        import pytz
+        ist = pytz.timezone('Asia/Kolkata')
+        start_dt = ist.localize(datetime.strptime(f"{date} 09:15:00", "%Y-%m-%d %H:%M:%S"))
+        start_ms = int(start_dt.timestamp() * 1000)
+
+        first_tick = tick_coll.find_one({
+            'instrumentKey': clean_key,
+            '$or': [
+                {'ts_ms': {'$gte': start_ms}},
+                {'fullFeed.indexFF.ltpc.ltt': {'$gte': str(start_ms)}}
+            ]
+        }, sort=[('ts_ms', 1), ('_id', 1)])
+
+        if not first_tick:
+            return {"error": "No index data found for this date"}
+
+        ff = first_tick.get('fullFeed', {}).get('indexFF', {})
+        start_price = float(ff.get('ltpc', {}).get('ltp', 0))
+
+        # 2. Get all recorded keys for this date
+        # This is expensive but necessary for discovery
+        query = {
+            '$or': [
+                {'ts_ms': {'$gte': start_ms, '$lte': start_ms + 86400000}},
+                {'fullFeed.marketFF.ltpc.ltt': {'$gte': str(start_ms)}},
+                {'fullFeed.indexFF.ltpc.ltt': {'$gte': str(start_ms)}}
+            ]
+        }
+        all_keys = tick_coll.distinct('instrumentKey', query)
+
+        # 3. Identify closest CE and PE recorded on that day
+        step = 50 if "Nifty 50" in clean_key else 100
+        atm = round(start_price / step) * step
+
+        # Find matching keys from the recorded list
+        suggested_ce = None
+        suggested_pe = None
+
+        for key in all_keys:
+            if clean_key in key: continue # skip index
+            # Look up trading symbol
+            instr = instr_coll.find_one({'instrument_key': key})
+            if not instr: continue
+
+            # Simple match for ATM (assuming recorded keys follow standard naming)
+            # A more robust way would be to check the instrument master's strike_price field
+            if instr.get('instrument_type') == 'CE' and instr.get('strike_price') == atm:
+                suggested_ce = key
+            elif instr.get('instrument_type') == 'PE' and instr.get('strike_price') == atm:
+                suggested_pe = key
+
+        return {
+            "date": date,
+            "start_price": start_price,
+            "atm": atm,
+            "suggested_ce": suggested_ce,
+            "suggested_pe": suggested_pe,
+            "available_keys": all_keys
+        }
+    except Exception as e:
+        logger.error(f"Error in get_replay_session_info: {e}")
+        return {"error": str(e)}
+
 @fastapi_app.get("/api/instruments")
 async def get_instruments():
     """Return list of instrument keys with human readable names."""
     try:
+        from external.upstox_helper import get_instrument_df
+        df = get_instrument_df()
+
         collection = get_tick_data_collection()
         instrument_keys = collection.distinct('instrumentKey')
         instruments = []
-        instr_master = get_instruments_collection()
 
         for key in instrument_keys:
-            instr_doc = instr_master.find_one({'instrument_key': key})
             name = key
-            if instr_doc:
-                name = instr_doc.get('trading_symbol') or instr_doc.get('underlying_symbol') or key
+            # Try to find in Upstox Master Dataframe
+            if df is not None and not df.empty:
+                matches = df[df['instrument_key'] == key]
+                if not matches.empty:
+                    row = matches.iloc[0]
+                    name = row.get('trading_symbol') or row.get('name') or key
+
             instruments.append({'key': key, 'name': name})
         return instruments
     except Exception as e:

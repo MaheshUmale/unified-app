@@ -289,7 +289,16 @@ const App = () => {
       </header>
 
       <div className="px-4 pt-4">
-          <ReplayControls instrumentKeys={[indexKey, atmOptionKeysRef.current.ce, atmOptionKeysRef.current.pe].filter(Boolean)} />
+          <ReplayControls
+            currentIndexKey={indexKey}
+            onReplaySessionInfo={(info) => {
+                setAtmStrike(info.atm);
+                atmOptionKeysRef.current = {
+                    ce: info.suggested_ce || '',
+                    pe: info.suggested_pe || ''
+                };
+            }}
+          />
       </div>
 
       <main className="p-4 flex-1 overflow-hidden flex flex-col">
