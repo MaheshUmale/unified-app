@@ -14,6 +14,12 @@ from db.mongodb import get_tick_data_collection, get_oi_collection, get_instrume
 
 logger = logging.getLogger(__name__)
 
+class MongoJSONEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        return super().default(obj)
+
 class ReplayEngine:
     def __init__(self, emit_fn, db_dependencies: Dict[str, Any]):
         self.emit_fn = emit_fn
@@ -234,7 +240,7 @@ class ReplayEngine:
                 # Wrap it in the same structure as live WSS
                 inst_key = tick['instrumentKey']
                 feeds_map = {inst_key: tick}
-                self.emit_fn('raw_tick', json.dumps(feeds_map))
+                self.emit_fn('raw_tick', json.dumps(feeds_map, cls=MongoJSONEncoder))
 
                 # Aggregate and emit footprint update
                 self._process_footprint(inst_key, tick)
