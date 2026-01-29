@@ -30,7 +30,10 @@ export const ReplayControls: React.FC<{ instrumentKeys: string[] }> = ({ instrum
                 if (msg.speed) setSpeed(msg.speed);
             } else if (msg.type === 'replay_finished') {
                 setStatus({ active: false });
-                alert(`Replay for ${msg.date} finished.`);
+                // alert(`Replay for ${msg.date} finished.`);
+            } else if (msg.type === 'replay_error') {
+                setStatus({ active: false });
+                alert(`Replay Error: ${msg.message}`);
             }
         });
 

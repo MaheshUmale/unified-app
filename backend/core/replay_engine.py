@@ -73,9 +73,10 @@ class ReplayEngine:
 
     def _process_footprint(self, instrument_key: str, tick: Dict[str, Any]):
         try:
-            ff = tick.get('fullFeed', {}).get('marketFF', {})
-            if not ff: return
-            ltpc = ff.get('ltpc')
+            ff = tick.get('fullFeed', {})
+            # Support both Market and Index feed structures
+            ltpc = ff.get('marketFF', {}).get('ltpc') or ff.get('indexFF', {}).get('ltpc')
+
             if not ltpc or not ltpc.get('ltp'): return
 
             raw_ltt = int(ltpc['ltt'])
@@ -124,29 +125,51 @@ class ReplayEngine:
     def _replay_loop(self, date_str: str, instrument_keys: List[str]):
         try:
             # 1. Load data
-            # Convert date_str (YYYY-MM-DD) to timestamp range
-            start_dt = datetime.strptime(f"{date_str} 09:15:00", "%Y-%m-%d %H:%M:%S")
-            end_dt = datetime.strptime(f"{date_str} 15:30:00", "%Y-%m-%d %H:%M:%S")
+            # Convert date_str (YYYY-MM-DD) to timestamp range (IST)
+            import pytz
+            ist = pytz.timezone('Asia/Kolkata')
+            start_dt = ist.localize(datetime.strptime(f"{date_str} 09:15:00", "%Y-%m-%d %H:%M:%S"))
+            end_dt = ist.localize(datetime.strptime(f"{date_str} 15:30:00", "%Y-%m-%d %H:%M:%S"))
+            start_ms = int(start_dt.timestamp() * 1000)
+            end_ms = int(end_dt.timestamp() * 1000)
 
-            # Fetch all ticks for the day
-            # Note: In production, we might want to stream from cursor if data is huge
-            # For replay, we load in chunks or all at once if memory allows.
+            logger.info(f"Replay Query: Range {start_ms} to {end_ms} for {instrument_keys}")
+
+            # Query for ticks within range.
+            # Broaden to include all data for the day if exact range fails,
+            # or just use the date field if we start adding it to ticks.
+            # For now, let's stick to the ms range but make it more robust.
             query = {
                 'instrumentKey': {'$in': instrument_keys},
-                # Assuming ticks have a timestamp in ms
-                # We need to find how ticks are indexed by time.
-                # Looking at data_engine, ticks from Upstox have 'ltpc.ltt'
+                '$or': [
+                    {'ts_ms': {'$gte': start_ms, '$lte': end_ms}},
+                    # Legacy fallback (try both int and str)
+                    {'fullFeed.marketFF.ltpc.ltt': {'$gte': str(start_ms), '$lte': str(end_ms)}},
+                    {'fullFeed.indexFF.ltpc.ltt': {'$gte': str(start_ms), '$lte': str(end_ms)}},
+                    {'fullFeed.marketFF.ltpc.ltt': {'$gte': start_ms, '$lte': end_ms}},
+                    {'fullFeed.indexFF.ltpc.ltt': {'$gte': start_ms, '$lte': end_ms}}
+                ]
             }
-            projection = {'_id': 0}
-            # Actually, we should probably query by _id if it's ObjectId containing timestamp,
-            # but better use a dedicated time field if available.
-            # Let's assume we have a way to filter by date.
-            # For now, let's just get all for simplicity of the module structure.
 
-            # Better: use a helper to get ticks for a specific day
-            #add projection if needed
-            #ticks_cursor = self.tick_collection.find(query, projection)
-            ticks_cursor = self.tick_collection.find(query,projection).sort([('fullFeed.marketFF.ltpc.ltt', 1)])
+            # Count documents to verify data presence before streaming
+            total_docs = self.tick_collection.count_documents(query)
+            if total_docs == 0:
+                logger.warning(f"No replay data found for {date_str} / {instrument_keys}")
+                # Try a broader search just by instrument key to see if any data exists at all
+                any_data = self.tick_collection.find_one({'instrumentKey': {'$in': instrument_keys}})
+                if any_data:
+                    logger.info(f"Broad search found data, but not in range {start_ms}-{end_ms}")
+
+                self.emit_fn('replay_error', {'message': f"No data found for {date_str}"})
+                self.emit_fn('replay_finished', {'date': date_str})
+                self.is_running = False
+                return
+
+            logger.info(f"Streaming {total_docs} ticks for replay")
+
+            # Sort by whatever timestamp is available.
+            # projection={'_id': 0} fixes JSON serialization error for ObjectId
+            ticks_cursor = self.tick_collection.find(query, {'_id': 0}).sort([('ts_ms', 1), ('fullFeed.marketFF.ltpc.ltt', 1)])
 
             # Fetch OI data for the same day
             # We need the underlying symbol for these instruments
@@ -176,9 +199,11 @@ class ReplayEngine:
                     if self.stop_event.is_set():
                         return
 
-                ff = tick.get('fullFeed', {}).get('marketFF', {})
-                if not ff: continue
-                ltt = int(ff.get('ltpc', {}).get('ltt', 0))
+                ff = tick.get('fullFeed', {})
+                ltpc = ff.get('marketFF', {}).get('ltpc') or ff.get('indexFF', {}).get('ltpc')
+
+                if not ltpc: continue
+                ltt = int(ltpc.get('ltt', 0))
                 if not ltt: continue
 
                 current_tick_time = ltt
