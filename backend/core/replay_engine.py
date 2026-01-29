@@ -175,7 +175,13 @@ class ReplayEngine:
 
             # Sort by whatever timestamp is available.
             # projection={'_id': 0} fixes JSON serialization error for ObjectId
-            ticks_cursor = self.tick_collection.find(query, {'_id': 0}).sort([('ts_ms', 1), ('fullFeed.marketFF.ltpc.ltt', 1)])
+            # Use a compound sort to ensure stability
+            ticks_cursor = self.tick_collection.find(query, {'_id': 0}).sort([
+                ('ts_ms', 1),
+                ('fullFeed.marketFF.ltpc.ltt', 1),
+                ('fullFeed.indexFF.ltpc.ltt', 1),
+                ('_id', 1)
+            ])
 
             # Fetch OI data for the same day
             # We need the underlying symbol for these instruments

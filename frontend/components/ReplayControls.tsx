@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { socket } from '../services/socketService';
-import { getReplayDates } from '../services/upstoxService';
-import { Play, Pause, Square, FastForward, Calendar } from 'lucide-react';
+import { getReplayDates, getReplaySessionInfo } from '../services/upstoxService';
+import { Play, Pause, Square, FastForward, Calendar, Loader2 } from 'lucide-react';
 
 interface ReplayStatus {
     active: boolean;
@@ -10,11 +10,18 @@ interface ReplayStatus {
     speed?: number;
 }
 
-export const ReplayControls: React.FC<{ instrumentKeys: string[] }> = ({ instrumentKeys }) => {
+interface Props {
+    currentIndexKey: string;
+    onReplaySessionInfo?: (info: any) => void;
+}
+
+export const ReplayControls: React.FC<Props> = ({ currentIndexKey, onReplaySessionInfo }) => {
     const [status, setStatus] = useState<ReplayStatus>({ active: false });
     const [availableDates, setAvailableDates] = useState<string[]>([]);
     const [selectedDate, setSelectedDate] = useState<string>('');
     const [speed, setSpeed] = useState<number>(1);
+    const [loadingInfo, setLoadingInfo] = useState(false);
+    const [sessionKeys, setSessionKeys] = useState<string[]>([]);
 
     useEffect(() => {
         // Fetch available dates for replay
@@ -40,9 +47,29 @@ export const ReplayControls: React.FC<{ instrumentKeys: string[] }> = ({ instrum
         return () => unsubscribe();
     }, []);
 
+    const handleDateChange = async (date: string) => {
+        setSelectedDate(date);
+        if (date && onReplaySessionInfo) {
+            setLoadingInfo(true);
+            try {
+                const info = await getReplaySessionInfo(date, currentIndexKey);
+                if (info && !info.error) {
+                    setSessionKeys(info.available_keys || []);
+                    onReplaySessionInfo(info);
+                } else {
+                    console.warn("Replay Session Info Error:", info?.error);
+                }
+            } finally {
+                setLoadingInfo(false);
+            }
+        }
+    };
+
     const handleStart = () => {
         if (!selectedDate) return;
-        socket.startReplay(selectedDate, instrumentKeys, speed);
+        // Replay all discovered keys for high fidelity
+        const keysToReplay = sessionKeys.length > 0 ? sessionKeys : [currentIndexKey];
+        socket.startReplay(selectedDate, keysToReplay, speed);
     };
 
     const handleTogglePause = () => {
@@ -67,11 +94,15 @@ export const ReplayControls: React.FC<{ instrumentKeys: string[] }> = ({ instrum
     return (
         <div className="flex flex-wrap items-center gap-4 p-3 bg-slate-800 rounded-lg border border-slate-700 shadow-lg text-white">
             <div className="flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-blue-400" />
+                {loadingInfo ? (
+                    <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />
+                ) : (
+                    <Calendar className="w-4 h-4 text-blue-400" />
+                )}
                 <select
                     value={selectedDate}
-                    onChange={(e) => setSelectedDate(e.target.value)}
-                    disabled={status.active}
+                    onChange={(e) => handleDateChange(e.target.value)}
+                    disabled={status.active || loadingInfo}
                     className="bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm focus:outline-none focus:border-blue-500 disabled:opacity-50"
                 >
                     <option value="">Select Date</option>
