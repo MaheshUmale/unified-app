@@ -25,6 +25,9 @@ interface OptionStrike {
           <select (change)="onInstrumentChange($event)">
             <option *ngFor="let inst of availableInstruments" [value]="inst.key">{{ inst.name }}</option>
           </select>
+          <button (click)="onBackfill()" [disabled]="isBackfilling">
+            {{ isBackfilling ? 'Backfilling...' : 'Backfill Trendlyne' }}
+          </button>
         </div>
       </div>
 
@@ -74,13 +77,19 @@ interface OptionStrike {
     .strike-val { font-weight: bold; color: #1a73e8; }
     .up { color: #2e7d32; font-weight: 500; }
     .down { color: #c62828; font-weight: 500; }
-    select { padding: 8px; border-radius: 4px; border: 1px solid #ccc; }
+    select { padding: 8px; border-radius: 4px; border: 1px solid #ccc; margin-right: 10px; }
+    button {
+      padding: 8px 16px; border-radius: 4px; border: none;
+      background: #1a73e8; color: white; cursor: pointer; font-weight: 500;
+    }
+    button:disabled { background: #ccc; cursor: not-allowed; }
   `]
 })
 export class OptionChainComponent implements OnInit, OnDestroy {
   currentInstrument: string = 'NIFTY';
   availableInstruments: any[] = [];
   optionChainData: OptionStrike[] = [];
+  isBackfilling: boolean = false;
   private sub: Subscription = new Subscription();
 
   constructor(private dataService: DataService) {}
@@ -103,6 +112,21 @@ export class OptionChainComponent implements OnInit, OnDestroy {
   onInstrumentChange(event: any): void {
     this.currentInstrument = event.target.value;
     this.dataService.subscribeToInstrument(this.currentInstrument);
+  }
+
+  onBackfill(): void {
+    this.isBackfilling = true;
+    const symbol = this.currentInstrument.split('|')[1]?.split(' ')[0] || 'NIFTY';
+    this.dataService.triggerTrendlyneBackfill(symbol).subscribe({
+      next: (res) => {
+        alert(`Backfill successful: ${res.slots_processed} slots processed.`);
+        this.isBackfilling = false;
+      },
+      error: (err) => {
+        alert(`Backfill failed: ${err.error?.detail || err.message}`);
+        this.isBackfilling = false;
+      }
+    });
   }
 
   private generateMockData() {

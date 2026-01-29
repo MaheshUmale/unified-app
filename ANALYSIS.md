@@ -6,6 +6,7 @@
 **Core Functionality:**
 - Real-time data ingestion from Upstox API V3 (Protobuf/WebSocket).
 - PCR/OI Engine Service for market sentiment analysis.
+- Trendlyne Service for historical OI data backfilling.
 - Strategy Execution (Failed Auction, Absorption, Candle Cross).
 - Risk Management and Order Execution.
 - Historical data replay and backfilling.

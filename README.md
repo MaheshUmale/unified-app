@@ -7,6 +7,7 @@ This repository contains a unified application merging a high-performance FastAP
 The application provides a comprehensive trading dashboard that combines:
 - **Live Market Data Feed**: Low-latency streaming via Upstox API V3 and SocketIO (Asynchronous).
 - **PCR & OI Engine**: Real-time calculation of Put-Call Ratio and sentiment analysis based on OI buildup.
+- **Trendlyne Integration**: Backend service to backfill historical OI data using Trendlyne SmartOptions API.
 - **Institutional Tape Flow**: Monitoring futures and options buildup to identify high-probability reversal setups.
 - **Automated Strategies**: Integrated trading agents including `CombinedSignalEngine` and `CandleCrossStrategy`.
 - **Modern UI**: Angular v16+ based dashboard utilizing RxJS for high-performance data streaming.

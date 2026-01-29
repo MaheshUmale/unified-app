@@ -5,7 +5,7 @@ import os
 
 # --- Configuration ---
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
-DB_NAME = "upstox_strategy_db"
+DB_NAME = "upstox_strategy_db_new"
 
 # --- Database Connection ---
 def get_db_client() -> MongoClient:

@@ -7,7 +7,7 @@ SANDBOX_ACCESS_TOKEN = os.getenv('UPSTOX_SANDBOX_ACCESS_TOKEN', 'YOUR_SANDBOX_AC
 
 # MongoDB Config
 MONGO_URI = os.getenv('MONGO_URI', "mongodb://localhost:27017/")
-DB_NAME = os.getenv('DB_NAME', "upstox_strategy_db")
+DB_NAME = os.getenv('DB_NAME', "upstox_strategy_db_new")
 
 # API Config
 UPSTOX_API_VERSION = "2.0"

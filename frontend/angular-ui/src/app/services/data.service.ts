@@ -47,4 +47,8 @@ export class DataService {
   subscribeToInstrument(instrumentKey: string) {
     this.socket.emit('subscribe_to_instrument', { instrument_key: instrumentKey });
   }
+
+  triggerTrendlyneBackfill(symbol: string): Observable<any> {
+    return this.http.post(`/api/backfill/trendlyne?symbol=${symbol}`, {});
+  }
 }
