@@ -4,12 +4,23 @@ import requests
 import gzip
 import io
 
+_INSTRUMENT_DF = None
+_LAST_FETCH = None
+
+def get_instrument_df():
+    global _INSTRUMENT_DF, _LAST_FETCH
+    now = datetime.now()
+    if _INSTRUMENT_DF is None or _LAST_FETCH is None or (now - _LAST_FETCH).total_seconds() > 86400:
+        url = "https://assets.upstox.com/market-quote/instruments/exchange/NSE.json.gz"
+        response = requests.get(url)
+        with gzip.GzipFile(fileobj=io.BytesIO(response.content)) as f:
+            _INSTRUMENT_DF = pd.read_json(f)
+        _LAST_FETCH = now
+    return _INSTRUMENT_DF
+
 def get_upstox_instruments(symbols=["NIFTY", "BANKNIFTY"], spot_prices={"NIFTY": 0, "BANKNIFTY": 0}):
     # 1. Download and Load Instrument Master (NSE_FO for Futures and Options)
-    url = "https://assets.upstox.com/market-quote/instruments/exchange/NSE.json.gz"
-    response = requests.get(url)
-    with gzip.GzipFile(fileobj=io.BytesIO(response.content)) as f:
-        df = pd.read_json(f)
+    df = get_instrument_df()
 
     full_mapping = {}
 
@@ -65,6 +76,28 @@ def get_upstox_instruments(symbols=["NIFTY", "BANKNIFTY"], spot_prices={"NIFTY":
         }
 
     return full_mapping
+
+def resolve_instrument_key(symbol: str, instrument_type: str = 'FUT', strike: float = None, expiry: str = None):
+    df = get_instrument_df()
+    mask = (df['name'] == symbol)
+    if instrument_type:
+        mask &= (df['instrument_type'] == instrument_type)
+
+    if strike is not None:
+        mask &= (df['strike_price'] == strike)
+
+    filtered = df[mask].copy()
+    if expiry:
+        # Assuming expiry is in YYYY-MM-DD
+        filtered['expiry_date'] = pd.to_datetime(filtered['expiry'], origin='unix', unit='ms').dt.strftime('%Y-%m-%d')
+        filtered = filtered[filtered['expiry_date'] == expiry]
+
+    if not filtered.empty:
+        # Sort by expiry to get the nearest one if not specified
+        filtered = filtered.sort_values(by='expiry')
+        return filtered.iloc[0]['instrument_key']
+    return None
+
 
 import  json
 import config

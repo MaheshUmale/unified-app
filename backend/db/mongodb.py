@@ -47,6 +47,11 @@ def get_stocks_collection() -> Collection:
     db = get_db()
     return db['stocks']
 
+def get_trendlyne_buildup_collection() -> Collection:
+    """Returns the collection for Trendlyne buildup data."""
+    db = get_db()
+    return db['trendlyne_buildup']
+
 
 SIGNAL_COLLECTION_NAME = 'trade_signals'
 

@@ -7,12 +7,39 @@ import time
 import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta, date
-from db.mongodb import get_oi_collection, get_stocks_collection
+from db.mongodb import get_oi_collection, get_stocks_collection, get_trendlyne_buildup_collection
 
 logger = logging.getLogger(__name__)
 
 # Cache for stock IDs to reduce redundant API calls
 STOCK_ID_CACHE: Dict[str, int] = {}
+
+class TrendlyneSession:
+    _session: Optional[requests.Session] = None
+    _csrf_token: Optional[str] = None
+    _last_init: Optional[datetime] = None
+
+    @classmethod
+    def get_session(cls) -> requests.Session:
+        if cls._session is None or (cls._last_init and datetime.now() - cls._last_init > timedelta(hours=1)):
+            cls._session = requests.Session()
+            cls._session.headers.update({
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'application/json, text/plain, */*',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Referer': 'https://smartoptions.trendlyne.com/'
+            })
+            try:
+                # Initial request to get cookies/CSRF
+                response = cls._session.get('https://smartoptions.trendlyne.com/', timeout=10)
+                cls._csrf_token = cls._session.cookies.get('csrftoken')
+                if cls._csrf_token:
+                    cls._session.headers.update({'X-CSRFToken': cls._csrf_token})
+                cls._last_init = datetime.now()
+                logger.info("Trendlyne session initialized")
+            except Exception as e:
+                logger.error(f"Failed to initialize Trendlyne session: {e}")
+        return cls._session
 
 def get_stock_id_for_symbol(symbol: str) -> Optional[int]:
     """
@@ -27,20 +54,21 @@ def get_stock_id_for_symbol(symbol: str) -> Optional[int]:
     if symbol in STOCK_ID_CACHE:
         return STOCK_ID_CACHE[symbol]
 
+    session = TrendlyneSession.get_session()
     search_url = "https://smartoptions.trendlyne.com/phoenix/api/search-contract-stock/"
     params = {'query': symbol.lower()}
 
     try:
         logger.info(f"Looking up Trendlyne stock ID for {symbol}...")
-        response = requests.get(search_url, params=params, timeout=10)
+        response = session.get(search_url, params=params, timeout=10)
         response.raise_for_status()
         data = response.json()
 
         if data and 'body' in data and 'data' in data['body'] and len(data['body']['data']) > 0:
-            # stock_id = data['body']['data'][0]['stock_id']
             for item in data['body']['data']:
-                if item['symbol'].lower() == symbol.lower():
-                    stock_id = item['stockId']
+                item_symbol = item.get('stock_code') or item.get('symbol')
+                if item_symbol and item_symbol.lower() == symbol.lower():
+                    stock_id = item.get('stock_id') or item.get('stockId')
                     break
             else:
                 stock_id = None
@@ -71,6 +99,7 @@ def fetch_and_save_oi_snapshot(symbol: str, stock_id: int, expiry_date_str: str,
     Returns:
         bool: True if the operation was successful.
     """
+    session = TrendlyneSession.get_session()
     url = "https://smartoptions.trendlyne.com/phoenix/api/live-oi-data/"
     params = {
         'stockId': stock_id,
@@ -80,7 +109,7 @@ def fetch_and_save_oi_snapshot(symbol: str, stock_id: int, expiry_date_str: str,
     }
 
     try:
-        response = requests.get(url, params=params, timeout=10)
+        response = session.get(url, params=params, timeout=10)
         response.raise_for_status()
         data = response.json()
 
@@ -151,9 +180,10 @@ def get_expiry_dates(stock_id: int, mtype: str = 'options'):
     Returns:
         list: List of expiry date strings.
     """
+    session = TrendlyneSession.get_session()
     url = f"https://smartoptions.trendlyne.com/phoenix/api/fno/get-expiry-dates/?mtype={mtype}&stock_id={stock_id}"
     try:
-        resp = requests.get(url, timeout=10)
+        resp = session.get(url, timeout=10)
         resp.raise_for_status()
         expiry_data = resp.json()
         if 'body' in expiry_data and 'expiryDates' in expiry_data['body']:
@@ -161,6 +191,67 @@ def get_expiry_dates(stock_id: int, mtype: str = 'options'):
         return []
     except Exception as e:
         logger.error(f"Error fetching expiry dates for stock {stock_id}: {e}")
+        return []
+
+def fetch_futures_buildup(symbol: str, expiry: str) -> List[Dict[str, Any]]:
+    """Fetches futures buildup data and caches it."""
+    session = TrendlyneSession.get_session()
+    url = f"https://smartoptions.trendlyne.com/phoenix/api/fno/buildup-15/{expiry}/{symbol}/?fno_mtype=futures&format=json"
+    try:
+        resp = session.get(url, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        results = data.get('results', [])
+
+        # Cache in MongoDB
+        if results:
+            coll = get_trendlyne_buildup_collection()
+            for item in results:
+                item['symbol'] = symbol
+                item['expiry'] = expiry
+                item['mtype'] = 'futures'
+                item['updated_at'] = datetime.now()
+                query = {'symbol': symbol, 'expiry': expiry, 'timestamp': item.get('timestamp'), 'mtype': 'futures'}
+                coll.update_one(query, {'$set': item}, upsert=True)
+
+        return results
+    except Exception as e:
+        logger.error(f"Error fetching futures buildup for {symbol}: {e}")
+        return []
+
+def fetch_option_buildup(symbol: str, expiry: str, strike: int, option_type: str) -> List[Dict[str, Any]]:
+    """Fetches option buildup data and caches it."""
+    session = TrendlyneSession.get_session()
+    url = f"https://smartoptions.trendlyne.com/phoenix/api/fno/buildup-15/{expiry}/{symbol}/?fno_mtype=options&format=json&option_type={option_type}&strikePrice={strike}"
+    try:
+        resp = session.get(url, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        results = data.get('results', [])
+
+        # Cache in MongoDB
+        if results:
+            coll = get_trendlyne_buildup_collection()
+            for item in results:
+                item['symbol'] = symbol
+                item['expiry'] = expiry
+                item['strike'] = strike
+                item['option_type'] = option_type
+                item['mtype'] = 'options'
+                item['updated_at'] = datetime.now()
+                query = {
+                    'symbol': symbol,
+                    'expiry': expiry,
+                    'strike': strike,
+                    'option_type': option_type,
+                    'timestamp': item.get('timestamp'),
+                    'mtype': 'options'
+                }
+                coll.update_one(query, {'$set': item}, upsert=True)
+
+        return results
+    except Exception as e:
+        logger.error(f"Error fetching option buildup for {symbol} {strike} {option_type}: {e}")
         return []
 
 def generate_time_intervals(start_time="09:15", end_time="15:30", interval_minutes=15):

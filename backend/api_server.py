@@ -24,6 +24,7 @@ from db.mongodb import (
 )
 from core import data_engine
 from external import trendlyne_api as trendlyne_service
+from external.upstox_api import UpstoxAPI
 from core.strategies.candle_cross import CandleCrossStrategy, DataPersistor
 try:
     from core.strategies.combined_signal import CombinedSignalEngine
@@ -111,6 +112,9 @@ app = socketio.ASGIApp(sio, fastapi_app)
 
 # Inject SocketIO into data_engine
 data_engine.set_socketio(sio)
+
+# Initialize Upstox API
+upstox_api = UpstoxAPI(ACCESS_TOKEN)
 
 # Configure CORS
 ALLOWED_ORIGINS = [
@@ -424,6 +428,80 @@ async def trigger_trendlyne_backfill(symbol: str = Query("NIFTY", description="T
     except Exception as e:
         logger.error(f"Trendlyne backfill error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+@fastapi_app.get("/api/upstox/intraday/{instrument_key}")
+async def get_upstox_intraday(instrument_key: str):
+    """Fetch intraday candles from Upstox V3."""
+    try:
+        clean_key = unquote(instrument_key)
+        data = upstox_api.get_intraday_candles(clean_key)
+        if data and data.get('status') == 'success':
+            return data.get('data', {})
+        raise HTTPException(status_code=500, detail="Failed to fetch intraday candles")
+    except Exception as e:
+        logger.error(f"Error in get_upstox_intraday: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@fastapi_app.get("/api/upstox/option_chain/{instrument_key}/{expiry_date}")
+async def get_upstox_option_chain(instrument_key: str, expiry_date: str):
+    """Fetch option chain from Upstox V2."""
+    try:
+        clean_key = unquote(instrument_key)
+        data = upstox_api.get_option_chain(clean_key, expiry_date)
+        if data and data.get('status') == 'success':
+            return data.get('data', [])
+        raise HTTPException(status_code=500, detail="Failed to fetch option chain")
+    except Exception as e:
+        logger.error(f"Error in get_upstox_option_chain: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@fastapi_app.get("/api/trendlyne/expiry/{symbol}")
+async def get_trendlyne_expiry(symbol: str):
+    """Fetch expiry dates from Trendlyne."""
+    try:
+        stock_id = trendlyne_service.get_stock_id_for_symbol(symbol)
+        if not stock_id:
+            raise HTTPException(status_code=404, detail=f"Stock ID not found for {symbol}")
+
+        dates = trendlyne_service.get_expiry_dates(stock_id)
+        # Format labels like frontend does
+        formatted_dates = []
+        for i, date_str in enumerate(dates):
+            try:
+                d = datetime.strptime(date_str, "%Y-%m-%d")
+                day = d.day
+                month = d.strftime('%b').lower()
+                year = d.year
+                suffix = 'near' if i == 0 else 'next' if i == 1 else 'far'
+                label = f"{day}-{month}-{year}-{suffix}"
+                formatted_dates.append({"date": date_str, "label": label})
+            except:
+                formatted_dates.append({"date": date_str, "label": date_str})
+
+        return formatted_dates
+    except Exception as e:
+        logger.error(f"Error in get_trendlyne_expiry: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@fastapi_app.get("/api/trendlyne/buildup/futures/{symbol}/{expiry}")
+async def get_trendlyne_futures_buildup(symbol: str, expiry: str):
+    """Fetch futures buildup from Trendlyne."""
+    try:
+        data = trendlyne_service.fetch_futures_buildup(symbol, expiry)
+        return data
+    except Exception as e:
+        logger.error(f"Error in get_trendlyne_futures_buildup: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@fastapi_app.get("/api/trendlyne/buildup/options/{symbol}/{expiry}/{strike}/{option_type}")
+async def get_trendlyne_option_buildup(symbol: str, expiry: str, strike: int, option_type: str):
+    """Fetch option buildup from Trendlyne."""
+    try:
+        data = trendlyne_service.fetch_option_buildup(symbol, expiry, strike, option_type)
+        return data
+    except Exception as e:
+        logger.error(f"Error in get_trendlyne_option_buildup: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @fastapi_app.get("/api/instruments")
 async def get_instruments():
