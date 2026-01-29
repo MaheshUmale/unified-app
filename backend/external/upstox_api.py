@@ -46,3 +46,37 @@ class UpstoxAPI:
         except Exception as e:
             logger.error(f"Error fetching option chain: {e}")
             return None
+
+    def get_intraday_candles(self, instrument_key: str, interval: str = '1') -> Optional[Dict[str, Any]]:
+        """Fetches intraday candle data using Upstox V3 API."""
+        url = f'https://api.upstox.com/v3/historical-candle/intraday/{instrument_key}/minutes/{interval}'
+        headers = {
+            'Accept': 'application/json',
+            'Authorization': f'Bearer {self.access_token}'
+        }
+        try:
+            response = requests.get(url, headers=headers, timeout=10)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error(f"Error fetching intraday candles for {instrument_key}: {e}")
+            return None
+
+    def get_historical_candles(self, instrument_key: str, interval: str, to_date: str, from_date: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Fetches historical candle data using Upstox V3 API."""
+        if from_date:
+            url = f'https://api.upstox.com/v3/historical-candle/{instrument_key}/{interval}/{to_date}/{from_date}'
+        else:
+            url = f'https://api.upstox.com/v3/historical-candle/{instrument_key}/{interval}/{to_date}'
+
+        headers = {
+            'Accept': 'application/json',
+            'Authorization': f'Bearer {self.access_token}'
+        }
+        try:
+            response = requests.get(url, headers=headers, timeout=10)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error(f"Error fetching historical candles for {instrument_key}: {e}")
+            return None
