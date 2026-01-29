@@ -7,6 +7,7 @@ import { OhlcData, MarketSentiment } from './types';
 import MarketChart from './components/MarketChart';
 import BuildupPanel from './components/BuildupPanel';
 import SentimentAnalysis from './components/SentimentAnalysis';
+import PCRVsSpotChart from './components/AnalyticsCharts';
 
 type TabType = 'TERMINAL' | 'ANALYTICS' | 'FLOW';
 
@@ -25,6 +26,7 @@ const App = () => {
   const [futuresBuildup, setFuturesBuildup] = useState<Trendlyne.BuildupData[]>([]);
   const [ceBuildup, setCeBuildup] = useState<Trendlyne.BuildupData[]>([]);
   const [peBuildup, setPeBuildup] = useState<Trendlyne.BuildupData[]>([]);
+  const [historicalPcr, setHistoricalPcr] = useState<any[]>([]);
 
   const [loading, setLoading] = useState(false);
   const [lastSync, setLastSync] = useState<Date>(new Date());
@@ -61,11 +63,17 @@ const App = () => {
     }
   }, []);
 
+  const lastExpiryIndexRef = useRef('');
+
   useEffect(() => {
     const updateExpiry = async () => {
         const symbol = indexKey.includes('Nifty 50') ? 'NIFTY' : 'BANKNIFTY';
+        if (lastExpiryIndexRef.current === symbol) return;
+
+        setLoading(true);
         const expiries = await Trendlyne.fetchExpiryDates(symbol);
         if (expiries && expiries.length > 0) {
+            lastExpiryIndexRef.current = symbol;
             setExpiryDate(expiries[0].date);
             setExpiryLabel(expiries[0].label);
         }
@@ -81,14 +89,55 @@ const App = () => {
         if (ce && quotes[ce]) setCeData(prev => updateCandle(prev, quotes[ce]));
         if (pe && quotes[pe]) setPeData(prev => updateCandle(prev, quotes[pe]));
     };
-    return socket.onMessage(handleUpdate);
+
+    const handleFootprint = ({ type, data }: { type: 'history' | 'update', data: any }) => {
+        const item = Array.isArray(data) ? data[0] : data;
+        const instrumentToken = item?.instrument_token;
+        if (!instrumentToken) return;
+
+        const transform = (b: any): OhlcData => ({
+            timestamp: new Date(b.ts).toISOString(),
+            open: b.open, high: b.high, low: b.low, close: b.close, volume: b.volume
+        });
+
+        if (type === 'history') {
+            const hist = data.map(transform);
+            if (instrumentToken === indexKeyRef.current) setIndexData(hist);
+            if (instrumentToken === atmOptionKeysRef.current.ce) setCeData(hist);
+            if (instrumentToken === atmOptionKeysRef.current.pe) setPeData(hist);
+        } else {
+            const bar = transform(data);
+            const updateBar = (prev: OhlcData[]) => {
+                if (!prev.length) return [bar];
+                const last = prev[prev.length - 1];
+                if (bar.timestamp === last.timestamp) return [...prev.slice(0, -1), bar];
+                if (new Date(bar.timestamp).getTime() > new Date(last.timestamp).getTime()) return [...prev.slice(-499), bar];
+                return prev;
+            };
+            if (instrumentToken === indexKeyRef.current) setIndexData(updateBar);
+            if (instrumentToken === atmOptionKeysRef.current.ce) setCeData(updateBar);
+            if (instrumentToken === atmOptionKeysRef.current.pe) setPeData(updateBar);
+        }
+    };
+
+    const cleanupMessage = socket.onMessage(handleUpdate);
+    const cleanupFootprint = socket.onFootprint(handleFootprint);
+    return () => {
+        cleanupMessage();
+        cleanupFootprint();
+    };
   }, [updateCandle]);
 
   const loadData = useCallback(async () => {
+    const currentSymbol = indexKey.includes('Nifty 50') ? 'NIFTY' : 'BANKNIFTY';
+    // Ensure we are loading data for the correct expiry matching the current index
+    if (lastExpiryIndexRef.current !== currentSymbol) {
+        console.log(`Skipping loadData: Expiry not yet updated for ${currentSymbol}`);
+        return;
+    }
+
     setLoading(true);
     try {
-        const currentSymbol = indexKey.includes('Nifty 50') ? 'NIFTY' : 'BANKNIFTY';
-
         const [candles, chainData] = await Promise.all([
             API.getIntradayCandles(indexKey).catch(() => []),
             API.getOptionChain(indexKey, expiryDate).catch(() => [])
@@ -127,6 +176,9 @@ const App = () => {
                     setTrendlyneReady(Trendlyne.isSessionInitialized);
                 }
             }
+
+            const pcrHist = await fetch(`/api/analytics/pcr/${currentSymbol}`).then(r => r.json()).catch(() => []);
+            setHistoricalPcr(pcrHist);
         }
         setLastSync(new Date());
     } catch (e) {
@@ -239,14 +291,14 @@ const App = () => {
         )}
 
         {activeTab === 'ANALYTICS' && (
-            <div className="grid grid-cols-12 gap-4 h-full animate-fadeIn">
-                <div className="col-span-12 xl:col-span-3">
+            <div className="grid grid-cols-12 gap-4 h-full animate-fadeIn overflow-hidden">
+                <div className="col-span-12 xl:col-span-3 flex flex-col gap-4">
                     {sentiment ? (
                         <SentimentAnalysis sentiment={sentiment} />
                     ) : (
                         <div className="glass-panel rounded-xl p-8 flex items-center justify-center text-[9px] text-gray-600 font-mono uppercase tracking-widest">Crunching Sentiment...</div>
                     )}
-                    <div className="mt-4 glass-panel rounded-xl p-4">
+                    <div className="glass-panel rounded-xl p-4">
                       <h3 className="text-[10px] font-black text-gray-500 uppercase mb-3">System Health</h3>
                       <div className="space-y-2 font-mono-data text-[9px]">
                         <div className="flex justify-between">
@@ -259,22 +311,49 @@ const App = () => {
                         </div>
                         <div className="flex justify-between">
                           <span className="text-gray-600">Data Feed:</span>
-                          <span className="text-brand-blue">UPSTOX V3</span>
+                          <span className="text-brand-blue">UPSTOX V3 + MONGODB</span>
                         </div>
                       </div>
                     </div>
                 </div>
-                <div className="col-span-12 xl:col-span-9 grid grid-rows-2 gap-4">
-                    <div className="glass-panel rounded-xl p-4 flex flex-col">
-                        <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-4">ATM Strike Dynamics</h3>
-                        <div className="grid grid-cols-2 gap-4 flex-1">
-                            <MarketChart title="CE ATM Volatility" data={ceData} />
-                            <MarketChart title="PE ATM Volatility" data={peData} />
+                <div className="col-span-12 xl:col-span-9 flex flex-col gap-4 overflow-hidden">
+                    <div className="flex-1 glass-panel rounded-xl p-4 flex flex-col min-h-0">
+                        <div className="flex justify-between items-center mb-4">
+                           <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-widest">PCR vs SPOT Converge</h3>
+                           <div className="flex gap-4">
+                              <div className="flex items-center gap-1.5">
+                                 <div className="w-2 h-0.5 bg-brand-blue"></div>
+                                 <span className="text-[8px] font-bold text-gray-400">PUT-CALL RATIO</span>
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                 <div className="w-2 h-0.5 bg-gray-500 border-t border-dashed border-gray-400"></div>
+                                 <span className="text-[8px] font-bold text-gray-400">SPOT PRICE</span>
+                              </div>
+                           </div>
+                        </div>
+                        <div className="flex-1">
+                          <PCRVsSpotChart pcrData={historicalPcr} spotData={indexData} title="Market Sentiment Convergence" />
                         </div>
                     </div>
-                    <div className="glass-panel rounded-xl p-4 flex flex-col">
-                        <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-4">Index Performance</h3>
-                        <MarketChart title="Spot Base" data={indexData} />
+                    <div className="h-1/3 glass-panel rounded-xl p-4 flex flex-col min-h-0">
+                        <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-4">Sentiment Momentum (PCR Δ)</h3>
+                        <div className="flex-1 grid grid-cols-4 gap-4">
+                           {historicalPcr.slice(-5).reverse().slice(0, 4).map((d, i, arr) => {
+                             const prev = arr[i+1];
+                             const diff = prev ? d.pcr - prev.pcr : 0;
+                             return (
+                                <div key={i} className="bg-white/5 rounded-lg p-3 flex flex-col justify-center border border-white/5">
+                                    <span className="text-[8px] text-gray-500 font-bold mb-1 uppercase">{new Date(d.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+                                    <div className="flex items-baseline gap-2">
+                                    <span className="text-lg font-black text-white font-mono-data">{d.pcr}</span>
+                                    <span className={`text-[9px] font-bold ${diff >= 0 ? 'text-brand-green' : 'text-brand-red'}`}>
+                                        {prev ? (diff > 0 ? '+' : '') + diff.toFixed(2) : '---'}
+                                    </span>
+                                    </div>
+                                </div>
+                             );
+                           })}
+                        </div>
                     </div>
                 </div>
             </div>

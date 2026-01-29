@@ -431,16 +431,32 @@ async def trigger_trendlyne_backfill(symbol: str = Query("NIFTY", description="T
 
 @fastapi_app.get("/api/upstox/intraday/{instrument_key}")
 async def get_upstox_intraday(instrument_key: str):
-    """Fetch intraday candles from Upstox V3."""
+    """Fetch intraday candles from DB backfill or Upstox V3."""
     try:
         clean_key = unquote(instrument_key)
+
+        # 1. Try backfill from MongoDB via data_engine
+        db_history = data_engine.load_intraday_data(clean_key)
+        if db_history and len(db_history) > 10: # If we have significant data in DB
+            # Convert footprint bars to OHLC format expected by UI
+            candles = []
+            for bar in db_history:
+                candles.append([
+                    datetime.fromtimestamp(bar['ts']/1000).isoformat(),
+                    bar['open'], bar['high'], bar['low'], bar['close'], bar['volume'], 0
+                ])
+            return {"candles": candles}
+
+        # 2. Fallback to Upstox API
         data = upstox_api.get_intraday_candles(clean_key)
         if data and data.get('status') == 'success':
             return data.get('data', {})
-        raise HTTPException(status_code=500, detail="Failed to fetch intraday candles")
+
+        # 3. Last effort: return empty if everything fails
+        return {"candles": []}
     except Exception as e:
-        logger.error(f"Error in get_upstox_intraday: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error in get_upstox_intraday for {instrument_key}: {e}")
+        return {"candles": []}
 
 @fastapi_app.get("/api/upstox/option_chain/{instrument_key}/{expiry_date}")
 async def get_upstox_option_chain(instrument_key: str, expiry_date: str):
@@ -501,6 +517,36 @@ async def get_trendlyne_option_buildup(symbol: str, expiry: str, strike: int, op
         return data
     except Exception as e:
         logger.error(f"Error in get_trendlyne_option_buildup: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@fastapi_app.get("/api/analytics/pcr/{symbol}")
+async def get_historical_pcr(symbol: str):
+    """Fetch historical PCR and Spot data for analytics."""
+    try:
+        oi_coll = get_oi_collection()
+        # Fetch today's OI data
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        cursor = oi_coll.find({
+            'symbol': symbol,
+            'date': today_str
+        }).sort('timestamp', 1)
+
+        results = []
+        for doc in cursor:
+            call_oi = doc.get('call_oi', 0)
+            put_oi = doc.get('put_oi', 0)
+            pcr = round(put_oi / call_oi, 2) if call_oi > 0 else 0
+
+            results.append({
+                'timestamp': f"{doc['date']}T{doc['timestamp']}:00",
+                'pcr': pcr,
+                'call_oi': call_oi,
+                'put_oi': put_oi
+            })
+
+        return results
+    except Exception as e:
+        logger.error(f"Error in get_historical_pcr: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @fastapi_app.get("/api/instruments")
