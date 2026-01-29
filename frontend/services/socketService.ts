@@ -76,6 +76,49 @@ class SocketService {
         this.socket.on('footprint_history', (data: any) => {
             this.footprintListeners.forEach(fn => fn({ type: 'history', data }));
         });
+
+        this.socket.on('oi_update', (data: any) => {
+            // Forward OI updates to generic listeners for now or add specific ones
+            this.listeners.forEach(fn => fn({ type: 'oi_update', ...data }));
+        });
+
+        this.socket.on('replay_status', (status: any) => {
+            this.listeners.forEach(fn => fn({ type: 'replay_status', ...status }));
+        });
+
+        this.socket.on('replay_finished', (data: any) => {
+            this.listeners.forEach(fn => fn({ type: 'replay_finished', ...data }));
+        });
+    }
+
+    startReplay(date: string, instrumentKeys: string[], speed: number = 1.0) {
+        if (this.socket?.connected) {
+            this.socket.emit('start_replay', { date, instrument_keys: instrumentKeys, speed });
+        }
+    }
+
+    stopReplay() {
+        if (this.socket?.connected) {
+            this.socket.emit('stop_replay', {});
+        }
+    }
+
+    pauseReplay() {
+        if (this.socket?.connected) {
+            this.socket.emit('pause_replay', {});
+        }
+    }
+
+    resumeReplay() {
+        if (this.socket?.connected) {
+            this.socket.emit('resume_replay', {});
+        }
+    }
+
+    setReplaySpeed(speed: number) {
+        if (this.socket?.connected) {
+            this.socket.emit('set_replay_speed', { speed });
+        }
     }
 
     setSubscriptions(keys: string[]) {

@@ -23,6 +23,7 @@ from db.mongodb import (
     SIGNAL_COLLECTION_NAME
 )
 from core import data_engine
+from core.replay_engine import ReplayEngine
 from external import trendlyne_api as trendlyne_service
 from external.upstox_api import UpstoxAPI
 from core.strategies.candle_cross import CandleCrossStrategy, DataPersistor
@@ -116,6 +117,12 @@ data_engine.set_socketio(sio)
 # Initialize Upstox API
 upstox_api = UpstoxAPI(ACCESS_TOKEN)
 
+# Initialize Replay Engine
+def emit_replay(event, data, room=None):
+    asyncio.run_coroutine_threadsafe(sio.emit(event, data, room=room), asyncio.get_event_loop())
+
+replay_engine = ReplayEngine(emit_fn=emit_replay, db_dependencies={})
+
 # Configure CORS
 ALLOWED_ORIGINS = [
     "http://localhost:5000",
@@ -204,22 +211,34 @@ async def handle_subscribe_instrument(sid, data):
         if current_bar:
             await sio.emit('footprint_update', current_bar, to=sid)
 
-@sio.on('replay_market_data')
-async def handle_replay(sid, data):
-    """Handles market data replay request."""
-    instrument_key = data.get('instrument_key')
-    speed = int(data.get('speed', 100))
-    start_ts = data.get('start_ts')
-    timeframe = int(data.get('timeframe', 1))
+@sio.on('start_replay')
+async def handle_start_replay(sid, data):
+    """Starts a full day synchronized replay."""
+    date_str = data.get('date')
+    instrument_keys = data.get('instrument_keys', INITIAL_INSTRUMENTS)
+    speed = float(data.get('speed', 1.0))
 
-    logger.info(f"Replay requested for {instrument_key} by {sid}")
-    data_engine.start_replay_thread(instrument_key, speed, start_ts, timeframe)
+    logger.info(f"Full replay requested for {date_str} by {sid}")
+    replay_engine.start_replay(date_str, instrument_keys, speed)
 
 @sio.on('stop_replay')
 async def handle_stop_replay(sid, data):
     """Stops active replay."""
     logger.info(f"Stop replay requested by {sid}")
-    data_engine.stop_active_replay()
+    replay_engine.stop_replay()
+
+@sio.on('pause_replay')
+async def handle_pause_replay(sid, data):
+    replay_engine.pause_replay()
+
+@sio.on('resume_replay')
+async def handle_resume_replay(sid, data):
+    replay_engine.resume_replay()
+
+@sio.on('set_replay_speed')
+async def handle_set_speed(sid, data):
+    speed = float(data.get('speed', 1.0))
+    replay_engine.set_speed(speed)
 
 @fastapi_app.get("/health")
 async def health_check():
@@ -548,6 +567,22 @@ async def get_historical_pcr(symbol: str):
     except Exception as e:
         logger.error(f"Error in get_historical_pcr: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@fastapi_app.get("/api/replay/dates")
+async def get_replay_dates():
+    """Returns a list of dates that have tick data available for replay."""
+    try:
+        tick_coll = get_tick_data_collection()
+        # This might be slow if we have many ticks.
+        # In a real app we'd have a 'sessions' collection.
+        # Let's try to get distinct dates from the Insertion time or similar.
+        # For now, let's look at OI data which is grouped by date.
+        oi_coll = get_oi_collection()
+        dates = oi_coll.distinct('date')
+        return sorted(dates, reverse=True)
+    except Exception as e:
+        logger.error(f"Error fetching replay dates: {e}")
+        return []
 
 @fastapi_app.get("/api/instruments")
 async def get_instruments():
