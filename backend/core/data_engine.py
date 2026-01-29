@@ -17,9 +17,6 @@ from datetime import datetime, timedelta
 
 import MarketDataFeedV3_pb2 as pb
 import pandas as pd
-import requests
-import websocket
-import websockets
 from google.protobuf.json_format import MessageToDict
 from external import upstox_helper as ExtractInstrumentKeys
 from external.upstox_feed import UpstoxFeed
@@ -49,6 +46,11 @@ subscribed_instruments = set()
 tick_collection = get_tick_data_collection()
 raw_tick_collection = get_raw_tick_data_collection()
 
+# Batching for MongoDB
+TICK_BATCH_SIZE = 50
+tick_buffer = []
+buffer_lock = threading.Lock()
+
 def set_socketio(sio, loop=None):
     """
     Allows the main app to inject the SocketIO instance and the main event loop.
@@ -61,28 +63,49 @@ def set_socketio(sio, loop=None):
     socketio_instance = sio
     main_event_loop = loop
 
-def emit_event(event, data, room=None):
+def emit_event(event: str, data: Any, room: Optional[str] = None):
     """
-    Helper to emit SocketIO events from background threads safely using run_coroutine_threadsafe.
+    Helper to emit SocketIO events from background threads safely.
+    Uses run_coroutine_threadsafe if an event loop is available.
     """
     global socketio_instance, main_event_loop
-    if socketio_instance:
+    if not socketio_instance:
+        return
+
+    try:
+        if main_event_loop and main_event_loop.is_running():
+            asyncio.run_coroutine_threadsafe(
+                socketio_instance.emit(event, data, room=room),
+                main_event_loop
+            )
+        else:
+            # Fallback if loop is not set/running - attempt direct emit (might block or fail if not in main thread)
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.run_coroutine_threadsafe(socketio_instance.emit(event, data, room=room), loop)
+                else:
+                    loop.run_until_complete(socketio_instance.emit(event, data, room=room))
+            except RuntimeError:
+                # No event loop in this thread
+                pass
+    except Exception as e:
+        logging.error(f"Error emitting SocketIO event {event}: {e}")
+
+def flush_tick_buffer():
+    """Flushes the tick buffer to MongoDB."""
+    global tick_buffer
+    to_insert = []
+    with buffer_lock:
+        if tick_buffer:
+            to_insert = tick_buffer
+            tick_buffer = []
+
+    if to_insert:
         try:
-            # AsyncServer (FastAPI/ASGI)
-            if main_event_loop and main_event_loop.is_running():
-                asyncio.run_coroutine_threadsafe(
-                    socketio_instance.emit(event, data, room=room),
-                    main_event_loop
-                )
-            else:
-                # Fallback for sync environments or if loop is not yet set
-                try:
-                    # This might fail in background threads without a loop
-                    socketio_instance.emit(event, data, room=room)
-                except Exception:
-                    logging.error(f"Failed to emit {event}: No running event loop captured.")
+            tick_collection.insert_many(to_insert, ordered=False)
         except Exception as e:
-            logging.error(f"Error emitting SocketIO event {event}: {e}")
+            logging.error(f"MongoDB Batch Insert Error: {e}")
 
 # Session State (Per-Instrument)
 active_bars = {}
@@ -163,13 +186,12 @@ def on_message(message: Union[Dict, bytes, str]):
         logging.error(f"SocketIO raw_tick Emit Error: {e}")
 
     if feeds_map:
+        current_time = datetime.now()
+        new_ticks = []
         for inst_key, feed_datum in feeds_map.items():
             feed_datum['instrumentKey'] = inst_key
-            feed_datum['_insertion_time'] = datetime.now()
-            try:
-                tick_collection.insert_one(feed_datum)
-            except Exception as e:
-                logging.error(f"MongoDB Tick Insert Error: {e}")
+            feed_datum['_insertion_time'] = current_time
+            new_ticks.append(feed_datum)
 
             if inst_key in active_strategies:
                 for strategy in active_strategies[inst_key]:
@@ -179,6 +201,13 @@ def on_message(message: Union[Dict, bytes, str]):
                         logging.error(f"Error in strategy {strategy.__class__.__name__} for {inst_key}: {e}")
 
             process_footprint_tick(inst_key, feed_datum)
+
+        # Batching logic
+        global tick_buffer
+        with buffer_lock:
+            tick_buffer.extend(new_ticks)
+            if len(tick_buffer) >= TICK_BATCH_SIZE:
+                threading.Thread(target=flush_tick_buffer, daemon=True).start()
 
 def process_footprint_tick(instrument_key: str, data_datum: Dict[str, Any]):
     """
@@ -351,13 +380,13 @@ def load_intraday_data(instrument_key):
     cursor = tick_collection.find({'instrumentKey': instrument_key}).sort('_id', 1)
     bars = []
 
-    class MockSocket:
-        def emit(self, event, data, room=None):
+    try:
+        # Create a collector for replay data
+        def collect_bar(event, data, room=None):
             if event == 'footprint_data':
                 bars.append(data)
 
-    try:
-        replay = ReplayManager(MockSocket())
+        replay = ReplayManager(emit_fn=collect_bar)
         replay.timeframe_sec = 60
         for doc in cursor:
             ff = doc.get('fullFeed', {}).get('marketFF', {})
@@ -368,6 +397,7 @@ def load_intraday_data(instrument_key):
 
         if replay.aggregated_bar:
             bars.append(replay.aggregated_bar)
+
         bars.sort(key=lambda x: x.get('ts', 0))
         return bars
     except Exception as e:
@@ -376,8 +406,8 @@ def load_intraday_data(instrument_key):
 
 class ReplayManager:
     """Handles replaying historical tick data for simulation or backfilling UI."""
-    def __init__(self, socketio):
-        self.socketio = socketio
+    def __init__(self, emit_fn=None):
+        self.emit_fn = emit_fn or emit_event
         self.stop_flag = False
         self.aggregated_bar = None
         self.timeframe_sec = 60
@@ -399,8 +429,7 @@ class ReplayManager:
         count = 0
         for doc in cursor:
             if self.stop_flag:
-                if self.socketio:
-                    self.socketio.emit('replay_finished', {'reason': 'stopped'})
+                self.emit_fn('replay_finished', {'reason': 'stopped'})
                 return
 
             try:
@@ -414,16 +443,15 @@ class ReplayManager:
                 self.process_replay_tick(doc)
                 count += 1
                 if count % 10 == 0:
-                    if self.aggregated_bar and self.socketio:
-                        self.socketio.emit('footprint_update', self.aggregated_bar)
+                    if self.aggregated_bar:
+                        self.emit_fn('footprint_update', self.aggregated_bar)
                     time.sleep(speed / 1000.0)
             except Exception as e:
                 logging.error(f"Replay tick error: {e}")
 
-        if self.aggregated_bar and self.socketio:
-            self.socketio.emit('footprint_data', self.aggregated_bar)
-        if self.socketio:
-            self.socketio.emit('replay_finished', {'reason': 'completed'})
+        if self.aggregated_bar:
+            self.emit_fn('footprint_data', self.aggregated_bar)
+        self.emit_fn('replay_finished', {'reason': 'completed'})
 
     def process_replay_tick(self, data):
         if 'fullFeed' not in data or 'marketFF' not in data['fullFeed']:
@@ -445,8 +473,7 @@ class ReplayManager:
         trade_qty = int(ltpc.get('ltq', 0))
 
         if self.aggregated_bar and current_bar_ts > self.aggregated_bar['ts']:
-            if self.socketio:
-                self.socketio.emit('footprint_data', self.aggregated_bar)
+            self.emit_fn('footprint_data', self.aggregated_bar)
             self.aggregated_bar = None
 
         if not self.aggregated_bar:
@@ -497,8 +524,7 @@ class ReplayManager:
         self.aggregated_bar['cvd'] = self.replay_cvd
         self.aggregated_bar['avg_trade_sz'] = self.replay_total_vol / self.replay_trade_count
 
-        if self.socketio:
-            self.socketio.emit('footprint_update', self.aggregated_bar)
+        self.emit_fn('footprint_update', self.aggregated_bar)
 
 replay_manager = None
 

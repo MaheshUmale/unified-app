@@ -15,9 +15,9 @@
 
 **Key Files:**
 - `api_server.py`: Primary FastAPI server entry point and SocketIO event handlers.
-- `db/mongodb.py`: Centralized DB Access Module.
+- `db/mongodb.py`: Centralized DB Access Module using singleton pattern.
 - `external/`: External API Access Module (Upstox, Trendlyne).
-- `core/`: Brain/Logic Module (Strategies, PCR Engine, Data Orchestration).
+- `core/`: Brain/Logic Module (Strategies in `core/strategies`, PCR Engine in `core/pcr_logic.py`, Data Orchestration in `core/data_engine.py`).
 
 ---
 

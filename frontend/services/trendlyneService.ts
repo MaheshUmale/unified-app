@@ -79,6 +79,51 @@ const getHeaders = () => ({
   'Referer': TRENDLYNE_ROOT,
 });
 
+export const fetchExpiryDates = async (symbol: string): Promise<{ date: string, label: string }[]> => {
+  await initTrendlyneSession();
+
+  // Stock IDs for major indices on Trendlyne
+  const stockIds: Record<string, number> = {
+    'NIFTY': 1887,
+    'BANKNIFTY': 1888, // Assumed ID for BankNifty, 1887 is Nifty 50
+    'FINNIFTY': 2244,
+  };
+
+  const stockId = stockIds[symbol] || 1887;
+
+  try {
+    const url = `${TRENDLYNE_ROOT}phoenix/api/fno/get-expiry-dates/?mtype=options&stock_id=${stockId}`;
+    const response = await fetch(url, {
+      headers: getHeaders(),
+      credentials: 'include'
+    });
+
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+
+    // Transform Trendlyne dates into labels used by the app
+    // Trendlyne returns objects like { id: 1, expiryDate: "2026-01-27", ... }
+    return (data || []).map((item: any, index: number) => {
+        const date = item.expiryDate; // "2026-01-27"
+        const d = new Date(date);
+        const day = d.getDate();
+        const month = d.toLocaleString('en-US', { month: 'short' }).toLowerCase();
+        const year = d.getFullYear();
+
+        // Label format: "27-jan-2026-near", "03-feb-2026-next", etc.
+        const suffix = index === 0 ? 'near' : index === 1 ? 'next' : 'far';
+
+        return {
+            date: date,
+            label: `${day}-${month}-${year}-${suffix}`
+        };
+    });
+  } catch (e) {
+    console.warn(`Trendlyne: Expiry fetch failed for ${symbol}`, e);
+    return [{ date: '2026-01-27', label: '27-jan-2026-near' }]; // Fallback
+  }
+};
+
 export const fetchFuturesBuildup = async (symbol: string, expiry: string): Promise<BuildupData[]> => {
   await initTrendlyneSession();
 

@@ -8,6 +8,7 @@ import logging
 from logging.config import dictConfig
 from typing import List, Dict, Any, Optional
 import socketio
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -35,14 +36,79 @@ from urllib.parse import unquote
 dictConfig(LOGGING_CONFIG)
 logger = logging.getLogger(__name__)
 
-fastapi_app = FastAPI(title="ProTrade Integrated API")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Initializes strategies and starts the Upstox WebSocket thread."""
+    logger.info("Initializing ProTrade Platform...")
+
+    # Capture main loop and inject into data_engine
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.get_event_loop()
+
+    data_engine.set_socketio(sio, loop=loop)
+    logger.info("SocketIO injected into data_engine")
+
+    # 1. Initialize Strategies
+    all_instruments = INITIAL_INSTRUMENTS
+
+    if CombinedSignalEngine:
+        logger.info("Initializing CombinedSignalEngine...")
+        class DummyWriter:
+            def write(self, s): pass
+        dummy_writer = DummyWriter()
+
+        for key in all_instruments:
+            logger.info(f"Initializing Combined Strategy for {key}...")
+            strategy = CombinedSignalEngine(
+                instrument_key=key,
+                csv_writer=dummy_writer,
+                obi_throttle_sec=1.0
+            )
+            data_engine.register_strategy(key, strategy)
+        logger.info("CombinedSignalEngine initialized")
+
+    if CandleCrossStrategy:
+        logger.info("Initializing CandleCrossStrategy...")
+        try:
+            persistor_instance = DataPersistor()
+            for key in all_instruments:
+                logger.info(f"Initializing Candle Cross Strategy for {key}...")
+                strategy = CandleCrossStrategy(
+                    instrument_key=key,
+                    csv_writer=None,
+                    persistor=persistor_instance,
+                    is_backtesting=False
+                )
+                data_engine.register_strategy(key, strategy)
+            logger.info("CandleCrossStrategy initialized")
+        except Exception as e:
+            logger.error(f"Failed to initialize CandleCrossStrategy: {e}")
+
+    # 2. Start WebSocket Feed
+    if ACCESS_TOKEN and ACCESS_TOKEN != 'YOUR_ACCESS_TOKEN_HERE':
+        logger.info("Starting Upstox WebSocket thread...")
+        data_engine.start_websocket_thread(ACCESS_TOKEN, all_instruments)
+    else:
+        logger.warning("ACCESS_TOKEN not set. WebSocket feed will not start.")
+
+    yield
+    logger.info("Shutting down ProTrade Platform...")
+    # Ensure remaining ticks are flushed to DB
+    try:
+        data_engine.flush_tick_buffer()
+        logger.info("Tick buffer flushed to MongoDB.")
+    except Exception as e:
+        logger.error(f"Error flushing tick buffer during shutdown: {e}")
+
+fastapi_app = FastAPI(title="ProTrade Integrated API", lifespan=lifespan)
 
 # Socket.IO setup
 sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
 app = socketio.ASGIApp(sio, fastapi_app)
 
 # Inject SocketIO into data_engine
-# Loop will be injected during startup
 data_engine.set_socketio(sio)
 
 # Configure CORS
@@ -78,60 +144,6 @@ if os.path.exists(frontend_dist):
 else:
     logger.warning(f"Frontend dist directory not found at {frontend_dist}")
 
-@fastapi_app.on_event("startup")
-async def startup_event():
-    """Initializes strategies and starts the Upstox WebSocket thread."""
-    logger.info("Initializing ProTrade Platform...")
-
-    # Capture main loop and inject into data_engine
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = asyncio.get_event_loop()
-
-    data_engine.set_socketio(sio, loop=loop)
-    logger.info("SocketIO injected into data_engine")
-
-    # 1. Initialize Strategies
-    all_instruments = INITIAL_INSTRUMENTS
-
-    if CombinedSignalEngine:
-        logger.info("Initializing CombinedSignalEngine...")
-        class DummyWriter:
-            def write(self, s): pass
-        dummy_writer = DummyWriter()
-
-        for key in all_instruments:
-            logger.info(f"Initializing Combined Strategy for {key}...")
-            strategy = CombinedSignalEngine(
-                instrument_key=key,
-                csv_writer=dummy_writer,
-                obi_throttle_sec=1.0
-            )
-            data_engine.register_strategy(key, strategy)
-        logger.info("CombinedSignalEngine initialized")
-
-    if CandleCrossStrategy:
-        logger.info("Initializing CandleCrossStrategy...")
-        # NOTE: This might block if MongoDB is not reachable
-        persistor_instance = DataPersistor()
-        for key in all_instruments:
-            logger.info(f"Initializing Candle Cross Strategy for {key}...")
-            strategy = CandleCrossStrategy(
-                instrument_key=key,
-                csv_writer=None,
-                persistor=persistor_instance,
-                is_backtesting=False
-            )
-            data_engine.register_strategy(key, strategy)
-        logger.info("CandleCrossStrategy initialized")
-
-    # 2. Start WebSocket Feed
-    if ACCESS_TOKEN and ACCESS_TOKEN != 'YOUR_ACCESS_TOKEN_HERE':
-        logger.info("Starting Upstox WebSocket thread...")
-        data_engine.start_websocket_thread(ACCESS_TOKEN, all_instruments)
-    else:
-        logger.warning("ACCESS_TOKEN not set. WebSocket feed will not start.")
 
 @sio.event
 async def connect(sid, environ):
@@ -376,15 +388,23 @@ async def trigger_trendlyne_backfill(symbol: str = Query("NIFTY", description="T
     """
     Triggers a historical Open Interest (OI) data backfill from the Trendlyne SmartOptions API.
     """
+    if not symbol:
+        raise HTTPException(status_code=400, detail="Symbol is required")
+
     try:
+        logger.info(f"Triggering Trendlyne backfill for {symbol}")
         result = trendlyne_service.perform_backfill(symbol)
-        if result["status"] == "success":
+        if result.get("status") == "success":
             return result
         else:
-            raise HTTPException(status_code=500, detail=result["message"])
+            message = result.get("message", "Unknown error during backfill")
+            logger.error(f"Trendlyne backfill failed: {message}")
+            raise HTTPException(status_code=500, detail=message)
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Trendlyne backfill error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Trendlyne backfill error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @fastapi_app.get("/api/instruments")
 async def get_instruments():

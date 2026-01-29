@@ -14,6 +14,7 @@ const App = () => {
   const [activeTab, setActiveTab] = useState<TabType>('TERMINAL');
   const [indexKey, setIndexKey] = useState(INDICES.NIFTY.key);
   const [expiryLabel, setExpiryLabel] = useState('27-jan-2026-near');
+  const [expiryDate, setExpiryDate] = useState('2026-01-27');
 
   const [indexData, setIndexData] = useState<OhlcData[]>([]);
   const [ceData, setCeData] = useState<OhlcData[]>([]);
@@ -61,6 +62,18 @@ const App = () => {
   }, []);
 
   useEffect(() => {
+    const updateExpiry = async () => {
+        const symbol = indexKey.includes('Nifty 50') ? 'NIFTY' : 'BANKNIFTY';
+        const expiries = await Trendlyne.fetchExpiryDates(symbol);
+        if (expiries && expiries.length > 0) {
+            setExpiryDate(expiries[0].date);
+            setExpiryLabel(expiries[0].label);
+        }
+    };
+    updateExpiry();
+  }, [indexKey]);
+
+  useEffect(() => {
     socket.connect();
     const handleUpdate = (quotes: any) => {
         if (quotes[indexKeyRef.current]) setIndexData(prev => updateCandle(prev, quotes[indexKeyRef.current]));
@@ -78,7 +91,7 @@ const App = () => {
 
         const [candles, chainData] = await Promise.all([
             API.getIntradayCandles(indexKey).catch(() => []),
-            API.getOptionChain(indexKey, '2026-01-27').catch(() => [])
+            API.getOptionChain(indexKey, expiryDate).catch(() => [])
         ]);
 
         if (candles && candles.length > 0) {
