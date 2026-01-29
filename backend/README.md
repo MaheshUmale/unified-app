@@ -9,8 +9,9 @@ The project is reorganized into four main functional modules:
 ### 1. External API Access Module (`external/`)
 Handles all communication with third-party APIs and data providers.
 - **`upstox_feed.py`**: Manages the persistent WebSocket connection to Upstox Market Data Feed V3.
-- **`upstox_helper.py`**: Utilities for instrument lookup and key extraction.
-- **`trendlyne_api.py`**: Service for historical Open Interest (OI) backfilling from Trendlyne.
+- **`upstox_api.py`**: REST client for Upstox V3 (historical/intraday candles) and V2 (option chain).
+- **`upstox_helper.py`**: Utilities for instrument key resolution and NSE master data caching.
+- **`trendlyne_api.py`**: Service for fetching expiry dates, buildup data, and backfilling OI. Implements `TrendlyneSession` for CSRF/cookie management.
 - **`data_fetcher.py`**: General purpose HTTP data fetching with retries.
 - **`order_manager.py`**: Interface for order placement and status tracking.
 
@@ -28,7 +29,7 @@ The decision-making heart of the platform.
 
 ### 4. UI/API Layer (`api_server.py`)
 Serves as the entry point for the frontend and external clients.
-- **FastAPI**: Provides REST endpoints for instruments, P&L, and data triggers.
+- **FastAPI**: Provides REST endpoints for instruments, P&L, data triggers, and proxies for Upstox/Trendlyne data.
 - **Socket.io**: Streams real-time ticks and signals to the Angular frontend.
 
 ## Setup & Installation

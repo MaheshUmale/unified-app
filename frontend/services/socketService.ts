@@ -3,6 +3,7 @@ import { io, Socket } from 'socket.io-client';
 class SocketService {
     private socket: Socket | null = null;
     private listeners: ((data: any) => void)[] = [];
+    private footprintListeners: ((data: any) => void)[] = [];
     private subscriptions: Set<string> = new Set();
     private isConnecting: boolean = false;
 
@@ -67,6 +68,14 @@ class SocketService {
             console.log("Socket.IO Disconnected:", reason);
             this.isConnecting = false;
         });
+
+        this.socket.on('footprint_update', (data: any) => {
+            this.footprintListeners.forEach(fn => fn({ type: 'update', data }));
+        });
+
+        this.socket.on('footprint_history', (data: any) => {
+            this.footprintListeners.forEach(fn => fn({ type: 'history', data }));
+        });
     }
 
     setSubscriptions(keys: string[]) {
@@ -91,6 +100,15 @@ class SocketService {
         }
         return () => {
             this.listeners = this.listeners.filter(l => l !== fn);
+        };
+    }
+
+    onFootprint(fn: (data: any) => void) {
+        if (!this.footprintListeners.includes(fn)) {
+            this.footprintListeners.push(fn);
+        }
+        return () => {
+            this.footprintListeners = this.footprintListeners.filter(l => l !== fn);
         };
     }
 }
