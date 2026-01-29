@@ -120,7 +120,7 @@ export const fetchExpiryDates = async (symbol: string): Promise<{ date: string, 
     });
   } catch (e) {
     console.warn(`Trendlyne: Expiry fetch failed for ${symbol}`, e);
-    return [{ date: '2026-01-27', label: '27-jan-2026-near' }]; // Fallback
+    return [{ date: '2026-01-27', label: '3-feb-2026-near' }]; // Fallback
   }
 };
 

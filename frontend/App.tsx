@@ -13,8 +13,8 @@ type TabType = 'TERMINAL' | 'ANALYTICS' | 'FLOW';
 const App = () => {
   const [activeTab, setActiveTab] = useState<TabType>('TERMINAL');
   const [indexKey, setIndexKey] = useState(INDICES.NIFTY.key);
-  const [expiryLabel, setExpiryLabel] = useState('27-jan-2026-near');
-  const [expiryDate, setExpiryDate] = useState('2026-01-27');
+  const [expiryLabel, setExpiryLabel] = useState('3-feb-2026-near');
+  const [expiryDate, setExpiryDate] = useState('2026-02-03');
 
   const [indexData, setIndexData] = useState<OhlcData[]>([]);
   const [ceData, setCeData] = useState<OhlcData[]>([]);
