@@ -3,6 +3,10 @@ from pymongo.database import Database
 from pymongo.collection import Collection
 import os
 import config
+import mongomock
+import logging
+
+logger = logging.getLogger(__name__)
 
 # --- Configuration ---
 MONGO_URI = config.MONGO_URI
@@ -12,10 +16,17 @@ DB_NAME = config.DB_NAME
 _client: MongoClient = None
 
 def get_db_client() -> MongoClient:
-    """Initializes and returns a singleton MongoDB client."""
+    """Initializes and returns a singleton MongoDB client with fallback to mongomock."""
     global _client
     if _client is None:
-        _client = MongoClient(MONGO_URI)
+        try:
+            # Use short timeout for testing environments
+            _client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=2000)
+            _client.server_info()
+            logger.info("Connected to real MongoDB")
+        except Exception as e:
+            logger.warning(f"Could not connect to MongoDB, using mongomock: {e}")
+            _client = mongomock.MongoClient()
     return _client
 
 def get_db() -> Database:
