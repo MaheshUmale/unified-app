@@ -1,3 +1,7 @@
+"""
+ProTrade Data Engine
+Manages real-time data ingestion from Upstox, strategy dispatching, and real-time OHLC/Footprint aggregation.
+"""
 import asyncio
 import json
 import logging
@@ -27,6 +31,7 @@ from database import (
     get_stocks_collection,
     get_tick_data_collection,
 )
+from typing import Dict, Any, List, Optional, Set, Union
 from services.pcr_engine import calculate_total_pcr, analyze_oi_buildup
 
 # Configuration from centralized config (planned migration)
@@ -111,13 +116,13 @@ def decode_protobuf(buffer: bytes) -> pb.FeedResponse:
     feed_response.ParseFromString(buffer)
     return feed_response
 
-def on_message(message):
+def on_message(message: Union[Dict, bytes, str]):
     """
     Primary callback for incoming WebSocket messages from Upstox.
-    Handles decoding, archiving, and dispatching to strategies and UI.
+    Handles decoding (Protobuf/JSON), archiving to MongoDB, and dispatching to registered strategies and UI.
 
     Args:
-        message: The raw message (dict, bytes, or str) from the WebSocket.
+        message: The raw message from the WebSocket feed.
     """
     global active_bars, session_stats, socketio_instance
 
@@ -176,13 +181,14 @@ def on_message(message):
 
             process_footprint_tick(inst_key, feed_datum)
 
-def process_footprint_tick(instrument_key, data_datum):
+def process_footprint_tick(instrument_key: str, data_datum: Dict[str, Any]):
     """
     Processes a single tick for real-time footprint/OHLC aggregation.
+    Maintains the 'active_bars' state and emits updates to the frontend.
 
     Args:
         instrument_key (str): The key of the instrument.
-        data_datum (dict): The tick data dictionary.
+        data_datum (Dict[str, Any]): The tick data dictionary containing fullFeed details.
     """
     global active_bars, session_stats, socketio_instance
 
