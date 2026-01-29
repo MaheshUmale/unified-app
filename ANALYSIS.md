@@ -21,18 +21,23 @@
 
 ---
 
-## Frontend Application (Angular UI)
-**Purpose:** A modern, high-performance trading dashboard for monitoring market data, sentiment, and flow in real-time.
+## Frontend Application (React & Angular)
+**Purpose:** High-performance trading dashboards for monitoring market data, sentiment, and flow in real-time.
 
 **Core Functionality:**
 - Real-time visualization of Index and Option premiums.
 - Sentiment analysis display (PCR Trends).
-- SocketIO integration for low-latency market updates via RxJS.
+- SocketIO integration for low-latency market updates.
+- Dynamic expiry date fetching from Trendlyne API to ensure accurate option chain data.
 - Proxied API calls to the FastAPI backend.
 
-**Key Files (frontend/angular-ui):**
+**Key Files (React - frontend/):**
+- `App.tsx`: Main application logic and state management.
+- `services/trendlyneService.ts`: Integration with Trendlyne for dynamic expiries and buildup data.
+- `services/upstoxService.ts`: Upstox API integration.
+
+**Key Files (Angular - frontend/angular-ui/):**
 - `src/app/services/data.service.ts`: RxJS-based data management.
-- `src/app/components/`: Modular UI components.
 
 ---
 
