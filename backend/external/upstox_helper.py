@@ -130,14 +130,6 @@ def getNiftyAndBNFnOKeys():
 
         data = get_upstox_instruments(["NIFTY", "BANKNIFTY"], current_spots)
         # print(data)
-                # 2. Generate a date string (YYYY-MM-DD format for chronological sorting)
-        date_str = datetime.now().strftime("%Y-%m-%d")
-
-        # 3. Construct the dynamic filename
-        filename = f"records_{date_str}.jsonl"
-        # Write the dictionary to a .json file
-        with open(filename, 'a', encoding='utf-8')as f:
-            json.dump(data, f, indent=4) # Using indent for pretty printing
 
         # Accessing NIFTY keys
         # print(f"NIFTY Fut: {data['NIFTY']['future']}")
