@@ -5,7 +5,7 @@ This populates the OptionChainData table with today's historical data.
 import requests
 import time
 from datetime import datetime, timedelta, date
-from database import get_oi_collection, get_stocks_collection, get_tick_data_collection
+from  db.mongodb import get_oi_collection, get_stocks_collection, get_tick_data_collection
 
 # Keep a cache to avoid repeated API calls
 STOCK_ID_CACHE = {}
@@ -17,7 +17,8 @@ def get_stock_id_for_symbol(symbol):
 
     search_url = "https://smartoptions.trendlyne.com/phoenix/api/search-contract-stock/"
     params = {'query': symbol.lower()}
-
+    stock_id = None 
+    print(f"Looking up stock ID for {symbol}...")
     try:
         print(f"Looking up stock ID for {symbol}...")
         response = requests.get(search_url, params=params, timeout=10)
@@ -26,8 +27,10 @@ def get_stock_id_for_symbol(symbol):
 
         if data and 'body' in data and 'data' in data['body'] and len(data['body']['data']) > 0:
             for item in data['body']['data']:
-                if item['symbol'].lower() == symbol.lower():
-                    stock_id = item['stockId']
+                
+                if item['stock_code'].lower() == symbol.lower():
+                    print(f"Found item: {item}")
+                    stock_id = item['stock_id']
                     break
             else:
                 stock_id = None
@@ -131,7 +134,7 @@ def backfill_from_trendlyne(symbol, stock_id, expiry_date_str, timestamp_snapsho
     except Exception as e:
         print(f"[ERROR] Error fetching data for {symbol}: {e}")
 
-def generate_time_intervals(start_time="09:15", end_time="15:30", interval_minutes=15):
+def generate_time_intervals(start_time="09:15", end_time="15:30", interval_minutes=5):
     """Generate time strings in HH:MM format"""
     start = datetime.strptime(start_time, "%H:%M")
     end = datetime.strptime(end_time, "%H:%M")
@@ -193,9 +196,6 @@ if __name__ == "__main__":
     print(f"Backfilling for {len(time_slots)} time slots: {time_slots}")
 
     for symbol in symbols:
-        if ' ' in symbol or len(symbol) > 15:
-            continue
-
         stock_id = get_stock_id_for_symbol(symbol)
         if not stock_id:
             failed += 1
