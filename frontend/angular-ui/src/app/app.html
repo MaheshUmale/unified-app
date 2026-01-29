@@ -1,0 +1,21 @@
+<header>
+  <h1>{{ title() }}</h1>
+</header>
+
+<main>
+  <div class="dashboard-row">
+    <app-sentiment-card></app-sentiment-card>
+  </div>
+
+  <div class="dashboard-row">
+    <app-option-chain></app-option-chain>
+  </div>
+
+  <router-outlet></router-outlet>
+</main>
+
+<style>
+  header { background: #333; color: white; padding: 1rem; text-align: center; }
+  main { padding: 20px; display: flex; flex-direction: column; gap: 20px; align-items: center; }
+  .dashboard-row { width: 100%; max-width: 1000px; display: flex; justify-content: center; }
+</style>

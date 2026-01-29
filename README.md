@@ -1,20 +1,20 @@
 # ProTrade Integrated Options Desk
 
-This repository contains a unified application merging a high-performance Python backend with a modern React frontend for real-time options trading analysis and execution on the NSE (Nifty/BankNifty).
+This repository contains a unified application merging a high-performance FastAPI backend with a modern Angular frontend for real-time options trading analysis and execution on the NSE (Nifty/BankNifty).
 
 ## 🚀 Overview
 
 The application provides a comprehensive trading dashboard that combines:
-- **Live Market Data Feed**: Low-latency streaming via Upstox API V3 and SocketIO.
-- **PCR & OI Analysis**: Real-time calculation of Put-Call Ratio and Open Interest buildup across strikes.
-- **Institutional Tape Flow**: Monitoring futures and options buildup to identify high-probability reversal setups (Failed Auctions, Absorption).
+- **Live Market Data Feed**: Low-latency streaming via Upstox API V3 and SocketIO (Asynchronous).
+- **PCR & OI Engine**: Real-time calculation of Put-Call Ratio and sentiment analysis based on OI buildup.
+- **Institutional Tape Flow**: Monitoring futures and options buildup to identify high-probability reversal setups.
 - **Automated Strategies**: Integrated trading agents including `CombinedSignalEngine` and `CandleCrossStrategy`.
-- **Integrated Terminal**: A responsive React-based dashboard for monitoring and manual execution.
+- **Modern UI**: Angular v16+ based dashboard utilizing RxJS for high-performance data streaming.
 
 ## 📂 Project Structure
 
-- **`backend/`**: Standalone Python application (FastAPI/Flask) responsible for data ingestion, strategy execution, and serving the frontend.
-- **`frontend/`**: React application (TypeScript/Vite/ECharts) providing the trading dashboard.
+- **`backend/`**: Standalone Python application (FastAPI) responsible for data ingestion, PCR calculation, and real-time streaming.
+- **`frontend/angular-ui/`**: Angular application providing the trading dashboard.
 - **`backend/strategies/`**: Trading logic and signal generation engines.
 
 ## 🛠️ Setup & Installation
@@ -54,14 +54,14 @@ If you need to provide tokens directly to the built frontend (e.g. for Trendlyne
 
 ## 🏃 Running the Application
 
-Start the Python server:
+Start the FastAPI server:
 
 ```bash
 cd backend
-python main_platform.py
+python api_server.py
 ```
 
-The application will be accessible at **`http://localhost:5050`**.
+The application will be accessible at **`http://localhost:5051`**.
 
 ## 📊 Key Features
 
