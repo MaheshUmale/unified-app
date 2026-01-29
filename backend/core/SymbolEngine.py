@@ -1,4 +1,4 @@
-from live_indicators import *
+from core.live_indicators import *
 
 class SymbolEngine:
     def __init__(self, symbol, timeframe_sec=60):

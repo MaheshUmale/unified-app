@@ -7,7 +7,7 @@ import time
 import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta, date
-from database import get_oi_collection, get_stocks_collection
+from db.mongodb import get_oi_collection, get_stocks_collection
 
 logger = logging.getLogger(__name__)
 

@@ -16,11 +16,11 @@ try:
     dbs = client.list_database_names()
     print(f"Available databases: {dbs}\n")
 
-    # Check upstox_strategy_db specifically
-    if 'upstox_strategy_db' in dbs:
-        db = client['upstox_strategy_db']
+    # Check upstox_strategy_db_new specifically
+    if 'upstox_strategy_db_new' in dbs:
+        db = client['upstox_strategy_db_new']
         collections = db.list_collection_names()
-        print(f"Collections in 'upstox_strategy_db': {collections}\n")
+        print(f"Collections in 'upstox_strategy_db_new': {collections}\n")
 
         # Check tick_data collection
         if 'tick_data' in collections:
@@ -36,7 +36,7 @@ try:
         else:
             print("⚠️  'tick_data' collection does not exist")
     else:
-        print("⚠️  'upstox_strategy_db' database does not exist")
+        print("⚠️  'upstox_strategy_db_new' database does not exist")
         print("This is normal if you haven't run the app with a valid token yet.")
 
 except ServerSelectionTimeoutError:

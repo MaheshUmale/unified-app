@@ -12,7 +12,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from config import LOGGING_CONFIG, ACCESS_TOKEN, INITIAL_INSTRUMENTS
-from database import (
+from db.mongodb import (
     get_db,
     get_tick_data_collection,
     get_instruments_collection,
@@ -20,11 +20,11 @@ from database import (
     get_trade_signals_collection,
     SIGNAL_COLLECTION_NAME
 )
-import data_engine
-from services import trendlyne_service
-from CandleCrossStrategy import CandleCrossStrategy, DataPersistor
+from core import data_engine
+from external import trendlyne_api as trendlyne_service
+from core.strategies.candle_cross import CandleCrossStrategy, DataPersistor
 try:
-    from strategies.combined_signal_engine import CombinedSignalEngine
+    from core.strategies.combined_signal import CombinedSignalEngine
 except ImportError:
     CombinedSignalEngine = None
 from collections import defaultdict

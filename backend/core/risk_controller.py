@@ -5,7 +5,7 @@ Enforces trading limits and risk parameters.
 """
 
 import json
-from position_manager import PositionManager
+from core.position_manager import PositionManager
 from typing import Dict
 
 class RiskController:

@@ -7,7 +7,7 @@ import os
 
 # --- Configuration ---
 API_VERSION = "v2"
-from database import get_oi_collection, get_db
+from db.mongodb import get_oi_collection, get_db
 
 # ... keep access token ...
 

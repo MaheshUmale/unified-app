@@ -5,7 +5,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../serv
 
 import pytest
 import pandas as pd
-from services.pcr_engine import calculate_total_pcr, analyze_oi_buildup, aggregate_option_chain_pcr
+from core.pcr_logic import calculate_total_pcr, analyze_oi_buildup, aggregate_option_chain_pcr
 
 def test_calculate_total_pcr():
     assert calculate_total_pcr(100, 50) == 2.0

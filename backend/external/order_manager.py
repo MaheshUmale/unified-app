@@ -5,14 +5,14 @@ Handles automated order placement and execution logic.
 """
 
 from upstox_client import UpstoxClient
-from position_manager import PositionManager
+from core.position_manager import PositionManager
 from typing import Optional, Dict
 from datetime import datetime
 import time
 # forward ref for type hinting
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from risk_controller import RiskController
+    from core.risk_controller import RiskController
 
 class OrderManager:
     """Manages order placement and execution"""

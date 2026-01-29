@@ -4,7 +4,7 @@ from pymongo import MongoClient
 from datetime import datetime
 
 client = MongoClient('mongodb://localhost:27017/')
-db = client['upstox_strategy_db']
+db = client['upstox_strategy_db_new']
 collection = db['tick_data']
 
 print("\n=== Checking 'tick_data' collection ===\n")
