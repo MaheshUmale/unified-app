@@ -96,9 +96,15 @@ Set the following variables in your terminal or a `.env` file in the `backend/` 
 - `MONGO_URI`: (Optional) Your MongoDB connection string.
 
 ### Frontend Environment Variables (Build time)
-If you need to provide tokens directly to the built frontend (e.g. for Trendlyne), set these before running `npm run build`:
-- `VITE_UPSTOX_TOKEN`: Upstox token for direct frontend calls.
-- `VITE_TRENDLYNE_CSRF`: CSRF token for Trendlyne integration.
+The frontend no longer requires external API tokens as all requests are proxied through the backend. The following are optional for specific features:
+- `GEMINI_API_KEY`: For AI-assisted market analysis (if enabled).
+
+## 🏃 Architecture & Data Flow
+
+The application follows a secure proxy architecture to ensure modularity and separation of responsibilities:
+- **Frontend**: Handles only UI rendering and user interactions. It consumes internal API endpoints (`/api/upstox/*`, `/api/trendlyne/*`).
+- **Backend (FastAPI)**: Acts as a secure proxy and data orchestrator. It manages sessions for external services (Trendlyne), resolves instrument keys, and interacts with the Upstox V3 API.
+- **Caching**: Trendlyne buildup data is cached in MongoDB to optimize performance and reduce external API dependency.
 
 ## 🏃 Running the Application
 
