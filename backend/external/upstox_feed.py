@@ -55,3 +55,18 @@ class UpstoxFeed:
                 logger.error(f"[SDK] Subscription Error: {e}")
         else:
             logger.warning("[SDK] Streamer not active, cannot subscribe.")
+
+    def disconnect(self):
+        """Disconnects the Upstox SDK MarketDataStreamerV3."""
+        if self.streamer:
+            try:
+                logger.info("Disconnecting UPSTOX SDK Streamer...")
+                self.streamer.disconnect()
+            except Exception as e:
+                logger.error(f"Error disconnecting streamer: {e}")
+            finally:
+                self.streamer = None
+
+    def is_connected(self) -> bool:
+        """Returns True if the streamer is active."""
+        return self.streamer is not None

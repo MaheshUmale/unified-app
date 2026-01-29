@@ -340,27 +340,66 @@ def start_pcr_calculation_thread():
     t = threading.Thread(target=run_pcr_loop, daemon=True)
     t.start()
 
+def is_market_hours() -> bool:
+    """Checks if the current time is within Indian market hours (09:15 - 15:30 IST)."""
+    import pytz
+    ist = pytz.timezone('Asia/Kolkata')
+    now_ist = datetime.now(ist)
+
+    # Weekends (Saturday=5, Sunday=6)
+    if now_ist.weekday() >= 5:
+        return False
+
+    start_time = now_ist.replace(hour=9, minute=15, second=0, microsecond=0)
+    end_time = now_ist.replace(hour=15, minute=30, second=0, microsecond=0)
+
+    return start_time <= now_ist <= end_time
+
 def start_websocket_thread(access_token: str, instrument_keys: List[str]):
     """
-    Starts the Upstox SDK MarketDataStreamerV3 via UpstoxFeed.
+    Starts the Upstox SDK MarketDataStreamerV3 via UpstoxFeed with market hour awareness.
     """
     global upstox_feed
     start_pcr_calculation_thread()
 
-    upstox_feed = UpstoxFeed(access_token, on_message)
-    upstox_feed.connect(instrument_keys)
+    def market_hour_monitor():
+        global upstox_feed
+        while True:
+            try:
+                market_active = is_market_hours()
+
+                if market_active:
+                    if upstox_feed is None:
+                        logging.info("Market Hours: Initializing WebSocket Feed...")
+                        upstox_feed = UpstoxFeed(access_token, on_message)
+                        upstox_feed.connect(instrument_keys)
+                    elif not upstox_feed.is_connected():
+                        logging.info("Market Hours: Reconnecting WebSocket Feed...")
+                        upstox_feed.connect(instrument_keys)
+                else:
+                    if upstox_feed and upstox_feed.is_connected():
+                        logging.info("Outside Market Hours: Disconnecting WebSocket Feed...")
+                        upstox_feed.disconnect()
+            except Exception as e:
+                logging.error(f"Market monitor loop error: {e}")
+
+            time.sleep(60)
 
     def subscription_keep_alive():
         while True:
-            time.sleep(60)
+            time.sleep(120) # Throttled
+            if not is_market_hours():
+                continue
+
             try:
                 new_keys = ExtractInstrumentKeys.getNiftyAndBNFnOKeys()
-                if new_keys and upstox_feed:
+                if new_keys and upstox_feed and upstox_feed.is_connected():
                     for key in new_keys:
                         upstox_feed.subscribe(key)
             except Exception as e:
                 logging.error(f"Keep-alive subscription failed: {e}")
 
+    threading.Thread(target=market_hour_monitor, daemon=True).start()
     threading.Thread(target=subscription_keep_alive, daemon=True).start()
 
 def load_intraday_data(instrument_key):

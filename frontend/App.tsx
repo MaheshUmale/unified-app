@@ -69,6 +69,7 @@ const App = () => {
 
   useEffect(() => {
     const updateExpiry = async () => {
+        if (isReplayMode) return; // Skip external expiry fetch in replay mode
         const symbol = indexKey.includes('Nifty 50') ? 'NIFTY' : 'BANKNIFTY';
         if (lastExpiryIndexRef.current === symbol) return;
 
@@ -81,7 +82,7 @@ const App = () => {
         }
     };
     updateExpiry();
-  }, [indexKey]);
+  }, [indexKey, isReplayMode]);
 
   useEffect(() => {
     socket.connect();
@@ -247,7 +248,12 @@ const App = () => {
 
         <div className="flex items-center gap-6">
           <div className="flex gap-3">
-            <select value={indexKey} onChange={e => setIndexKey(e.target.value)} className="bg-gray-900 border border-gray-800 rounded-lg px-3 py-1.5 text-[11px] font-black text-brand-blue outline-none focus:ring-1 focus:ring-brand-blue transition-all">
+            <select
+              value={indexKey}
+              onChange={e => setIndexKey(e.target.value)}
+              disabled={isReplayMode}
+              className="bg-gray-900 border border-gray-800 rounded-lg px-3 py-1.5 text-[11px] font-black text-brand-blue outline-none focus:ring-1 focus:ring-brand-blue transition-all disabled:opacity-50"
+            >
               <option value={INDICES.NIFTY.key}>NIFTY 50</option>
               <option value={INDICES.BANKNIFTY.key}>BANK NIFTY</option>
             </select>
@@ -257,8 +263,9 @@ const App = () => {
             </div>
             <button
               onClick={() => loadData()}
-              disabled={loading}
-              className={`bg-gray-800 hover:bg-gray-700 p-2 rounded-lg border border-white/5 transition-colors group ${loading ? 'opacity-50' : ''}`}
+              disabled={loading || isReplayMode}
+              className={`bg-gray-800 hover:bg-gray-700 p-2 rounded-lg border border-white/5 transition-colors group ${(loading || isReplayMode) ? 'opacity-50' : ''}`}
+              title={isReplayMode ? "Disabled in Replay" : "Refresh"}
             >
               <svg className={`w-4 h-4 text-gray-400 group-hover:text-brand-blue ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
