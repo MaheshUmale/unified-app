@@ -18,6 +18,11 @@ const safeFetch = async (url: string) => {
 
 // --- EXPORTS ---
 
+export const getReplayDates = async (): Promise<string[]> => {
+    const data = await safeFetch('/api/replay/dates');
+    return data || [];
+};
+
 export const getIntradayCandles = async (key: string): Promise<OhlcData[]> => {
     const url = `${API_BASE}/intraday/${encodeURIComponent(key)}`;
     const data = await safeFetch(url);

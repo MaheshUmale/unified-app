@@ -3,6 +3,10 @@ import pandas as pd
 import requests
 import gzip
 import io
+import json
+import upstox_client
+from upstox_client.rest import ApiException
+import config
 
 _INSTRUMENT_DF = None
 _LAST_FETCH = None
@@ -97,13 +101,6 @@ def resolve_instrument_key(symbol: str, instrument_type: str = 'FUT', strike: fl
         filtered = filtered.sort_values(by='expiry')
         return filtered.iloc[0]['instrument_key']
     return None
-
-
-import  json
-import config
-import upstox_client
-from upstox_client.rest import ApiException
-# config.ACCESS_TOKEN
 
 def getNiftyAndBNFnOKeys():
     ALL_FNO=[]

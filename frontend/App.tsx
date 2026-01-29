@@ -8,6 +8,7 @@ import MarketChart from './components/MarketChart';
 import BuildupPanel from './components/BuildupPanel';
 import SentimentAnalysis from './components/SentimentAnalysis';
 import PCRVsSpotChart from './components/AnalyticsCharts';
+import { ReplayControls } from './components/ReplayControls';
 
 type TabType = 'TERMINAL' | 'ANALYTICS' | 'FLOW';
 
@@ -120,7 +121,16 @@ const App = () => {
         }
     };
 
-    const cleanupMessage = socket.onMessage(handleUpdate);
+    const cleanupMessage = socket.onMessage((msg) => {
+        if (msg.type === 'oi_update') {
+            // Replay OI updates
+            setHistoricalPcr(prev => {
+                const newPoint = { timestamp: msg.timestamp, pcr: msg.pcr, price: 0 };
+                return [...prev, newPoint].slice(-100);
+            });
+        }
+        handleUpdate(msg);
+    });
     const cleanupFootprint = socket.onFootprint(handleFootprint);
     return () => {
         cleanupMessage();
@@ -255,6 +265,10 @@ const App = () => {
           </div>
         </div>
       </header>
+
+      <div className="px-4 pt-4">
+          <ReplayControls instrumentKeys={[indexKey, atmOptionKeysRef.current.ce, atmOptionKeysRef.current.pe].filter(Boolean)} />
+      </div>
 
       <main className="p-4 flex-1 overflow-hidden flex flex-col">
         {activeTab === 'TERMINAL' && (
