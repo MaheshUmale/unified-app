@@ -596,6 +596,7 @@ async def get_replay_session_info(date: str, index_key: str):
             ]
         }
         all_keys = tick_coll.distinct('instrumentKey', query)
+        logger.info(f"Discovered {len(all_keys)} keys for date {date}: {all_keys}")
 
         # 3. Identify closest CE and PE recorded on that day
         step = 50 if "Nifty 50" in clean_key else 100

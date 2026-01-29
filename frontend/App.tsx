@@ -87,16 +87,29 @@ const App = () => {
   useEffect(() => {
     socket.connect();
     const handleUpdate = (quotes: any) => {
-        if (quotes[indexKeyRef.current]) setIndexData(prev => updateCandle(prev, quotes[indexKeyRef.current]));
+        const idxKey = indexKeyRef.current;
         const { ce, pe } = atmOptionKeysRef.current;
-        if (ce && quotes[ce]) setCeData(prev => updateCandle(prev, quotes[ce]));
-        if (pe && quotes[pe]) setPeData(prev => updateCandle(prev, quotes[pe]));
+
+        if (quotes[idxKey]) {
+            setIndexData(prev => updateCandle(prev, quotes[idxKey]));
+        }
+
+        if (ce && quotes[ce]) {
+            setCeData(prev => updateCandle(prev, quotes[ce]));
+        }
+
+        if (pe && quotes[pe]) {
+            setPeData(prev => updateCandle(prev, quotes[pe]));
+        }
     };
 
     const handleFootprint = ({ type, data }: { type: 'history' | 'update', data: any }) => {
         const item = Array.isArray(data) ? data[0] : data;
-        const instrumentToken = item?.instrument_token;
-        if (!instrumentToken) return;
+        const token = item?.instrument_token;
+        if (!token) return;
+
+        const { ce, pe } = atmOptionKeysRef.current;
+        const idxKey = indexKeyRef.current;
 
         const transform = (b: any): OhlcData => ({
             timestamp: new Date(b.ts).toISOString(),
@@ -105,9 +118,9 @@ const App = () => {
 
         if (type === 'history') {
             const hist = data.map(transform);
-            if (instrumentToken === indexKeyRef.current) setIndexData(hist);
-            if (instrumentToken === atmOptionKeysRef.current.ce) setCeData(hist);
-            if (instrumentToken === atmOptionKeysRef.current.pe) setPeData(hist);
+            if (token === idxKey) setIndexData(hist);
+            if (token === ce) setCeData(hist);
+            if (token === pe) setPeData(hist);
         } else {
             const bar = transform(data);
             const updateBar = (prev: OhlcData[]) => {
@@ -117,32 +130,55 @@ const App = () => {
                 if (new Date(bar.timestamp).getTime() > new Date(last.timestamp).getTime()) return [...prev.slice(-499), bar];
                 return prev;
             };
-            if (instrumentToken === indexKeyRef.current) setIndexData(updateBar);
-            if (instrumentToken === atmOptionKeysRef.current.ce) setCeData(updateBar);
-            if (instrumentToken === atmOptionKeysRef.current.pe) setPeData(updateBar);
+            if (token === idxKey) setIndexData(updateBar);
+            if (token === ce) setCeData(updateBar);
+            if (token === pe) setPeData(updateBar);
         }
     };
 
     const cleanupMessage = socket.onMessage((msg) => {
         if (msg.type === 'replay_status') {
             setIsReplayMode(msg.active);
-            // If it's a fresh replay start
             if (msg.active && msg.is_new) {
-                setIndexData([]);
-                setCeData([]);
-                setPeData([]);
-                setHistoricalPcr([]);
-                setFuturesBuildup([]);
-                setCeBuildup([]);
-                setPeBuildup([]);
+                setIndexData([]); setCeData([]); setPeData([]);
+                setHistoricalPcr([]); setFuturesBuildup([]); setCeBuildup([]); setPeBuildup([]);
+                setSentiment(null);
             }
         }
         if (msg.type === 'oi_update') {
-            // Replay OI updates
+            const lastPrice = indexKeyRef.current && indexData.length ? indexData[indexData.length-1].close : 0;
+            const timestamp = msg.timestamp.includes('T') ? msg.timestamp : `${new Date().toISOString().split('T')[0]}T${msg.timestamp}:00`;
+
             setHistoricalPcr(prev => {
-                const newPoint = { timestamp: msg.timestamp, pcr: msg.pcr, price: 0 };
-                return [...prev, newPoint].slice(-100);
+                const newPoint = {
+                    timestamp,
+                    pcr: msg.pcr,
+                    call_oi: msg.call_oi,
+                    put_oi: msg.put_oi,
+                    price: lastPrice
+                };
+                return [...prev, newPoint].slice(-500);
             });
+
+            setSentiment(prev => ({
+                pcr: msg.pcr,
+                trend: msg.pcr > 1 ? 'BULLISH' : 'BEARISH',
+                maxCallStrike: prev?.maxCallStrike || 0,
+                maxPutStrike: prev?.maxPutStrike || 0,
+                maxCallOI: msg.call_oi,
+                maxPutOI: msg.put_oi
+            }));
+
+            // Prepend to buildup tape for FLOW tab
+            const buildup: Trendlyne.BuildupData = {
+                timestamp,
+                price: lastPrice,
+                price_change: 0,
+                oi: msg.call_oi + msg.put_oi,
+                oi_change: 0,
+                buildup_type: msg.pcr > 1.05 ? 'Long Buildup' : msg.pcr < 0.95 ? 'Short Buildup' : 'Neutral'
+            };
+            setFuturesBuildup(prev => [buildup, ...prev.slice(0, 99)]);
         }
         handleUpdate(msg);
     });
@@ -221,7 +257,7 @@ const App = () => {
   const symbolLabel = indexKey.includes('Nifty 50') ? 'NIFTY' : 'BANKNIFTY';
 
   return (
-    <div className="min-h-screen bg-gray-950 text-gray-300 flex flex-col antialiased w-full h-full">
+    <div className="h-screen bg-gray-950 text-gray-300 flex flex-col antialiased w-full overflow-hidden">
       {loading && <div className="absolute top-0 left-0 w-full z-[100] loading-bar"></div>}
 
       <header className="h-16 glass-panel border-b border-white/5 sticky top-0 z-50 px-6 flex items-center justify-between">
@@ -301,43 +337,49 @@ const App = () => {
           />
       </div>
 
-      <main className="p-4 flex-1 overflow-hidden flex flex-col">
+      <main className="p-4 flex-1 flex flex-col min-h-0 overflow-hidden">
         {activeTab === 'TERMINAL' && (
-            <div className="grid grid-cols-12 gap-4 h-full animate-fadeIn">
-                <div className="col-span-12 xl:col-span-8 flex flex-col gap-4">
-                    <div className="flex-1 glass-panel rounded-xl p-2 glow-border-blue relative">
+            <div className="grid grid-cols-12 gap-4 h-full min-h-0 animate-fadeIn">
+                <div className="col-span-12 xl:col-span-8 flex flex-col gap-4 min-h-0">
+                    <div className="flex-[2] glass-panel rounded-xl p-2 glow-border-blue relative flex flex-col min-h-0">
                         <div className="absolute top-4 left-4 z-10 bg-brand-blue/20 px-2 py-0.5 rounded text-[8px] font-black text-brand-blue uppercase">Spot Execution</div>
-                        {indexData.length > 0 ? (
-                            <MarketChart title={`${symbolLabel} INDEX`} data={indexData} />
-                        ) : (
-                            <div className="w-full h-full flex items-center justify-center text-[10px] text-gray-600 uppercase font-mono tracking-widest">Awaiting Index Feed...</div>
-                        )}
+                        <div className="flex-1 min-h-0">
+                            {indexData.length > 0 ? (
+                                <MarketChart title={`${symbolLabel} INDEX`} data={indexData} />
+                            ) : (
+                                <div className="w-full h-full flex items-center justify-center text-[10px] text-gray-600 uppercase font-mono tracking-widest">Awaiting Index Feed...</div>
+                            )}
+                        </div>
                     </div>
                 </div>
-                <div className="col-span-12 xl:col-span-4 flex flex-col gap-4">
-                    <div className="flex-1 glass-panel rounded-xl p-2 relative">
+                <div className="col-span-12 xl:col-span-4 flex flex-col gap-4 min-h-0">
+                    <div className="flex-1 glass-panel rounded-xl p-2 relative flex flex-col min-h-0">
                         <div className="absolute top-4 right-4 z-10 bg-brand-green/20 px-2 py-0.5 rounded text-[8px] font-black text-brand-green uppercase">CE Premium</div>
-                        {ceData.length > 0 ? (
-                            <MarketChart title={`ATM ${atmStrike} CE`} data={ceData} />
-                        ) : (
-                            <div className="w-full h-full flex items-center justify-center text-[10px] text-gray-600 uppercase font-mono tracking-widest">Awaiting Call Data...</div>
-                        )}
+                        <div className="flex-1 min-h-0">
+                            {ceData.length > 0 ? (
+                                <MarketChart title={`ATM ${atmStrike} CE`} data={ceData} />
+                            ) : (
+                                <div className="w-full h-full flex items-center justify-center text-[10px] text-gray-600 uppercase font-mono tracking-widest">Awaiting Call Data...</div>
+                            )}
+                        </div>
                     </div>
-                    <div className="flex-1 glass-panel rounded-xl p-2 relative">
+                    <div className="flex-1 glass-panel rounded-xl p-2 relative flex flex-col min-h-0">
                         <div className="absolute top-4 right-4 z-10 bg-brand-red/20 px-2 py-0.5 rounded text-[8px] font-black text-brand-red uppercase">PE Premium</div>
-                        {peData.length > 0 ? (
-                            <MarketChart title={`ATM ${atmStrike} PE`} data={peData} />
-                        ) : (
-                            <div className="w-full h-full flex items-center justify-center text-[10px] text-gray-600 uppercase font-mono tracking-widest">Awaiting Put Data...</div>
-                        )}
+                        <div className="flex-1 min-h-0">
+                            {peData.length > 0 ? (
+                                <MarketChart title={`ATM ${atmStrike} PE`} data={peData} />
+                            ) : (
+                                <div className="w-full h-full flex items-center justify-center text-[10px] text-gray-600 uppercase font-mono tracking-widest">Awaiting Put Data...</div>
+                            )}
+                        </div>
                     </div>
                 </div>
             </div>
         )}
 
         {activeTab === 'ANALYTICS' && (
-            <div className="grid grid-cols-12 gap-4 h-full animate-fadeIn overflow-hidden">
-                <div className="col-span-12 xl:col-span-3 flex flex-col gap-4">
+            <div className="grid grid-cols-12 gap-4 h-full min-h-0 animate-fadeIn overflow-hidden">
+                <div className="col-span-12 xl:col-span-3 flex flex-col gap-4 min-h-0">
                     {sentiment ? (
                         <SentimentAnalysis sentiment={sentiment} />
                     ) : (
