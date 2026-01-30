@@ -521,8 +521,16 @@ async def get_historical_pcr(symbol: str):
         oi_coll = get_oi_collection()
         # Fetch today's OI data
         today_str = datetime.now().strftime("%Y-%m-%d")
+
+        # Support both BANKNIFTY and NIFTY BANK for historical compatibility
+        symbol_query = [symbol]
+        if symbol == 'BANKNIFTY':
+            symbol_query.append('NIFTY BANK')
+        elif symbol == 'NIFTY BANK':
+            symbol_query.append('BANKNIFTY')
+
         cursor = oi_coll.find({
-            'symbol': symbol,
+            'symbol': {'$in': symbol_query},
             'date': today_str
         }).sort('timestamp', 1)
 
@@ -541,7 +549,7 @@ async def get_historical_pcr(symbol: str):
 
         # If no data for today, try getting last 10 points regardless of date
         if not results:
-            cursor = oi_coll.find({'symbol': symbol}).sort([('date', -1), ('timestamp', -1)]).limit(10)
+            cursor = oi_coll.find({'symbol': {'$in': symbol_query}}).sort([('date', -1), ('timestamp', -1)]).limit(10)
             for doc in list(cursor)[::-1]:
                 call_oi = doc.get('call_oi', 0)
                 put_oi = doc.get('put_oi', 0)
