@@ -194,64 +194,121 @@ def get_expiry_dates(stock_id: int, mtype: str = 'options'):
         return []
 
 def fetch_futures_buildup(symbol: str, expiry: str) -> List[Dict[str, Any]]:
-    """Fetches futures buildup data and caches it."""
+    """Fetches futures buildup data and caches it. Falls back to local data if needed."""
     session = TrendlyneSession.get_session()
-    url = f"https://smartoptions.trendlyne.com/phoenix/api/fno/buildup-15/{expiry}/{symbol}/?fno_mtype=futures&format=json"
-    try:
-        resp = session.get(url, timeout=10)
-        resp.raise_for_status()
-        data = resp.json()
-        results = data.get('results', [])
+    # Try multiple common URL formats as backup
+    formats = [
+        f"https://smartoptions.trendlyne.com/phoenix/api/fno/buildup-15/{expiry}/{symbol}/?fno_mtype=futures&format=json",
+        f"https://smartoptions.trendlyne.com/phoenix/api/fno/buildup-15/{symbol}/{expiry}/?fno_mtype=futures&format=json"
+    ]
 
-        # Cache in MongoDB
-        if results:
-            coll = get_trendlyne_buildup_collection()
-            for item in results:
-                item['symbol'] = symbol
-                item['expiry'] = expiry
-                item['mtype'] = 'futures'
-                item['updated_at'] = datetime.now()
-                query = {'symbol': symbol, 'expiry': expiry, 'timestamp': item.get('timestamp'), 'mtype': 'futures'}
-                coll.update_one(query, {'$set': item}, upsert=True)
+    results = []
+    for url in formats:
+        try:
+            resp = session.get(url, timeout=5)
+            if resp.status_code == 200:
+                data = resp.json()
+                results = data.get('results', [])
+                if results: break
+        except:
+            continue
 
+    # Cache in MongoDB if we got results
+    if results:
+        coll = get_trendlyne_buildup_collection()
+        for item in results:
+            item['symbol'] = symbol
+            item['expiry'] = expiry
+            item['mtype'] = 'futures'
+            item['updated_at'] = datetime.now()
+            query = {'symbol': symbol, 'expiry': expiry, 'timestamp': item.get('timestamp'), 'mtype': 'futures'}
+            coll.update_one(query, {'$set': item}, upsert=True)
         return results
-    except Exception as e:
-        logger.error(f"Error fetching futures buildup for {symbol}: {e}")
-        return []
+
+    # Fallback to local data if Trendlyne fails
+    return get_local_buildup(symbol, mtype='futures')
 
 def fetch_option_buildup(symbol: str, expiry: str, strike: int, option_type: str) -> List[Dict[str, Any]]:
-    """Fetches option buildup data and caches it."""
+    """Fetches option buildup data and caches it. Falls back to local data if needed."""
     session = TrendlyneSession.get_session()
     url = f"https://smartoptions.trendlyne.com/phoenix/api/fno/buildup-15/{expiry}/{symbol}/?fno_mtype=options&format=json&option_type={option_type}&strikePrice={strike}"
+
+    results = []
     try:
-        resp = session.get(url, timeout=10)
-        resp.raise_for_status()
-        data = resp.json()
-        results = data.get('results', [])
+        resp = session.get(url, timeout=5)
+        if resp.status_code == 200:
+            data = resp.json()
+            results = data.get('results', [])
+    except:
+        pass
 
-        # Cache in MongoDB
-        if results:
-            coll = get_trendlyne_buildup_collection()
-            for item in results:
-                item['symbol'] = symbol
-                item['expiry'] = expiry
-                item['strike'] = strike
-                item['option_type'] = option_type
-                item['mtype'] = 'options'
-                item['updated_at'] = datetime.now()
-                query = {
-                    'symbol': symbol,
-                    'expiry': expiry,
-                    'strike': strike,
-                    'option_type': option_type,
-                    'timestamp': item.get('timestamp'),
-                    'mtype': 'options'
-                }
-                coll.update_one(query, {'$set': item}, upsert=True)
-
+    # Cache in MongoDB
+    if results:
+        coll = get_trendlyne_buildup_collection()
+        for item in results:
+            item['symbol'] = symbol
+            item['expiry'] = expiry
+            item['strike'] = strike
+            item['option_type'] = option_type
+            item['mtype'] = 'options'
+            item['updated_at'] = datetime.now()
+            query = {
+                'symbol': symbol,
+                'expiry': expiry,
+                'strike': strike,
+                'option_type': option_type,
+                'timestamp': item.get('timestamp'),
+                'mtype': 'options'
+            }
+            coll.update_one(query, {'$set': item}, upsert=True)
         return results
+
+    # Fallback to local data
+    return get_local_buildup(symbol, mtype='options', strike=strike, option_type=option_type)
+
+def get_local_buildup(symbol: str, mtype='futures', strike=None, option_type=None) -> List[Dict[str, Any]]:
+    """Calculates buildup from local MongoDB strike_oi_data."""
+    try:
+        from db.mongodb import get_db
+        from core.pcr_logic import analyze_oi_buildup
+        db = get_db()
+        coll = db['strike_oi_data']
+
+        # We need to find the instrument_key for this symbol/strike
+        from external import upstox_helper
+        if mtype == 'futures':
+            instrument_key = upstox_helper.resolve_instrument_key(symbol, 'FUT')
+        else:
+            instrument_key = upstox_helper.resolve_instrument_key(symbol, option_type.upper(), strike=strike)
+
+        if not instrument_key:
+            return []
+
+        # Get last 20 points
+        cursor = coll.find({'instrument_key': instrument_key}).sort([('date', -1), ('timestamp', -1)]).limit(20)
+        docs = list(cursor)[::-1] # chronological
+
+        results = []
+        for i in range(1, len(docs)):
+            curr = docs[i]
+            prev = docs[i-1]
+
+            price_change = curr['price'] - prev['price']
+            oi_change = curr['oi'] - prev['oi']
+            buildup = analyze_oi_buildup(curr['price'], prev['price'], curr['oi'], prev['oi'])
+
+            results.append({
+                'timestamp': f"{curr['date']}T{curr['timestamp']}",
+                'price': curr['price'],
+                'price_change': price_change,
+                'oi': curr['oi'],
+                'oi_change': oi_change,
+                'buildup_type': buildup
+            })
+
+        return results[::-1] # Newest first for UI
     except Exception as e:
-        logger.error(f"Error fetching option buildup for {symbol} {strike} {option_type}: {e}")
+        logger.error(f"Error in get_local_buildup: {e}")
         return []
 
 def generate_time_intervals(start_time="09:15", end_time="15:30", interval_minutes=15):
