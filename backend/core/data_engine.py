@@ -304,6 +304,7 @@ def process_footprint_tick(instrument_key: str, data_datum: Dict[str, Any]):
                 'volume': 0,
                 'buy_volume': 0,
                 'sell_volume': 0,
+                'oi': latest_oi.get(instrument_key, 0),
                 'footprint': {},
                 'instrument_token': instrument_key
             }
@@ -318,6 +319,7 @@ def process_footprint_tick(instrument_key: str, data_datum: Dict[str, Any]):
         aggregated_bar['low'] = min(aggregated_bar['low'], trade_price)
         aggregated_bar['close'] = trade_price
         aggregated_bar['volume'] += trade_qty
+        aggregated_bar['oi'] = latest_oi.get(instrument_key, aggregated_bar.get('oi', 0))
 
         bid_ask_quotes = ff.get('marketLevel', {}).get('bidAskQuote', [])
         side = 'unknown'
@@ -680,13 +682,17 @@ class ReplayManager:
                 'ts': current_bar_ts, 'open': trade_price, 'high': trade_price,
                 'low': trade_price, 'close': trade_price, 'volume': 0,
                 'buy_volume': 0, 'sell_volume': 0, 'big_buy_volume': 0,
-                'big_sell_volume': 0, 'bubbles': [], 'footprint': {}
+                'big_sell_volume': 0, 'bubbles': [], 'oi': 0, 'footprint': {}
             }
 
         self.aggregated_bar['high'] = max(self.aggregated_bar['high'], trade_price)
         self.aggregated_bar['low'] = min(self.aggregated_bar['low'], trade_price)
         self.aggregated_bar['close'] = trade_price
         self.aggregated_bar['volume'] += trade_qty
+
+        # Capture OI from tick if available
+        if 'fullFeed' in data and 'marketFF' in data['fullFeed']:
+            self.aggregated_bar['oi'] = float(data['fullFeed']['marketFF'].get('oi', self.aggregated_bar.get('oi', 0)))
 
         bid_ask_quotes = ff.get('marketLevel', {}).get('bidAskQuote', [])
         side = 'unknown'

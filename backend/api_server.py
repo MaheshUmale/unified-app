@@ -434,9 +434,11 @@ async def get_upstox_intraday(instrument_key: str):
             for bar in db_history:
                 candles.append([
                     datetime.fromtimestamp(bar['ts']/1000).isoformat(),
-                    bar['open'], bar['high'], bar['low'], bar['close'], bar['volume'], 0
+                    bar['open'], bar['high'], bar['low'], bar['close'], bar['volume'], bar.get('oi', 0)
                 ])
-            return {"candles": candles}
+            # Reverse to match Upstox V3 descending order (newest first)
+            # Frontend upstoxService reverses it back to chronological ascending.
+            return {"candles": candles[::-1]}
 
         # 2. Fallback to Upstox API
         data = upstox_api.get_intraday_candles(clean_key)
