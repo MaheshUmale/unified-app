@@ -373,6 +373,13 @@ def generate_time_intervals(start_time="09:15", end_time="15:30", interval_minut
 
 def perform_backfill(symbol: str, interval_minutes=5):
     """Triggers a full backfill for the current day for a given symbol"""
+    # 0. Cleanup potentially incorrect data for today first
+    try:
+        from scripts.cleanup_db import cleanup_oi_data
+        cleanup_oi_data(symbol=symbol)
+    except Exception as e:
+        logger.error(f"Cleanup failed during backfill: {e}")
+
     stock_id = get_stock_id_for_symbol(symbol)
     if not stock_id:
         return {"status": "error", "message": f"Stock ID not found for {symbol}"}
