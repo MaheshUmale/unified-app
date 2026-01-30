@@ -549,18 +549,25 @@ async def get_historical_pcr(symbol: str):
             'date': today_str
         }).sort('timestamp', 1)
 
-        results = []
+        results_map = {}
         for doc in cursor:
+            ts = f"{doc['date']}T{doc['timestamp']}:00"
             call_oi = doc.get('call_oi', 0)
             put_oi = doc.get('put_oi', 0)
             pcr = round(put_oi / call_oi, 2) if call_oi > 0 else 0
+            source = doc.get('source', 'unknown')
 
-            results.append({
-                'timestamp': f"{doc['date']}T{doc['timestamp']}:00",
-                'pcr': pcr,
-                'call_oi': call_oi,
-                'put_oi': put_oi
-            })
+            # Prefer Trendlyne or Upstox Full over Live Partial
+            if ts not in results_map or source in ['trendlyne', 'upstox_full', 'trendlyne_pcr_history']:
+                results_map[ts] = {
+                    'timestamp': ts,
+                    'pcr': pcr,
+                    'call_oi': call_oi,
+                    'put_oi': put_oi,
+                    'source': source
+                }
+
+        results = sorted(results_map.values(), key=lambda x: x['timestamp'])
 
         # If no data for today, try getting last 10 points and trigger a backfill
         if not results:

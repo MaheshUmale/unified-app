@@ -448,17 +448,19 @@ def update_pcr_for_instrument(instrument_key: str):
         pcr = round(total_pe_oi / total_ce_oi, 2)
 
         now_time = time.time()
-        # 1. Emit live update (Throttled to 5s)
-        last_pcr_emit = last_emit_times.get(f"PCR_{symbol}", 0)
-        if now_time - last_pcr_emit > 5:
-            emit_event('oi_update', {
-                'symbol': symbol,
-                'pcr': pcr,
-                'timestamp': datetime.now().isoformat(),
-                'put_oi': total_pe_oi,
-                'call_oi': total_ce_oi
-            })
-            last_emit_times[f"PCR_{symbol}"] = now_time
+        # 1. Emit live update (Throttled to 5s) - DEACTIVATED to prevent Partial PCR mismatch
+        # We now rely on run_full_chain_pcr for Total PCR
+        # last_pcr_emit = last_emit_times.get(f"PCR_{symbol}", 0)
+        # if now_time - last_pcr_emit > 5:
+        #     emit_event('oi_update', {
+        #         'symbol': symbol,
+        #         'pcr': pcr,
+        #         'timestamp': datetime.now().isoformat(),
+        #         'put_oi': total_pe_oi,
+        #         'call_oi': total_ce_oi,
+        #         'source': 'live_partial'
+        #     })
+        #     last_emit_times[f"PCR_{symbol}"] = now_time
 
         # 2. Save to MongoDB (Throttled to 1 minute)
         last_save = pcr_running_totals[symbol]['last_save']
@@ -520,6 +522,7 @@ def start_pcr_calculation_thread():
     from config import ACCESS_TOKEN
 
     def run_full_chain_pcr():
+        from external import trendlyne_api
         api = UpstoxAPI(ACCESS_TOKEN)
         while True:
             if not is_market_hours():
@@ -533,14 +536,30 @@ def start_pcr_calculation_thread():
                     if not expiry_str:
                         continue
 
-                    index_key = "NSE_INDEX|Nifty 50" if symbol == 'NIFTY' else "NSE_INDEX|Nifty Bank"
+                    # 2. Attempt to fetch Golden PCR from Trendlyne first
+                    trendlyne_pcr = trendlyne_api.fetch_latest_pcr(symbol, expiry_str)
+                    if trendlyne_pcr:
+                        pcr = trendlyne_pcr.get('pcr')
+                        total_ce = trendlyne_pcr.get('total_call_oi', 0)
+                        total_pe = trendlyne_pcr.get('total_put_oi', 0)
 
-                    # 2. Fetch full option chain
+                        logging.info(f"Golden PCR from Trendlyne for {symbol}: {pcr}")
+                        emit_event('oi_update', {
+                            'symbol': symbol,
+                            'pcr': pcr,
+                            'timestamp': datetime.now().isoformat(),
+                            'put_oi': total_pe,
+                            'call_oi': total_ce,
+                            'source': 'trendlyne'
+                        })
+                        continue # Skip Upstox if Trendlyne succeeded
+
+                    # 3. Fallback to Upstox full option chain
+                    index_key = "NSE_INDEX|Nifty 50" if symbol == 'NIFTY' else "NSE_INDEX|Nifty Bank"
                     chain = api.get_option_chain(index_key, expiry_str)
                     if chain and chain.get('status') == 'success':
                         data = chain.get('data', [])
 
-                        # Use more robust summation
                         total_ce_oi = 0
                         total_pe_oi = 0
                         for item in data:
@@ -551,16 +570,15 @@ def start_pcr_calculation_thread():
 
                         if total_ce_oi > 0:
                             pcr = round(total_pe_oi / total_ce_oi, 2)
-                            logging.info(f"Full Chain PCR for {symbol}: {pcr} (CE: {total_ce_oi}, PE: {total_pe_oi})")
+                            logging.info(f"Fallback Full Chain PCR for {symbol}: {pcr}")
 
-                            # Emit accurate PCR
                             emit_event('oi_update', {
                                 'symbol': symbol,
                                 'pcr': pcr,
                                 'timestamp': datetime.now().isoformat(),
                                 'put_oi': total_pe_oi,
                                 'call_oi': total_ce_oi,
-                                'source': 'full_chain'
+                                'source': 'upstox_full'
                             })
 
                             # Update local running totals to align roughly
