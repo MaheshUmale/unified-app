@@ -394,10 +394,19 @@ def perform_backfill(symbol: str, interval_minutes=5):
         logger.info(f"Backfilling {symbol} for {len(time_slots)} slots at {interval_minutes}min resolution...")
 
         success_count = 0
-        for ts in time_slots:
-            if fetch_and_save_oi_snapshot(symbol, stock_id, default_expiry, ts):
-                success_count += 1
-            time.sleep(0.05) # Brief pause to be nice to API
+        # 1. First try fetching full history from the PCR history endpoint
+        pcr_history = fetch_pcr_history(symbol, default_expiry)
+        if pcr_history:
+            logger.info(f"Backfill: Successfully fetched {len(pcr_history)} history points from PCR history API")
+            success_count = len(pcr_history)
+
+        # 2. Also fetch snapshots for strike-wise data (if needed by other components)
+        # We do this for a few key points or if history was empty
+        if not pcr_history or len(time_slots) > 0:
+            for ts in time_slots:
+                if fetch_and_save_oi_snapshot(symbol, stock_id, default_expiry, ts):
+                    success_count += 1
+                time.sleep(0.05) # Brief pause to be nice to API
 
         return {
             "status": "success",
@@ -408,3 +417,56 @@ def perform_backfill(symbol: str, interval_minutes=5):
     except Exception as e:
         logger.error(f"Backfill failed for {symbol}: {e}")
         return {"status": "error", "message": str(e)}
+
+def fetch_pcr_history(symbol: str, expiry: str) -> List[Dict[str, Any]]:
+    """
+    Fetches 5-minute interval PCR history for a symbol and expiry from Trendlyne.
+    URL: /phoenix/api/fno/pcr-history/{expiry}/{symbol}/
+    """
+    session = TrendlyneSession.get_session()
+    # Trendlyne uses different formats, we try the most likely one based on phoenix structure
+    url = f"https://smartoptions.trendlyne.com/phoenix/api/fno/pcr-history/{expiry}/{symbol}/?format=json"
+
+    try:
+        logger.info(f"Fetching PCR history from Trendlyne for {symbol} ({expiry})")
+        resp = session.get(url, timeout=10)
+        if resp.status_code == 200:
+            data = resp.json()
+            results = data.get('results', [])
+            if results:
+                # Cache in MongoDB
+                oi_coll = get_oi_collection()
+                for item in results:
+                    # Map Trendlyne fields to our schema
+                    # Trendlyne usually returns: {'timestamp': '...', 'pcr': 1.2, 'total_call_oi': ..., 'total_put_oi': ...}
+                    ts = item.get('timestamp')
+                    if ts:
+                        dt = datetime.fromisoformat(ts.replace('Z', ''))
+                        doc = {
+                            'symbol': symbol,
+                            'date': dt.strftime("%Y-%m-%d"),
+                            'timestamp': dt.strftime("%H:%M"),
+                            'call_oi': item.get('total_call_oi', 0),
+                            'put_oi': item.get('total_put_oi', 0),
+                            'pcr': item.get('pcr', 0),
+                            'source': 'trendlyne_pcr_history',
+                            'updated_at': datetime.now()
+                        }
+                        query = {'symbol': symbol, 'date': doc['date'], 'timestamp': doc['timestamp']}
+                        oi_coll.update_one(query, {'$set': doc}, upsert=True)
+                return results
+        else:
+            logger.warning(f"Trendlyne PCR history API returned {resp.status_code}")
+    except Exception as e:
+        logger.error(f"Error fetching PCR history for {symbol}: {e}")
+
+    return []
+
+def fetch_latest_pcr(symbol: str, expiry: str) -> Optional[Dict[str, Any]]:
+    """Fetches the latest available PCR data point from Trendlyne."""
+    history = fetch_pcr_history(symbol, expiry)
+    if history:
+        # Assuming Trendlyne returns newest first or last item is newest
+        # Usually it's chronological, so last is newest
+        return history[-1]
+    return None
