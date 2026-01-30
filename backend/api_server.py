@@ -398,7 +398,10 @@ async def get_oi_data_route(instrument_key: str):
         raise HTTPException(status_code=500, detail="Failed to fetch OI data")
 
 @fastapi_app.post("/api/backfill/trendlyne", response_model=Dict[str, Any])
-async def trigger_trendlyne_backfill(symbol: str = Query("NIFTY", description="The trading symbol to backfill (e.g., NIFTY, BANKNIFTY)")):
+async def trigger_trendlyne_backfill(
+    symbol: str = Query("NIFTY", description="The trading symbol to backfill (e.g., NIFTY, BANKNIFTY)"),
+    interval: int = Query(5, description="Interval in minutes (e.g., 5, 15)")
+):
     """
     Triggers a historical Open Interest (OI) data backfill from the Trendlyne SmartOptions API.
     """
@@ -406,8 +409,8 @@ async def trigger_trendlyne_backfill(symbol: str = Query("NIFTY", description="T
         raise HTTPException(status_code=400, detail="Symbol is required")
 
     try:
-        logger.info(f"Triggering Trendlyne backfill for {symbol}")
-        result = trendlyne_service.perform_backfill(symbol)
+        logger.info(f"Triggering Trendlyne backfill for {symbol} at {interval}min interval")
+        result = trendlyne_service.perform_backfill(symbol, interval_minutes=interval)
         if result.get("status") == "success":
             return result
         else:
@@ -547,8 +550,13 @@ async def get_historical_pcr(symbol: str):
                 'put_oi': put_oi
             })
 
-        # If no data for today, try getting last 10 points regardless of date
+        # If no data for today, try getting last 10 points and trigger a backfill
         if not results:
+            # Trigger Trendlyne backfill in background
+            logger.info(f"No PCR data for {symbol} today. Triggering Trendlyne backfill...")
+            import threading
+            threading.Thread(target=trendlyne_service.perform_backfill, args=(symbol,), kwargs={'interval_minutes': 5}, daemon=True).start()
+
             cursor = oi_coll.find({'symbol': {'$in': symbol_query}}).sort([('date', -1), ('timestamp', -1)]).limit(10)
             for doc in list(cursor)[::-1]:
                 call_oi = doc.get('call_oi', 0)

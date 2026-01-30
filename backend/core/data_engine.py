@@ -48,8 +48,9 @@ subscribed_instruments = set()
 # Real-time PCR tracking
 latest_oi = {}  # instrument_key -> oi
 latest_prices = {} # instrument_key -> price
-instrument_metadata = {} # instrument_key -> {'symbol': str, 'type': 'CE'|'PE'|'FUT'|'INDEX'}
+instrument_metadata = {} # instrument_key -> {'symbol': str, 'type': 'CE'|'PE'|'FUT'|'INDEX', 'expiry': 'YYYY-MM-DD'}
 pcr_running_totals = {} # symbol -> {'CE': total_oi, 'PE': total_oi, 'last_save': timestamp}
+current_expiries = {} # symbol -> 'YYYY-MM-DD'
 
 # Initialize Collections
 tick_collection = get_tick_data_collection()
@@ -375,17 +376,30 @@ def subscribe_instrument(instrument_key: str):
         threading.Thread(target=resolve_metadata, args=(instrument_key,), daemon=True).start()
 
 def resolve_metadata(instrument_key: str):
-    """Resolves and caches instrument metadata (Symbol, Type, Strike)."""
+    """Resolves and caches instrument metadata (Symbol, Type, Strike, Expiry)."""
     try:
         df = ExtractInstrumentKeys.get_instrument_df()
         match = df[df['instrument_key'] == instrument_key]
         if not match.empty:
             row = match.iloc[0]
+            expiry_date = ''
+            if row.get('expiry'):
+                expiry_date = pd.to_datetime(row['expiry']).strftime('%Y-%m-%d')
+
             instrument_metadata[instrument_key] = {
                 'symbol': row['name'],
                 'type': row['instrument_type'],
-                'strike': float(row.get('strike_price', 0))
+                'strike': float(row.get('strike_price', 0)),
+                'expiry': expiry_date
             }
+
+            # Update current nearest expiry for the symbol (only future/today)
+            symbol = row['name']
+            today_str = datetime.now().strftime('%Y-%m-%d')
+            if expiry_date and expiry_date >= today_str:
+                if symbol not in current_expiries or expiry_date < current_expiries[symbol]:
+                    current_expiries[symbol] = expiry_date
+                    logging.info(f"Updated nearest expiry for {symbol}: {expiry_date}")
     except Exception as e:
         logging.error(f"Error resolving metadata for {instrument_key}: {e}")
 
@@ -410,13 +424,19 @@ def update_pcr_for_instrument(instrument_key: str):
     if symbol not in pcr_running_totals:
         pcr_running_totals[symbol] = {'CE': 0, 'PE': 0, 'last_save': 0}
 
-    # Re-calculate totals for the symbol (could be optimized further by tracking diffs)
+    # Re-calculate totals for the symbol (only for the nearest expiry)
     total_ce_oi = 0
     total_pe_oi = 0
 
+    target_expiry = current_expiries.get(meta['symbol'], '')
+
     for key, oi in latest_oi.items():
         m = instrument_metadata.get(key)
-        if m and m['symbol'] == symbol:
+        if m and m['symbol'] == meta['symbol']:
+            # Only include instruments for the nearest expiry
+            if target_expiry and m.get('expiry') != target_expiry:
+                continue
+
             if m['type'] == 'CE':
                 total_ce_oi += oi
             elif m['type'] == 'PE':
@@ -493,22 +513,76 @@ def save_oi_to_db(symbol, call_oi, put_oi, price=0):
         logging.error(f"Error saving real-time OI: {e}")
 
 def start_pcr_calculation_thread():
-    """Starts a background thread to calculate PCR periodically."""
-    def run_pcr_loop():
+    """Starts background threads for accurate PCR calculation and expiry tracking."""
+    from external.upstox_api import UpstoxAPI
+    from config import ACCESS_TOKEN
+
+    def run_full_chain_pcr():
+        api = UpstoxAPI(ACCESS_TOKEN)
+        while True:
+            if not is_market_hours():
+                time.sleep(300)
+                continue
+
+            for symbol in ['NIFTY', 'BANKNIFTY']:
+                try:
+                    # 1. Get nearest expiry
+                    expiry_str = current_expiries.get(symbol)
+                    if not expiry_str:
+                        continue
+
+                    index_key = "NSE_INDEX|Nifty 50" if symbol == 'NIFTY' else "NSE_INDEX|Nifty Bank"
+
+                    # 2. Fetch full option chain
+                    chain = api.get_option_chain(index_key, expiry_str)
+                    if chain and chain.get('status') == 'success':
+                        data = chain.get('data', [])
+
+                        # Use more robust summation
+                        total_ce_oi = 0
+                        total_pe_oi = 0
+                        for item in data:
+                            if item.get('call_options'):
+                                total_ce_oi += item['call_options'].get('market_data', {}).get('oi', 0)
+                            if item.get('put_options'):
+                                total_pe_oi += item['put_options'].get('market_data', {}).get('oi', 0)
+
+                        if total_ce_oi > 0:
+                            pcr = round(total_pe_oi / total_ce_oi, 2)
+                            logging.info(f"Full Chain PCR for {symbol}: {pcr} (CE: {total_ce_oi}, PE: {total_pe_oi})")
+
+                            # Emit accurate PCR
+                            emit_event('oi_update', {
+                                'symbol': symbol,
+                                'pcr': pcr,
+                                'timestamp': datetime.now().isoformat(),
+                                'put_oi': total_pe_oi,
+                                'call_oi': total_ce_oi,
+                                'source': 'full_chain'
+                            })
+
+                            # Update local running totals to align roughly
+                            if symbol in pcr_running_totals:
+                                # We don't overwrite latest_oi as that's from live ticks,
+                                # but we can signal the frontend that this is the authoritative PCR.
+                                pass
+                except Exception as e:
+                    logging.error(f"Error in full chain PCR for {symbol}: {e}")
+
+            time.sleep(300) # Every 5 minutes
+
+    threading.Thread(target=run_full_chain_pcr, daemon=True).start()
+
+    def run_expiry_refresh():
         while True:
             try:
-                # In a real app, we'd fetch the latest option chain from DB or API
-                # For now, we'll look at the latest OI data in MongoDB
-                oi_coll = get_oi_collection()
-                # Aggregate PCR for NIFTY (example)
-                # This is a placeholder for actual aggregation logic
-                # We would normally filter by current expiry and instrument
-                pass
+                # Periodically re-fetch instrument master to ensure we have latest expiries
+                ExtractInstrumentKeys.get_instrument_df()
             except Exception as e:
-                logging.error(f"PCR Calculation loop error: {e}")
-            time.sleep(60)
+                logging.error(f"Error refreshing instrument master: {e}")
+            time.sleep(3600) # Every hour
 
-    t = threading.Thread(target=run_pcr_loop, daemon=True)
+    t = threading.Thread(target=run_expiry_refresh, daemon=True)
     t.start()
 
 def is_market_hours() -> bool:

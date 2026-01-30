@@ -360,7 +360,7 @@ def get_local_buildup(symbol: str, mtype='futures', strike=None, option_type=Non
         logger.error(f"Error in get_local_buildup: {e}")
         return []
 
-def generate_time_intervals(start_time="09:15", end_time="15:30", interval_minutes=15):
+def generate_time_intervals(start_time="09:15", end_time="15:30", interval_minutes=5):
     """Generate time strings in HH:MM format"""
     start = datetime.strptime(start_time, "%H:%M")
     end = datetime.strptime(end_time, "%H:%M")
@@ -371,7 +371,7 @@ def generate_time_intervals(start_time="09:15", end_time="15:30", interval_minut
         current += timedelta(minutes=interval_minutes)
     return times
 
-def perform_backfill(symbol: str):
+def perform_backfill(symbol: str, interval_minutes=5):
     """Triggers a full backfill for the current day for a given symbol"""
     stock_id = get_stock_id_for_symbol(symbol)
     if not stock_id:
@@ -390,14 +390,14 @@ def perform_backfill(symbol: str):
         market_close = now.replace(hour=15, minute=30, second=0, microsecond=0)
         end_time_str = "15:30" if now > market_close else now.strftime("%H:%M")
 
-        time_slots = generate_time_intervals(end_time=end_time_str)
-        logger.info(f"Backfilling {symbol} for {len(time_slots)} slots...")
+        time_slots = generate_time_intervals(end_time=end_time_str, interval_minutes=interval_minutes)
+        logger.info(f"Backfilling {symbol} for {len(time_slots)} slots at {interval_minutes}min resolution...")
 
         success_count = 0
         for ts in time_slots:
             if fetch_and_save_oi_snapshot(symbol, stock_id, default_expiry, ts):
                 success_count += 1
-            time.sleep(0.1) # Brief pause to be nice to API
+            time.sleep(0.05) # Brief pause to be nice to API
 
         return {
             "status": "success",
