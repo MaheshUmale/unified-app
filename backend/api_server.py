@@ -167,7 +167,7 @@ async def handle_subscribe_instrument(sid, data):
         return
 
     logger.info(f"Client {sid} subscribing to instrument: {instrument_key}")
-    sio.enter_room(sid, instrument_key)
+    await sio.enter_room(sid, instrument_key)
 
     # Delegate to data_engine for Upstox subscription
     data_engine.subscribe_instrument(instrument_key)
