@@ -44,6 +44,10 @@ stop_replay_flag = False
 last_emit_times = {}  # Track last emit time per instrument for throttling
 subscribed_instruments = set()
 
+# Real-time PCR tracking
+latest_oi = {}  # instrument_key -> oi
+instrument_metadata = {} # instrument_key -> {'symbol': str, 'type': 'CE'|'PE'|'FUT'|'INDEX'}
+
 # Initialize Collections
 tick_collection = get_tick_data_collection()
 raw_tick_collection = get_raw_tick_data_collection()
@@ -208,7 +212,14 @@ def on_message(message: Union[Dict, bytes, str]):
 
             # Extract common timestamp for easier replay/querying
             ff = feed_datum.get('fullFeed', {})
-            ltpc = ff.get('marketFF', {}).get('ltpc') or ff.get('indexFF', {}).get('ltpc')
+
+            # Real-time OI extraction
+            market_ff = ff.get('marketFF', {})
+            if 'oi' in market_ff:
+                latest_oi[inst_key] = float(market_ff['oi'])
+                update_pcr_for_instrument(inst_key)
+
+            ltpc = market_ff.get('ltpc') or ff.get('indexFF', {}).get('ltpc')
             if ltpc and ltpc.get('ltt'):
                 feed_datum['ts_ms'] = int(ltpc['ltt'])
 
@@ -341,6 +352,63 @@ def subscribe_instrument(instrument_key: str):
     """Dynamic subscription to an instrument."""
     if upstox_feed:
         upstox_feed.subscribe(instrument_key)
+
+    # Try to resolve metadata if not present
+    if instrument_key not in instrument_metadata:
+        threading.Thread(target=resolve_metadata, args=(instrument_key,), daemon=True).start()
+
+def resolve_metadata(instrument_key: str):
+    """Resolves and caches instrument metadata (Symbol, Type)."""
+    try:
+        df = ExtractInstrumentKeys.get_instrument_df()
+        match = df[df['instrument_key'] == instrument_key]
+        if not match.empty:
+            row = match.iloc[0]
+            instrument_metadata[instrument_key] = {
+                'symbol': row['name'],
+                'type': row['instrument_type']
+            }
+    except Exception as e:
+        logging.error(f"Error resolving metadata for {instrument_key}: {e}")
+
+def update_pcr_for_instrument(instrument_key: str):
+    """Calculates and emits PCR if the instrument is part of a monitored index."""
+    if instrument_key not in instrument_metadata:
+        return
+
+    meta = instrument_metadata[instrument_key]
+    if meta['type'] not in ['CE', 'PE']:
+        return
+
+    symbol = meta['symbol']
+
+    # Aggregate OI for this symbol
+    total_ce_oi = 0
+    total_pe_oi = 0
+
+    for key, oi in latest_oi.items():
+        m = instrument_metadata.get(key)
+        if m and m['symbol'] == symbol:
+            if m['type'] == 'CE':
+                total_ce_oi += oi
+            elif m['type'] == 'PE':
+                total_pe_oi += oi
+
+    if total_ce_oi > 0:
+        pcr = round(total_pe_oi / total_ce_oi, 2)
+
+        # Throttle emissions
+        last_pcr_emit = last_emit_times.get(f"PCR_{symbol}", 0)
+        now = time.time()
+        if now - last_pcr_emit > 5: # Every 5 seconds
+            emit_event('oi_update', {
+                'symbol': symbol,
+                'pcr': pcr,
+                'timestamp': datetime.now().isoformat(),
+                'put_oi': total_pe_oi,
+                'call_oi': total_ce_oi
+            })
+            last_emit_times[f"PCR_{symbol}"] = now
 
 def start_pcr_calculation_thread():
     """Starts a background thread to calculate PCR periodically."""
