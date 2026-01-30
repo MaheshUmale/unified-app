@@ -23,6 +23,7 @@ from google.protobuf.json_format import MessageToDict
 from external import upstox_helper as ExtractInstrumentKeys
 from external.upstox_feed import UpstoxFeed
 from db.mongodb import (
+    get_db,
     get_instruments_collection,
     get_oi_collection,
     get_raw_tick_data_collection,
@@ -46,7 +47,9 @@ subscribed_instruments = set()
 
 # Real-time PCR tracking
 latest_oi = {}  # instrument_key -> oi
+latest_prices = {} # instrument_key -> price
 instrument_metadata = {} # instrument_key -> {'symbol': str, 'type': 'CE'|'PE'|'FUT'|'INDEX'}
+pcr_running_totals = {} # symbol -> {'CE': total_oi, 'PE': total_oi, 'last_save': timestamp}
 
 # Initialize Collections
 tick_collection = get_tick_data_collection()
@@ -216,12 +219,23 @@ def on_message(message: Union[Dict, bytes, str]):
             # Real-time OI extraction
             market_ff = ff.get('marketFF', {})
             if 'oi' in market_ff:
-                latest_oi[inst_key] = float(market_ff['oi'])
+                new_oi = float(market_ff['oi'])
+                latest_oi[inst_key] = new_oi
                 update_pcr_for_instrument(inst_key)
+
+                # Also save per-strike OI for Flow tab fallback
+                if inst_key in instrument_metadata:
+                    meta = instrument_metadata[inst_key]
+                    if meta['type'] in ['CE', 'PE', 'FUT']:
+                        ltpc = market_ff.get('ltpc')
+                        price = float(ltpc['ltp']) if ltpc and ltpc.get('ltp') else 0
+                        threading.Thread(target=save_strike_oi_to_db, args=(inst_key, new_oi, price), daemon=True).start()
 
             ltpc = market_ff.get('ltpc') or ff.get('indexFF', {}).get('ltpc')
             if ltpc and ltpc.get('ltt'):
                 feed_datum['ts_ms'] = int(ltpc['ltt'])
+                if ltpc.get('ltp'):
+                    latest_prices[inst_key] = float(ltpc['ltp'])
 
             new_ticks.append(feed_datum)
 
@@ -358,7 +372,7 @@ def subscribe_instrument(instrument_key: str):
         threading.Thread(target=resolve_metadata, args=(instrument_key,), daemon=True).start()
 
 def resolve_metadata(instrument_key: str):
-    """Resolves and caches instrument metadata (Symbol, Type)."""
+    """Resolves and caches instrument metadata (Symbol, Type, Strike)."""
     try:
         df = ExtractInstrumentKeys.get_instrument_df()
         match = df[df['instrument_key'] == instrument_key]
@@ -366,7 +380,8 @@ def resolve_metadata(instrument_key: str):
             row = match.iloc[0]
             instrument_metadata[instrument_key] = {
                 'symbol': row['name'],
-                'type': row['instrument_type']
+                'type': row['instrument_type'],
+                'strike': float(row.get('strike_price', 0))
             }
     except Exception as e:
         logging.error(f"Error resolving metadata for {instrument_key}: {e}")
@@ -381,8 +396,10 @@ def update_pcr_for_instrument(instrument_key: str):
         return
 
     symbol = meta['symbol']
+    if symbol not in pcr_running_totals:
+        pcr_running_totals[symbol] = {'CE': 0, 'PE': 0, 'last_save': 0}
 
-    # Aggregate OI for this symbol
+    # Re-calculate totals for the symbol (could be optimized further by tracking diffs)
     total_ce_oi = 0
     total_pe_oi = 0
 
@@ -397,10 +414,10 @@ def update_pcr_for_instrument(instrument_key: str):
     if total_ce_oi > 0:
         pcr = round(total_pe_oi / total_ce_oi, 2)
 
-        # Throttle emissions
+        now_time = time.time()
+        # 1. Emit live update (Throttled to 5s)
         last_pcr_emit = last_emit_times.get(f"PCR_{symbol}", 0)
-        now = time.time()
-        if now - last_pcr_emit > 5: # Every 5 seconds
+        if now_time - last_pcr_emit > 5:
             emit_event('oi_update', {
                 'symbol': symbol,
                 'pcr': pcr,
@@ -408,7 +425,61 @@ def update_pcr_for_instrument(instrument_key: str):
                 'put_oi': total_pe_oi,
                 'call_oi': total_ce_oi
             })
-            last_emit_times[f"PCR_{symbol}"] = now
+            last_emit_times[f"PCR_{symbol}"] = now_time
+
+        # 2. Save to MongoDB (Throttled to 1 minute)
+        last_save = pcr_running_totals[symbol]['last_save']
+        if now_time - last_save > 60:
+            # Get latest index price for this symbol
+            index_price = 0
+            index_key = "NSE_INDEX|Nifty 50" if symbol == "NIFTY" else "NSE_INDEX|Nifty Bank"
+            index_price = latest_prices.get(index_key, 0)
+
+            threading.Thread(target=save_oi_to_db, args=(symbol, total_ce_oi, total_pe_oi, index_price), daemon=True).start()
+            pcr_running_totals[symbol]['last_save'] = now_time
+
+def save_strike_oi_to_db(instrument_key, oi, price):
+    """Persists per-instrument OI for buildup analysis."""
+    try:
+        db = get_db()
+        coll = db['strike_oi_data']
+        now = datetime.now()
+        doc = {
+            'instrument_key': instrument_key,
+            'date': now.strftime("%Y-%m-%d"),
+            'timestamp': now.strftime("%H:%M:%S"),
+            'oi': oi,
+            'price': price,
+            'updated_at': now
+        }
+        # Only save if OI changed or every 1 minute to avoid bloat
+        last_emit = last_emit_times.get(f"SAVE_STRIKE_{instrument_key}", 0)
+        if time.time() - last_emit > 60: # Every 1 minute
+            coll.insert_one(doc)
+            last_emit_times[f"SAVE_STRIKE_{instrument_key}"] = time.time()
+    except Exception as e:
+        logging.error(f"Error saving strike OI: {e}")
+
+def save_oi_to_db(symbol, call_oi, put_oi, price=0):
+    """Persists aggregated OI to MongoDB for historical analytics."""
+    try:
+        oi_coll = get_oi_collection()
+        now = datetime.now()
+        doc = {
+            'symbol': symbol,
+            'date': now.strftime("%Y-%m-%d"),
+            'timestamp': now.strftime("%H:%M"),
+            'call_oi': call_oi,
+            'put_oi': put_oi,
+            'price': price,
+            'source': 'live_engine',
+            'updated_at': now
+        }
+        query = {'symbol': symbol, 'date': doc['date'], 'timestamp': doc['timestamp']}
+        oi_coll.update_one(query, {'$set': doc}, upsert=True)
+        logging.info(f"Saved real-time OI for {symbol}")
+    except Exception as e:
+        logging.error(f"Error saving real-time OI: {e}")
 
 def start_pcr_calculation_thread():
     """Starts a background thread to calculate PCR periodically."""

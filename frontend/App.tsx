@@ -149,6 +149,12 @@ const App = () => {
             // Replay OI updates
             setHistoricalPcr(prev => {
                 const newPoint = { timestamp: msg.timestamp, pcr: msg.pcr, price: 0 };
+                // Avoid duplicate timestamps
+                if (prev.length > 0 && prev[prev.length - 1].timestamp === msg.timestamp) {
+                    const updated = [...prev];
+                    updated[updated.length - 1] = newPoint;
+                    return updated;
+                }
                 return [...prev, newPoint].slice(-100);
             });
         }
@@ -214,7 +220,15 @@ const App = () => {
             }
 
             const pcrHist = await fetch(`/api/analytics/pcr/${currentSymbol}`).then(r => r.json()).catch(() => []);
-            setHistoricalPcr(pcrHist);
+            if (pcrHist && pcrHist.length > 0) {
+                setHistoricalPcr(prev => {
+                    // Only use historical if we don't have many live points yet
+                    // or merge them properly. For simplicity, if we have live points,
+                    // we just keep them if they are newer.
+                    if (prev.length > 5) return prev;
+                    return pcrHist;
+                });
+            }
         }
         setLastSync(new Date());
     } catch (e) {
