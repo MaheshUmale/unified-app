@@ -267,15 +267,16 @@ def fetch_option_buildup(symbol: str, expiry: str, strike: int, option_type: str
     return get_local_buildup(symbol, mtype='options', strike=strike, option_type=option_type)
 
 def get_local_buildup(symbol: str, mtype='futures', strike=None, option_type=None) -> List[Dict[str, Any]]:
-    """Calculates buildup from local MongoDB strike_oi_data."""
+    """Calculates buildup from local MongoDB strike_oi_data or intraday bars."""
     try:
         from db.mongodb import get_db
         from core.pcr_logic import analyze_oi_buildup
-        db = get_db()
-        coll = db['strike_oi_data']
-
-        # We need to find the instrument_key for this symbol/strike
+        from core import data_engine
         from external import upstox_helper
+
+        db = get_db()
+
+        # 1. Resolve Instrument Key
         if mtype == 'futures':
             instrument_key = upstox_helper.resolve_instrument_key(symbol, 'FUT')
         else:
@@ -284,9 +285,25 @@ def get_local_buildup(symbol: str, mtype='futures', strike=None, option_type=Non
         if not instrument_key:
             return []
 
-        # Get last 20 points
-        cursor = coll.find({'instrument_key': instrument_key}).sort([('date', -1), ('timestamp', -1)]).limit(20)
+        # 2. Try fetching from strike_oi_data first
+        coll = db['strike_oi_data']
+        cursor = coll.find({'instrument_key': instrument_key}).sort([('date', -1), ('timestamp', -1)]).limit(40)
         docs = list(cursor)[::-1] # chronological
+
+        # 3. If insufficient, use intraday aggregated bars
+        if len(docs) < 2:
+            bars = data_engine.load_intraday_data(instrument_key)
+            docs = []
+            for b in bars:
+                docs.append({
+                    'date': datetime.fromtimestamp(b['ts']/1000).strftime("%Y-%m-%d"),
+                    'timestamp': datetime.fromtimestamp(b['ts']/1000).strftime("%H:%M:%S"),
+                    'price': b['close'],
+                    'oi': b.get('oi', 0)
+                })
+
+        if len(docs) < 2:
+            return []
 
         results = []
         for i in range(1, len(docs)):
@@ -306,7 +323,8 @@ def get_local_buildup(symbol: str, mtype='futures', strike=None, option_type=Non
                 'buildup_type': buildup
             })
 
-        return results[::-1] # Newest first for UI
+        # Ensure we don't have too many points and they are descending (newest first)
+        return results[::-1][:20]
     except Exception as e:
         logger.error(f"Error in get_local_buildup: {e}")
         return []
