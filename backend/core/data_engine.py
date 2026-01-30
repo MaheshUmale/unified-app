@@ -267,10 +267,11 @@ def process_footprint_tick(instrument_key: str, data_datum: Dict[str, Any]):
     global active_bars, session_stats, socketio_instance
 
     try:
-        if 'fullFeed' not in data_datum or 'marketFF' not in data_datum['fullFeed']:
+        full_feed = data_datum.get('fullFeed', {})
+        ff = full_feed.get('marketFF') or full_feed.get('indexFF')
+        if not ff:
             return
 
-        ff = data_datum['fullFeed']['marketFF']
         ltpc = ff.get('ltpc')
         if not ltpc or not ltpc.get('ltp'):
             return
@@ -397,7 +398,15 @@ def update_pcr_for_instrument(instrument_key: str):
     if meta['type'] not in ['CE', 'PE']:
         return
 
-    symbol = meta['symbol']
+    raw_symbol = meta['symbol']
+    # Normalize symbol for frontend consistency
+    if 'NIFTY BANK' in raw_symbol.upper() or 'BANKNIFTY' in raw_symbol.upper():
+        symbol = 'BANKNIFTY'
+    elif 'NIFTY' in raw_symbol.upper():
+        symbol = 'NIFTY'
+    else:
+        symbol = raw_symbol
+
     if symbol not in pcr_running_totals:
         pcr_running_totals[symbol] = {'CE': 0, 'PE': 0, 'last_save': 0}
 
@@ -434,7 +443,7 @@ def update_pcr_for_instrument(instrument_key: str):
         if now_time - last_save > 60:
             # Get latest index price for this symbol
             index_price = 0
-            index_key = "NSE_INDEX|Nifty 50" if symbol == "NIFTY" else "NSE_INDEX|Nifty Bank"
+            index_key = "NSE_INDEX|Nifty 50" if symbol == 'NIFTY' else "NSE_INDEX|Nifty Bank"
             index_price = latest_prices.get(index_key, 0)
 
             threading.Thread(target=save_oi_to_db, args=(symbol, total_ce_oi, total_pe_oi, index_price), daemon=True).start()
@@ -590,9 +599,11 @@ def load_intraday_data(instrument_key):
         replay = ReplayManager(emit_fn=collect_bar)
         replay.timeframe_sec = 60
         for doc in cursor:
-            ff = doc.get('fullFeed', {}).get('marketFF', {})
+            full_feed = doc.get('fullFeed', {})
+            ff = full_feed.get('marketFF') or full_feed.get('indexFF')
             if not ff: continue
-            ltt = int(ff.get('ltpc', {}).get('ltt', 0))
+            ltpc = ff.get('ltpc', {})
+            ltt = int(ltpc.get('ltt', 0))
             if (ltt / 1000.0) < start_ts: continue
             replay.process_replay_tick(doc)
 
@@ -655,10 +666,11 @@ class ReplayManager:
         self.emit_fn('replay_finished', {'reason': 'completed'})
 
     def process_replay_tick(self, data):
-        if 'fullFeed' not in data or 'marketFF' not in data['fullFeed']:
+        full_feed = data.get('fullFeed', {})
+        ff = full_feed.get('marketFF') or full_feed.get('indexFF')
+        if not ff:
             return
 
-        ff = data['fullFeed']['marketFF']
         ltpc = ff.get('ltpc')
         if not ltpc or not ltpc.get('ltp'):
             return
@@ -691,8 +703,10 @@ class ReplayManager:
         self.aggregated_bar['volume'] += trade_qty
 
         # Capture OI from tick if available
-        if 'fullFeed' in data and 'marketFF' in data['fullFeed']:
-            self.aggregated_bar['oi'] = float(data['fullFeed']['marketFF'].get('oi', self.aggregated_bar.get('oi', 0)))
+        if 'fullFeed' in data:
+            ff_oi = data['fullFeed'].get('marketFF', {}).get('oi')
+            if ff_oi is not None:
+                self.aggregated_bar['oi'] = float(ff_oi)
 
         bid_ask_quotes = ff.get('marketLevel', {}).get('bidAskQuote', [])
         side = 'unknown'

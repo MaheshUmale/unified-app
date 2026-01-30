@@ -95,7 +95,10 @@ const App = () => {
   useEffect(() => {
     socket.connect();
     const handleUpdate = (quotes: any) => {
-        if (quotes[indexKeyRef.current]) setIndexData(prev => updateCandle(prev, quotes[indexKeyRef.current]));
+        if (quotes[indexKeyRef.current]) {
+            setIndexData(prev => updateCandle(prev, quotes[indexKeyRef.current]));
+            setLastSync(new Date());
+        }
         const { ce, pe } = atmOptionKeysRef.current;
         if (ce && quotes[ce]) setCeData(prev => updateCandle(prev, quotes[ce]));
         if (pe && quotes[pe]) setPeData(prev => updateCandle(prev, quotes[pe]));
@@ -146,7 +149,22 @@ const App = () => {
             }
         }
         if (msg.type === 'oi_update') {
-            // Replay OI updates
+            const currentSymbol = indexKeyRef.current.includes('Nifty 50') ? 'NIFTY' : 'BANKNIFTY';
+            if (msg.symbol !== currentSymbol) return;
+
+            setLastSync(new Date());
+
+            setSentiment(prev => {
+                if (!prev) return null;
+                return {
+                    ...prev,
+                    pcr: msg.pcr,
+                    trend: msg.pcr > 1.2 ? 'BULLISH' : msg.pcr < 0.8 ? 'BEARISH' : 'NEUTRAL',
+                    maxCallOI: msg.call_oi || prev.maxCallOI,
+                    maxPutOI: msg.put_oi || prev.put_oi
+                };
+            });
+
             setHistoricalPcr(prev => {
                 const newPoint = { timestamp: msg.timestamp, pcr: msg.pcr, price: 0 };
                 // Avoid duplicate timestamps

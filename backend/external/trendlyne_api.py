@@ -267,43 +267,74 @@ def fetch_option_buildup(symbol: str, expiry: str, strike: int, option_type: str
     return get_local_buildup(symbol, mtype='options', strike=strike, option_type=option_type)
 
 def get_local_buildup(symbol: str, mtype='futures', strike=None, option_type=None) -> List[Dict[str, Any]]:
-    """Calculates buildup from local MongoDB strike_oi_data or intraday bars."""
+    """Calculates buildup from local MongoDB strike_oi_data, intraday bars, or Upstox API."""
     try:
         from db.mongodb import get_db
         from core.pcr_logic import analyze_oi_buildup
         from core import data_engine
         from external import upstox_helper
+        from external.upstox_api import UpstoxAPI
+        from config import ACCESS_TOKEN
 
         db = get_db()
 
         # 1. Resolve Instrument Key
+        # Standardize symbol for Upstox resolution
+        res_symbol = "NIFTY" if "nifty 50" in symbol.lower() else "BANKNIFTY" if "bank" in symbol.lower() else symbol
+
         if mtype == 'futures':
-            instrument_key = upstox_helper.resolve_instrument_key(symbol, 'FUT')
+            instrument_key = upstox_helper.resolve_instrument_key(res_symbol, 'FUT')
         else:
-            instrument_key = upstox_helper.resolve_instrument_key(symbol, option_type.upper(), strike=strike)
+            instrument_key = upstox_helper.resolve_instrument_key(res_symbol, option_type.upper(), strike=strike)
 
         if not instrument_key:
+            logger.warning(f"Buildup Fallback: Could not resolve key for {symbol} {mtype} {strike}")
             return []
 
-        # 2. Try fetching from strike_oi_data first
-        coll = db['strike_oi_data']
-        cursor = coll.find({'instrument_key': instrument_key}).sort([('date', -1), ('timestamp', -1)]).limit(40)
-        docs = list(cursor)[::-1] # chronological
+        logger.info(f"Buildup Fallback: Using key {instrument_key} for {symbol}")
 
-        # 3. If insufficient, use intraday aggregated bars
+        # 2. Try fetching from strike_oi_data first (cached ticks)
+        coll = db['strike_oi_data']
+        cursor = coll.find({'instrument_key': instrument_key}).sort([('date', -1), ('timestamp', -1)]).limit(60)
+        docs = list(cursor)[::-1] # chronological
+        source = "DB_STRIKE_OI"
+
+        # 3. If insufficient, use intraday aggregated bars (from tick_data)
         if len(docs) < 2:
             bars = data_engine.load_intraday_data(instrument_key)
-            docs = []
-            for b in bars:
-                docs.append({
-                    'date': datetime.fromtimestamp(b['ts']/1000).strftime("%Y-%m-%d"),
-                    'timestamp': datetime.fromtimestamp(b['ts']/1000).strftime("%H:%M:%S"),
-                    'price': b['close'],
-                    'oi': b.get('oi', 0)
-                })
+            if len(bars) >= 2:
+                docs = []
+                for b in bars:
+                    docs.append({
+                        'date': datetime.fromtimestamp(b['ts']/1000).strftime("%Y-%m-%d"),
+                        'timestamp': datetime.fromtimestamp(b['ts']/1000).strftime("%H:%M:%S"),
+                        'price': b['close'],
+                        'oi': b.get('oi', 0)
+                    })
+                source = "DB_TICK_DATA"
+
+        # 4. Final attempt: Fetch from Upstox API if still insufficient
+        if len(docs) < 2:
+            logger.info(f"Buildup Fallback: Fetching from Upstox API for {instrument_key}")
+            upstox_api = UpstoxAPI(ACCESS_TOKEN)
+            data = upstox_api.get_intraday_candles(instrument_key)
+            if data and 'data' in data and 'candles' in data['data']:
+                candles = data['data']['candles'] # newest first
+                docs = []
+                for c in reversed(candles): # to chronological
+                    docs.append({
+                        'date': c[0][:10],
+                        'timestamp': c[0][11:19],
+                        'price': c[4],
+                        'oi': c[6] if len(c) > 6 else 0
+                    })
+                source = "UPSTOX_API"
 
         if len(docs) < 2:
+            logger.warning(f"Buildup Fallback: Insufficient data points found for {instrument_key}")
             return []
+
+        logger.info(f"Buildup Fallback: Calculated from {source} ({len(docs)} points)")
 
         results = []
         for i in range(1, len(docs)):
