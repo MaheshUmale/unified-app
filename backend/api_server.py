@@ -157,7 +157,13 @@ async def handle_subscribe(sid, data):
     instrument_keys = data.get('instrumentKeys', [])
     logger.info(f"Client {sid} subscribing to {instrument_keys}")
     for key in instrument_keys:
-        await handle_subscribe_instrument(sid, {'instrument_key': key})
+        try:
+            await handle_subscribe_instrument(sid, {'instrument_key': key})
+        except ValueError as e:
+            if "sid is not connected" in str(e):
+                logger.warning(f"Client {sid} disconnected during bulk subscription")
+                break
+            raise
 
 @sio.on('subscribe_to_instrument')
 async def handle_subscribe_instrument(sid, data):
@@ -167,7 +173,13 @@ async def handle_subscribe_instrument(sid, data):
         return
 
     logger.info(f"Client {sid} subscribing to instrument: {instrument_key}")
-    await sio.enter_room(sid, instrument_key)
+    try:
+        await sio.enter_room(sid, instrument_key)
+    except ValueError as e:
+        if "sid is not connected" in str(e):
+            logger.warning(f"Client {sid} disconnected before entering room {instrument_key}")
+            return
+        raise
 
     # Delegate to data_engine for Upstox subscription
     data_engine.subscribe_instrument(instrument_key)

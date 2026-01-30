@@ -384,7 +384,9 @@ def resolve_metadata(instrument_key: str):
             row = match.iloc[0]
             expiry_date = ''
             if row.get('expiry'):
-                expiry_date = pd.to_datetime(row['expiry']).strftime('%Y-%m-%d')
+                dt = pd.to_datetime(row['expiry'])
+                if not pd.isna(dt):
+                    expiry_date = dt.strftime('%Y-%m-%d')
 
             instrument_metadata[instrument_key] = {
                 'symbol': row['name'],
