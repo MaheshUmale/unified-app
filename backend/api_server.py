@@ -466,9 +466,11 @@ async def get_upstox_option_chain(instrument_key: str, expiry_date: str):
 async def get_trendlyne_expiry(symbol: str):
     """Fetch expiry dates from Trendlyne."""
     try:
+        logger.info(f"Fetching Trendlyne expiry for symbol: {symbol}")
         stock_id = trendlyne_service.get_stock_id_for_symbol(symbol)
         if not stock_id:
-            raise HTTPException(status_code=404, detail=f"Stock ID not found for {symbol}")
+            logger.warning(f"Stock ID not found for {symbol}")
+            return []
 
         dates = trendlyne_service.get_expiry_dates(stock_id)
         # Format labels like frontend does
@@ -534,6 +536,20 @@ async def get_historical_pcr(symbol: str):
                 'call_oi': call_oi,
                 'put_oi': put_oi
             })
+
+        # If no data for today, try getting last 10 points regardless of date
+        if not results:
+            cursor = oi_coll.find({'symbol': symbol}).sort([('date', -1), ('timestamp', -1)]).limit(10)
+            for doc in list(cursor)[::-1]:
+                call_oi = doc.get('call_oi', 0)
+                put_oi = doc.get('put_oi', 0)
+                pcr = round(put_oi / call_oi, 2) if call_oi > 0 else 0
+                results.append({
+                    'timestamp': f"{doc['date']}T{doc['timestamp']}:00",
+                    'pcr': pcr,
+                    'call_oi': call_oi,
+                    'put_oi': put_oi
+                })
 
         return results
     except Exception as e:

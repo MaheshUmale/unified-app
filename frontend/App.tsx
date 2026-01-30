@@ -15,8 +15,8 @@ type TabType = 'TERMINAL' | 'ANALYTICS' | 'FLOW';
 const App = () => {
   const [activeTab, setActiveTab] = useState<TabType>('TERMINAL');
   const [indexKey, setIndexKey] = useState(INDICES.NIFTY.key);
-  const [expiryLabel, setExpiryLabel] = useState('3-feb-2026-near');
-  const [expiryDate, setExpiryDate] = useState('2026-02-03');
+  const [expiryLabel, setExpiryLabel] = useState('');
+  const [expiryDate, setExpiryDate] = useState('');
 
   const [indexData, setIndexData] = useState<OhlcData[]>([]);
   const [ceData, setCeData] = useState<OhlcData[]>([]);
@@ -40,11 +40,19 @@ const App = () => {
   useEffect(() => { indexKeyRef.current = indexKey; }, [indexKey]);
 
   const updateCandle = useCallback((prev: OhlcData[], quote: any): OhlcData[] => {
-    if (!quote || !prev.length) return prev;
+    if (!quote) return prev;
     const tickTime = new Date(quote.timestamp);
     const tickMinute = new Date(tickTime);
     tickMinute.setSeconds(0, 0);
     tickMinute.setMilliseconds(0);
+
+    if (!prev.length) {
+        return [{
+            timestamp: tickMinute.toISOString(),
+            open: quote.last_price, high: quote.last_price,
+            low: quote.last_price, close: quote.last_price, volume: 0
+        }];
+    }
 
     const last = { ...prev[prev.length - 1] };
     const lastTime = new Date(last.timestamp);
@@ -154,31 +162,33 @@ const App = () => {
   }, [updateCandle]);
 
   const loadData = useCallback(async () => {
-    if (isReplayMode) return; // Don't load live data in replay mode
+    if (isReplayMode) return;
     const currentSymbol = indexKey.includes('Nifty 50') ? 'NIFTY' : 'BANKNIFTY';
-    // Ensure we are loading data for the correct expiry matching the current index
-    if (lastExpiryIndexRef.current !== currentSymbol) {
-        console.log(`Skipping loadData: Expiry not yet updated for ${currentSymbol}`);
-        return;
-    }
 
     setLoading(true);
     try {
-        const [candles, chainData] = await Promise.all([
-            API.getIntradayCandles(indexKey).catch(() => []),
-            API.getOptionChain(indexKey, expiryDate).catch(() => [])
-        ]);
+        // Start index subscription immediately
+        socket.setSubscriptions([indexKey]);
+
+        // 1. Fetch Index Candles first (unconditionally)
+        const candles = await API.getIntradayCandles(indexKey).catch(() => []);
+        let currentAtm = atmStrike;
 
         if (candles && candles.length > 0) {
             setIndexData(candles);
             const currentPrice = candles[candles.length - 1].close;
             const step = currentSymbol === 'NIFTY' ? 50 : 100;
-            const atm = Math.round(currentPrice / step) * step;
-            setAtmStrike(atm);
+            currentAtm = Math.round(currentPrice / step) * step;
+            setAtmStrike(currentAtm);
+        }
+
+        // 2. Fetch Option Chain and Buildup if expiry is available
+        if (expiryDate) {
+            const chainData = await API.getOptionChain(indexKey, expiryDate).catch(() => []);
 
             if (chainData && chainData.length > 0) {
                 setSentiment(API.calculateSentiment(chainData));
-                const atmItem = chainData.find(i => i.strike_price === atm);
+                const atmItem = chainData.find(i => i.strike_price === currentAtm);
 
                 if (atmItem) {
                     const ceKey = atmItem.call_options.instrument_key;
@@ -188,9 +198,9 @@ const App = () => {
                     const [ceHist, peHist, fBuildup, cBuildup, pBuildup] = await Promise.all([
                         API.getIntradayCandles(ceKey).catch(() => []),
                         API.getIntradayCandles(peKey).catch(() => []),
-                        Trendlyne.fetchFuturesBuildup(currentSymbol, expiryLabel).catch(() => []),
-                        Trendlyne.fetchOptionBuildup(currentSymbol, expiryLabel, atm, 'call').catch(() => []),
-                        Trendlyne.fetchOptionBuildup(currentSymbol, expiryLabel, atm, 'put').catch(() => [])
+                        Trendlyne.fetchFuturesBuildup(currentSymbol, expiryDate).catch(() => []),
+                        Trendlyne.fetchOptionBuildup(currentSymbol, expiryDate, currentAtm, 'call').catch(() => []),
+                        Trendlyne.fetchOptionBuildup(currentSymbol, expiryDate, currentAtm, 'put').catch(() => [])
                     ]);
 
                     setCeData(ceHist);
