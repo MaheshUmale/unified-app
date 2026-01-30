@@ -409,6 +409,19 @@ async def get_oi_data_route(instrument_key: str):
         logger.error(f"Error fetching OI data: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch OI data")
 
+@fastapi_app.post("/api/cleanup/oi", response_model=Dict[str, Any])
+async def trigger_oi_cleanup(symbol: Optional[str] = None):
+    """
+    Manually triggers cleanup of potentially incorrect OI data for today.
+    """
+    try:
+        from scripts.cleanup_db import cleanup_oi_data
+        cleanup_oi_data(symbol=symbol)
+        return {"status": "success", "message": "Cleanup completed successfully"}
+    except Exception as e:
+        logger.error(f"Manual cleanup failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @fastapi_app.post("/api/backfill/trendlyne", response_model=Dict[str, Any])
 async def trigger_trendlyne_backfill(
     symbol: str = Query("NIFTY", description="The trading symbol to backfill (e.g., NIFTY, BANKNIFTY)"),
