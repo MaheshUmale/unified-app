@@ -61,32 +61,73 @@ const StrategyDashboard: React.FC<StrategyDashboardProps> = ({ indexKey, atmStri
     const metrics = analysis.metrics || {};
     const expectancy = metrics.expectancy || [];
     const regimes = metrics.regimes || {};
+    const decisionDetails = analysis.decision_details || {};
 
     return (
         <div className="flex flex-col gap-6 h-full overflow-y-auto pr-2 animate-fadeIn pb-8">
             {/* Header / Decision */}
-            <div className={`p-6 rounded-2xl border-2 flex items-center justify-between ${
-                analysis.decision === 'NO TRADE' ? 'bg-gray-900/50 border-gray-800' :
-                analysis.decision.includes('CALL') ? 'bg-green-500/10 border-green-500/30' :
-                analysis.decision.includes('PUT') ? 'bg-red-500/10 border-red-500/30' : 'bg-blue-500/10 border-blue-500/30'
-            }`}>
-                <div className="flex flex-col gap-1">
-                    <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Recommended Action</span>
-                    <h2 className={`text-3xl font-black italic tracking-tighter ${
-                        analysis.decision === 'NO TRADE' ? 'text-gray-400' :
-                        analysis.decision.includes('CALL') ? 'text-green-500' :
-                        analysis.decision.includes('PUT') ? 'text-red-500' : 'text-blue-500'
-                    }`}>
-                        {analysis.decision}
-                    </h2>
+            <div className="flex flex-col gap-4">
+                <div className={`p-6 rounded-2xl border-2 flex items-center justify-between ${
+                    analysis.decision === 'NO TRADE' ? 'bg-gray-900/50 border-gray-800' :
+                    analysis.decision.includes('CALL') ? 'bg-green-500/10 border-green-500/30' :
+                    analysis.decision.includes('PUT') ? 'bg-red-500/10 border-red-500/30' : 'bg-blue-500/10 border-blue-500/30'
+                }`}>
+                    <div className="flex flex-col gap-1">
+                        <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Recommended Action</span>
+                        <h2 className={`text-3xl font-black italic tracking-tighter ${
+                            analysis.decision === 'NO TRADE' ? 'text-gray-400' :
+                            analysis.decision.includes('CALL') ? 'text-green-500' :
+                            analysis.decision.includes('PUT') ? 'text-red-500' : 'text-blue-500'
+                        }`}>
+                            {analysis.decision}
+                        </h2>
+                    </div>
+                    <div className="flex flex-col items-end">
+                        <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">System Confidence</span>
+                        <span className="text-white font-black font-mono-data text-2xl">
+                            {Math.max(scores.call || 0, scores.put || 0, scores.straddle || 0)}%
+                        </span>
+                    </div>
                 </div>
-                <div className="flex flex-col items-end">
-                    <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">System Confidence</span>
-                    <span className="text-white font-black font-mono-data text-2xl">
-                        {Math.max(scores.call || 0, scores.put || 0, scores.straddle || 0)}%
-                    </span>
-                </div>
+
+                {analysis.decision === 'NO TRADE' && decisionDetails.failed_filters && (
+                    <div className="px-6 py-3 rounded-xl bg-red-500/5 border border-red-500/10 flex items-center gap-4">
+                        <span className="text-[9px] font-black text-red-500/60 uppercase tracking-widest">Failed Thresholds:</span>
+                        <span className="text-[10px] font-mono text-gray-500 italic">
+                            {decisionDetails.failed_filters.join(', ').replace(/_/g, ' ')}
+                        </span>
+                    </div>
+                )}
             </div>
+
+            {/* Detailed Decision Parameters */}
+            {analysis.decision !== 'NO TRADE' && (
+                <div className="glass-panel rounded-2xl p-6 border-l-4 border-blue-500 animate-slideIn">
+                    <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">Trade Execution Blueprint</h3>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+                        <div className="flex flex-col gap-1.5">
+                            <span className="text-[9px] font-black text-gray-500 uppercase tracking-tighter">Suggested Strike(s)</span>
+                            <div className="flex flex-col gap-0.5">
+                                {decisionDetails.suggested_strikes?.map((s: string) => (
+                                    <span key={s} className="text-[11px] font-black text-white italic tracking-tight">{s}</span>
+                                ))}
+                            </div>
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                            <span className="text-[9px] font-black text-gray-500 uppercase tracking-tighter">Ideal Entry & Time</span>
+                            <span className="text-[11px] font-bold text-blue-400">{decisionDetails.ideal_entry} | {decisionDetails.max_holding}</span>
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                            <span className="text-[9px] font-black text-gray-500 uppercase tracking-tighter">Position Size</span>
+                            <span className="text-[11px] font-bold text-orange-400">{decisionDetails.position_size}</span>
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                            <span className="text-[9px] font-black text-gray-500 uppercase tracking-tighter">Exit: SL / TP</span>
+                            <span className="text-[11px] font-bold text-green-400">{decisionDetails.stop_loss} / {decisionDetails.profit_rule}</span>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <div className="grid grid-cols-12 gap-6">
                 {/* Edge & Probability Table */}
@@ -128,18 +169,33 @@ const StrategyDashboard: React.FC<StrategyDashboardProps> = ({ indexKey, atmStri
                     <div className="grid grid-cols-2 gap-6">
                         <div className="glass-panel rounded-2xl p-6">
                             <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-6">Regime Probabilities (Next 30m)</h3>
-                            <div className="space-y-4">
-                                {Object.entries(regimes).map(([name, prob]: [string, any]) => (
-                                    <div key={name} className="flex flex-col gap-1.5">
-                                        <div className="flex justify-between text-[9px] font-black uppercase tracking-tight">
-                                            <span className="text-gray-400">{name.replace('_', ' → ')}</span>
-                                            <span className="text-white">{prob}%</span>
+                            <div className="space-y-6">
+                                <div className="space-y-3">
+                                    <span className="text-[8px] font-black text-blue-500/50 uppercase">Current (0-30m)</span>
+                                    {Object.entries(regimes).map(([name, prob]: [string, any]) => (
+                                        <div key={name} className="flex flex-col gap-1.5">
+                                            <div className="flex justify-between text-[9px] font-black uppercase tracking-tight">
+                                                <span className="text-gray-400">{name.replace('_', ' → ')}</span>
+                                                <span className="text-white">{prob}%</span>
+                                            </div>
+                                            <div className="h-1 bg-white/5 rounded-full overflow-hidden">
+                                                <div className="h-full bg-blue-500 transition-all duration-1000" style={{ width: `${prob}%` }} />
+                                            </div>
                                         </div>
-                                        <div className="h-1 bg-white/5 rounded-full overflow-hidden">
-                                            <div className="h-full bg-blue-500 transition-all duration-1000" style={{ width: `${prob}%` }} />
-                                        </div>
+                                    ))}
+                                </div>
+
+                                <div className="space-y-3 pt-2 border-t border-white/5">
+                                    <span className="text-[8px] font-black text-orange-500/50 uppercase">Shift Probabilities (30-90m)</span>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {Object.entries(metrics.shift_probs || {}).map(([name, prob]: [string, any]) => (
+                                            <div key={name} className="flex justify-between items-baseline p-2 bg-white/5 rounded-lg">
+                                                <span className="text-[8px] font-bold text-gray-500 uppercase truncate pr-1">{name}</span>
+                                                <span className="text-[10px] font-black text-orange-400">{prob}%</span>
+                                            </div>
+                                        ))}
                                     </div>
-                                ))}
+                                </div>
                             </div>
                         </div>
 

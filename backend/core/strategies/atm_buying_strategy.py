@@ -11,6 +11,17 @@ logger = logging.getLogger(__name__)
 
 from core import data_engine
 
+def format_nifty_option_symbol(expiry_str: str, strike: float, option_type: str) -> str:
+    """Formats Nifty option symbol as: NIFTY 50 03 FEB 2026 CALL 25300"""
+    try:
+        dt = datetime.strptime(expiry_str, "%Y-%m-%d")
+        # Format: 03 FEB 2026
+        formatted_date = dt.strftime("%d %b %Y").upper()
+        # Map CE/PE to CALL/PUT if needed, but here we expect CALL/PUT as input
+        return f"NIFTY 50 {formatted_date} {option_type} {int(strike)}"
+    except:
+        return f"NIFTY 50 {expiry_str} {option_type} {strike}"
+
 class ATMOptionBuyingStrategy:
     def __init__(self):
         self.contexts = defaultdict(lambda: {
@@ -91,6 +102,7 @@ class ATMOptionBuyingStrategy:
             "spot_price": data_engine.latest_prices.get(index_key, 0),
             "india_vix": data_engine.latest_vix.get('value', 0),
             "atm_strike": atm_strike,
+            "expiry": expiry,
             "atm_ce": ce_metrics,
             "atm_pe": pe_metrics
         }
@@ -179,6 +191,31 @@ class ATMOptionBuyingStrategy:
                 elif put_score > call_score and put_score >= 60: decision = "ATM PUT BUY"
                 elif straddle_score >= 60: decision = "ATM LONG STRADDLE"
 
+            # 4) TRADE DECISION (Detailed)
+            expiry_str = market_data.get('expiry', '')
+            decision_details = {
+                "choice": decision,
+                "suggested_strikes": [],
+                "ideal_entry": "Now (Immediate Momentum)" if edge_met else "N/A",
+                "max_holding": "30-45 minutes",
+                "position_size": "15% of intraday risk capital",
+                "stop_loss": "Spot -25 pts / Option -15%",
+                "profit_rule": "Spot +50 pts / Option +35%"
+            }
+
+            if decision == "ATM CALL BUY":
+                decision_details["suggested_strikes"].append(format_nifty_option_symbol(expiry_str, atm_strike, "CALL"))
+            elif decision == "ATM PUT BUY":
+                decision_details["suggested_strikes"].append(format_nifty_option_symbol(expiry_str, atm_strike, "PUT"))
+            elif decision == "ATM LONG STRADDLE":
+                decision_details["suggested_strikes"].append(format_nifty_option_symbol(expiry_str, atm_strike, "CALL"))
+                decision_details["suggested_strikes"].append(format_nifty_option_symbol(expiry_str, atm_strike, "PUT"))
+            elif decision == "NO TRADE":
+                failed = []
+                for k, v in filters.items():
+                    if not v: failed.append(k)
+                decision_details["failed_filters"] = failed
+
             # Probabilistic Expectancy Table
             expectancy = [
                 {
@@ -196,6 +233,14 @@ class ATMOptionBuyingStrategy:
                     "time": 15,
                     "exp_move": round(expected_move_15m, 2),
                     "net": round(expected_move_15m - pe.get('price', 0), 2)
+                },
+                {
+                    "type": "STRADDLE",
+                    "win_prob": min(90, straddle_score + 5),
+                    "req_move": round(straddle_price, 2),
+                    "time": 15,
+                    "exp_move": round(expected_move_15m, 2),
+                    "net": round(expected_move_15m - straddle_price, 2)
                 }
             ]
 
@@ -218,13 +263,20 @@ class ATMOptionBuyingStrategy:
                 },
                 "filters": filters,
                 "decision": decision,
+                "decision_details": decision_details,
                 "metrics": {
                     "vix": vix,
                     "straddle_price": straddle_price,
                     "expected_move": expected_move_15m,
                     "theta_burn_15m": ce_theta_15m + pe_theta_15m,
                     "expectancy": expectancy,
-                    "regimes": regimes
+                    "regimes": regimes,
+                    "shift_probs": {
+                        "Slow Range": 20,
+                        "Compression_Expansion": 25,
+                        "Fast Trend": 40,
+                        "Erratic Chop": 15
+                    }
                 },
                 "context": self.contexts[symbol],
                 "timestamp": data_engine.get_now().isoformat()
