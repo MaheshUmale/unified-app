@@ -97,19 +97,30 @@ const App = () => {
   useEffect(() => {
     socket.connect();
     const handleUpdate = (quotes: any) => {
-        if (quotes[indexKeyRef.current]) {
-            setIndexData(prev => updateCandle(prev, quotes[indexKeyRef.current]));
+        const { ce, pe } = atmOptionKeysRef.current;
+        const idxKey = indexKeyRef.current;
+
+        if (quotes[idxKey]) {
+            setIndexData(prev => updateCandle(prev, quotes[idxKey]));
             setLastSync(new Date());
         }
-        const { ce, pe } = atmOptionKeysRef.current;
-        if (ce && quotes[ce]) setCeData(prev => updateCandle(prev, quotes[ce]));
-        if (pe && quotes[pe]) setPeData(prev => updateCandle(prev, quotes[pe]));
+
+        if (ce && quotes[ce]) {
+            setCeData(prev => updateCandle(prev, quotes[ce]));
+        }
+
+        if (pe && quotes[pe]) {
+            setPeData(prev => updateCandle(prev, quotes[pe]));
+        }
     };
 
     const handleFootprint = ({ type, data }: { type: 'history' | 'update', data: any }) => {
         const item = Array.isArray(data) ? data[0] : data;
-        const instrumentToken = item?.instrument_token;
-        if (!instrumentToken) return;
+        const token = item?.instrument_token;
+        if (!token) return;
+
+        const { ce, pe } = atmOptionKeysRef.current;
+        const idxKey = indexKeyRef.current;
 
         const transform = (b: any): OhlcData => ({
             timestamp: new Date(b.ts).toISOString(),
@@ -118,9 +129,9 @@ const App = () => {
 
         if (type === 'history') {
             const hist = data.map(transform);
-            if (instrumentToken === indexKeyRef.current) setIndexData(hist);
-            if (instrumentToken === atmOptionKeysRef.current.ce) setCeData(hist);
-            if (instrumentToken === atmOptionKeysRef.current.pe) setPeData(hist);
+            if (token === idxKey) setIndexData(hist);
+            if (token === ce) setCeData(hist);
+            if (token === pe) setPeData(hist);
         } else {
             const bar = transform(data);
             const updateBar = (prev: OhlcData[]) => {
@@ -130,9 +141,9 @@ const App = () => {
                 if (new Date(bar.timestamp).getTime() > new Date(last.timestamp).getTime()) return [...prev.slice(-499), bar];
                 return prev;
             };
-            if (instrumentToken === indexKeyRef.current) setIndexData(updateBar);
-            if (instrumentToken === atmOptionKeysRef.current.ce) setCeData(updateBar);
-            if (instrumentToken === atmOptionKeysRef.current.pe) setPeData(updateBar);
+            if (token === idxKey) setIndexData(updateBar);
+            if (token === ce) setCeData(updateBar);
+            if (token === pe) setPeData(updateBar);
         }
     };
 

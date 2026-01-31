@@ -7,7 +7,7 @@ import asyncio
 import logging
 from logging.config import dictConfig
 from typing import List, Dict, Any, Optional
-import socketio
+import socketio # python-socketio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
@@ -716,6 +716,7 @@ async def get_replay_session_info(date: str, index_key: str):
             ]
         }
         all_keys = tick_coll.distinct('instrumentKey', query)
+        logger.info(f"Discovered {len(all_keys)} keys for date {date}: {all_keys}")
 
         # 3. Identify closest CE and PE recorded on that day
         step = 50 if "Nifty 50" in clean_key else 100
