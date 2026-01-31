@@ -213,36 +213,41 @@ const App = () => {
 
         // 2. Fetch Option Chain and Buildup if expiry is available
         if (expiryDate) {
-            const chainData = await API.getOptionChain(indexKey, expiryDate).catch(() => []);
+            let ceKey = atmOptionKeysRef.current.ce;
+            let peKey = atmOptionKeysRef.current.pe;
 
-            if (chainData && chainData.length > 0) {
-                setSentiment(API.calculateSentiment(chainData));
-                const atmItem = chainData.find(i => i.strike_price === currentAtm);
-
-                if (atmItem) {
-                    const ceKey = atmItem.call_options.instrument_key;
-                    const peKey = atmItem.put_options.instrument_key;
-                    atmOptionKeysRef.current = { ce: ceKey, pe: peKey };
-
-                    const [ceHist, peHist, fBuildup, cBuildup, pBuildup] = await Promise.all([
-                        API.getIntradayCandles(ceKey, isReplayMode ? replayDate! : undefined).catch(() => []),
-                        API.getIntradayCandles(peKey, isReplayMode ? replayDate! : undefined).catch(() => []),
-                        Trendlyne.fetchFuturesBuildup(currentSymbol, expiryDate).catch(() => []),
-                        Trendlyne.fetchOptionBuildup(currentSymbol, expiryDate, currentAtm, 'call').catch(() => []),
-                        Trendlyne.fetchOptionBuildup(currentSymbol, expiryDate, currentAtm, 'put').catch(() => [])
-                    ]);
-
-                    setCeData(ceHist);
-                    setPeData(peHist);
-                    setFuturesBuildup(fBuildup);
-                    setCeBuildup(cBuildup);
-                    setPeBuildup(pBuildup);
-                    socket.setSubscriptions([indexKey, ceKey, peKey]);
-                    setTrendlyneReady(Trendlyne.isSessionInitialized);
+            if (!isReplayMode) {
+                const chainData = await API.getOptionChain(indexKey, expiryDate).catch(() => []);
+                if (chainData && chainData.length > 0) {
+                    setSentiment(API.calculateSentiment(chainData));
+                    const atmItem = chainData.find(i => i.strike_price === currentAtm);
+                    if (atmItem) {
+                        ceKey = atmItem.call_options.instrument_key;
+                        peKey = atmItem.put_options.instrument_key;
+                        atmOptionKeysRef.current = { ce: ceKey, pe: peKey };
+                    }
                 }
             }
 
-            const pcrHist = await fetch(`/api/analytics/pcr/${currentSymbol}`).then(r => r.json()).catch(() => []);
+            if (ceKey && peKey) {
+                const [ceHist, peHist, fBuildup, cBuildup, pBuildup] = await Promise.all([
+                    API.getIntradayCandles(ceKey, isReplayMode ? replayDate! : undefined).catch(() => []),
+                    API.getIntradayCandles(peKey, isReplayMode ? replayDate! : undefined).catch(() => []),
+                    Trendlyne.fetchFuturesBuildup(currentSymbol, expiryDate).catch(() => []),
+                    Trendlyne.fetchOptionBuildup(currentSymbol, expiryDate, currentAtm, 'call').catch(() => []),
+                    Trendlyne.fetchOptionBuildup(currentSymbol, expiryDate, currentAtm, 'put').catch(() => [])
+                ]);
+
+                setCeData(ceHist);
+                setPeData(peHist);
+                setFuturesBuildup(fBuildup);
+                setCeBuildup(cBuildup);
+                setPeBuildup(pBuildup);
+                socket.setSubscriptions([indexKey, ceKey, peKey]);
+                setTrendlyneReady(Trendlyne.isSessionInitialized);
+            }
+
+            const pcrHist = await fetch(`/api/analytics/pcr/${currentSymbol}${isReplayMode ? `?date=${replayDate}` : ''}`).then(r => r.json()).catch(() => []);
             if (pcrHist && pcrHist.length > 0) {
                 setHistoricalPcr(prev => {
                     // Only use historical if we don't have many live points yet
@@ -259,7 +264,7 @@ const App = () => {
     } finally {
         setLoading(false);
     }
-  }, [indexKey, expiryLabel, isReplayMode, replayDate]);
+  }, [indexKey, atmStrike, expiryLabel, isReplayMode, replayDate]);
 
   useEffect(() => {
     loadData();
@@ -340,6 +345,10 @@ const App = () => {
             currentIndexKey={indexKey}
             onReplaySessionInfo={(info) => {
                 setAtmStrike(info.atm);
+                if (info.expiry) {
+                    setExpiryDate(info.expiry);
+                    setExpiryLabel(info.expiry);
+                }
                 atmOptionKeysRef.current = {
                     ce: info.suggested_ce || '',
                     pe: info.suggested_pe || ''

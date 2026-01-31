@@ -585,12 +585,12 @@ async def get_trendlyne_option_buildup(symbol: str, expiry: str, strike: int, op
         raise HTTPException(status_code=500, detail=str(e))
 
 @fastapi_app.get("/api/analytics/pcr/{symbol}")
-async def get_historical_pcr(symbol: str):
+async def get_historical_pcr(symbol: str, date: Optional[str] = None):
     """Fetch historical PCR and Spot data for analytics."""
     try:
         oi_coll = get_oi_collection()
         # Fetch today's OI data
-        today_str = datetime.now().strftime("%Y-%m-%d")
+        today_str = date or datetime.now().strftime("%Y-%m-%d")
 
         # Support both BANKNIFTY and NIFTY BANK for historical compatibility
         symbol_query = [symbol]
@@ -724,6 +724,7 @@ async def get_replay_session_info(date: str, index_key: str):
         # Find matching keys from the recorded list
         suggested_ce = None
         suggested_pe = None
+        expiry = None
 
         for key in all_keys:
             if clean_key in key: continue # skip index
@@ -735,13 +736,16 @@ async def get_replay_session_info(date: str, index_key: str):
             # A more robust way would be to check the instrument master's strike_price field
             if instr.get('instrument_type') == 'CE' and instr.get('strike_price') == atm:
                 suggested_ce = key
+                expiry = instr.get('expiry_date') or instr.get('expiry')
             elif instr.get('instrument_type') == 'PE' and instr.get('strike_price') == atm:
                 suggested_pe = key
+                if not expiry: expiry = instr.get('expiry_date') or instr.get('expiry')
 
         return {
             "date": date,
             "start_price": start_price,
             "atm": atm,
+            "expiry": expiry,
             "suggested_ce": suggested_ce,
             "suggested_pe": suggested_pe,
             "available_keys": all_keys
