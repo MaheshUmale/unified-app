@@ -7,7 +7,7 @@ import asyncio
 import logging
 from logging.config import dictConfig
 from typing import List, Dict, Any, Optional
-import socketio
+import socketio # python-socketio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
