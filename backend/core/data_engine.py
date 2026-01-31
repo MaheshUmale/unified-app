@@ -48,6 +48,7 @@ subscribed_instruments = set()
 # Real-time Strategy & PCR tracking
 replay_mode = False
 sim_time = None # datetime representing simulated 'now'
+sim_strike_data = {} # instrument_key -> list of docs (for replay)
 
 def get_now():
     """Returns simulated time if in replay mode, else real time."""
@@ -429,8 +430,9 @@ def subscribe_instrument(instrument_key: str):
         threading.Thread(target=resolve_metadata, args=(instrument_key,), daemon=True).start()
 
 def resolve_metadata(instrument_key: str):
-    """Resolves and caches instrument metadata (Symbol, Type, Strike, Expiry)."""
+    """Resolves and caches instrument metadata (Symbol, Type, Strike, Expiry). Falls back to DB for historical."""
     try:
+        # 1. Try Live Master
         df = ExtractInstrumentKeys.get_instrument_df()
         match = df[df['instrument_key'] == instrument_key]
         if not match.empty:
@@ -447,9 +449,23 @@ def resolve_metadata(instrument_key: str):
                 'strike': float(row.get('strike_price', 0)),
                 'expiry': expiry_date
             }
+        else:
+            # 2. Try MongoDB (for expired/historical instruments)
+            db = get_db()
+            doc = db['instruments'].find_one({'instrument_key': instrument_key})
+            if doc:
+                instrument_metadata[instrument_key] = {
+                    'symbol': doc.get('name') or doc.get('underlying_symbol') or 'UNKNOWN',
+                    'type': doc.get('instrument_type') or 'UNKNOWN',
+                    'strike': float(doc.get('strike_price', 0)),
+                    'expiry': doc.get('expiry_date') or ''
+                }
 
-            # Update current nearest expiry for the symbol (only future/today)
-            symbol = row['name']
+        # 3. Update current nearest expiry for the symbol (only future/today)
+        if instrument_key in instrument_metadata:
+            meta = instrument_metadata[instrument_key]
+            symbol = meta['symbol']
+            expiry_date = meta['expiry']
             today_str = datetime.now().strftime('%Y-%m-%d')
             if expiry_date and expiry_date >= today_str:
                 if symbol not in current_expiries or expiry_date < current_expiries[symbol]:
@@ -527,8 +543,8 @@ def update_pcr_for_instrument(instrument_key: str):
             pcr_running_totals[symbol]['last_save'] = now_time
 
 def save_vix_to_db(vix_value):
-    """Persists India VIX for strategy context. Disabled in replay."""
-    if replay_mode: return
+    """Persists India VIX for strategy context. Gated by replay timestamps."""
+    if replay_mode: return # Keep simulation in memory
     try:
         db = get_db()
         coll = db['vix_data']
@@ -547,13 +563,9 @@ def save_vix_to_db(vix_value):
         logging.error(f"Error saving VIX: {e}")
 
 def save_strike_metrics_to_db(instrument_key, oi, price, iv=0, greeks=None):
-    """Persists per-instrument metrics for buildup and strategy analysis. Disabled in replay."""
-    if replay_mode: return
+    """Persists per-instrument metrics for buildup and strategy analysis. Gated by replay timestamps."""
     try:
-        db = get_db()
-        coll = db['strike_oi_data']
         now = get_now()
-
         ba = latest_bid_ask.get(instrument_key, {})
         spread = abs(ba.get('ask', 0) - ba.get('bid', 0)) if ba else 0
 
@@ -570,6 +582,20 @@ def save_strike_metrics_to_db(instrument_key, oi, price, iv=0, greeks=None):
             'spread': spread,
             'updated_at': now
         }
+
+        if replay_mode:
+            # Maintain in-memory history for strategy lookups during replay
+            if instrument_key not in sim_strike_data:
+                sim_strike_data[instrument_key] = []
+            sim_strike_data[instrument_key].append(doc)
+            # Limit history to 2 hours of 1-min data
+            if len(sim_strike_data[instrument_key]) > 120:
+                sim_strike_data[instrument_key].pop(0)
+            return
+
+        # Regular live persistence
+        db = get_db()
+        coll = db['strike_oi_data']
         # Only save every 1 minute to avoid bloat
         last_emit = last_emit_times.get(f"SAVE_STRIKE_{instrument_key}", 0)
         if time.time() - last_emit > 60: # Every 1 minute
@@ -579,8 +605,8 @@ def save_strike_metrics_to_db(instrument_key, oi, price, iv=0, greeks=None):
         logging.error(f"Error saving strike metrics: {e}")
 
 def save_oi_to_db(symbol, call_oi, put_oi, price=0):
-    """Persists aggregated OI to MongoDB for historical analytics. Disabled in replay."""
-    if replay_mode: return
+    """Persists aggregated OI to MongoDB for historical analytics. Gated by replay timestamps."""
+    if replay_mode: return # Skip for replay to avoid pollution
     try:
         oi_coll = get_oi_collection()
         now = get_now()

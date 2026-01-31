@@ -52,6 +52,14 @@ class ATMOptionBuyingStrategy:
         time_15m_ago = now - timedelta(minutes=15)
 
         def get_historical_metrics(key):
+            if data_engine.replay_mode and key in data_engine.sim_strike_data:
+                # Search in-memory simulation history
+                history = data_engine.sim_strike_data[key]
+                for doc in reversed(history):
+                    if doc['updated_at'] <= time_15m_ago:
+                        return doc
+                return {}
+
             doc = coll.find_one({
                 'instrument_key': key,
                 'updated_at': {'$lte': time_15m_ago}
