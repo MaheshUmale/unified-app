@@ -41,9 +41,13 @@ const PCRVsSpotChart: React.FC<Props> = ({ pcrData, spotData, title }) => {
     const timestamps = pcrData.map(d => new Date(d.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
     const pcrValues = pcrData.map(d => d.pcr);
 
-    // For spot data, we might have more points, so we try to match them or just show both
-    // In a production app, we'd interpolate or align strictly.
-    const spotValues = spotData.filter((_, i) => i % 15 === 0).map(d => d.close).slice(-pcrData.length);
+    // Align spot data to PCR timestamps for accurate plotting
+    const spotValues = pcrData.map(p => {
+        const pTs = new Date(p.timestamp).getTime();
+        // Find closest spot candle (within 1 minute)
+        const closest = spotData.find(s => Math.abs(new Date(s.timestamp).getTime() - pTs) < 60000);
+        return closest ? closest.close : null;
+    });
 
     const option = {
         backgroundColor: 'transparent',

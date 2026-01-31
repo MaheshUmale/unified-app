@@ -7,7 +7,7 @@ import asyncio
 import logging
 from logging.config import dictConfig
 from typing import List, Dict, Any, Optional
-import socketio
+import socketio # python-socketio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
@@ -27,6 +27,7 @@ from core.replay_engine import ReplayEngine
 from external import trendlyne_api as trendlyne_service
 from external.upstox_api import UpstoxAPI
 from core.strategies.candle_cross import CandleCrossStrategy, DataPersistor
+from core.strategies.atm_buying_strategy import ATMOptionBuyingStrategy
 try:
     from core.strategies.combined_signal import CombinedSignalEngine
 except ImportError:
@@ -112,6 +113,9 @@ sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
 # Initialize Upstox API
 upstox_api = UpstoxAPI(ACCESS_TOKEN)
 
+# Initialize Strategy Engines
+atm_strategy = ATMOptionBuyingStrategy()
+
 # Initialize Replay Engine
 main_loop = None
 
@@ -157,7 +161,13 @@ async def handle_subscribe(sid, data):
     instrument_keys = data.get('instrumentKeys', [])
     logger.info(f"Client {sid} subscribing to {instrument_keys}")
     for key in instrument_keys:
-        await handle_subscribe_instrument(sid, {'instrument_key': key})
+        try:
+            await handle_subscribe_instrument(sid, {'instrument_key': key})
+        except ValueError as e:
+            if "sid is not connected" in str(e):
+                logger.warning(f"Client {sid} disconnected during bulk subscription")
+                break
+            raise
 
 @sio.on('subscribe_to_instrument')
 async def handle_subscribe_instrument(sid, data):
@@ -167,7 +177,13 @@ async def handle_subscribe_instrument(sid, data):
         return
 
     logger.info(f"Client {sid} subscribing to instrument: {instrument_key}")
-    sio.enter_room(sid, instrument_key)
+    try:
+        await sio.enter_room(sid, instrument_key)
+    except ValueError as e:
+        if "sid is not connected" in str(e):
+            logger.warning(f"Client {sid} disconnected before entering room {instrument_key}")
+            return
+        raise
 
     # Delegate to data_engine for Upstox subscription
     data_engine.subscribe_instrument(instrument_key)
@@ -329,6 +345,43 @@ async def live_pnl_api():
         raise HTTPException(status_code=500, detail=data["error"])
     return data
 
+@fastapi_app.get("/api/strategy/atm-buying")
+async def get_atm_strategy_analysis(index_key: str, atm_strike: int, expiry: str):
+    """Triggers and returns the ATM Option Buying Strategy analysis."""
+    try:
+        clean_key = unquote(index_key)
+        symbol = "NIFTY" if "Nifty 50" in clean_key else "BANKNIFTY"
+
+        # 1. Fetch current data
+        market_data = atm_strategy.fetch_market_data(symbol, clean_key, atm_strike, expiry)
+        if not market_data:
+            return {"error": "Could not fetch required market data for ATM strikes"}
+
+        # 2. Analyze
+        results = atm_strategy.analyze(symbol, market_data)
+        return results
+    except Exception as e:
+        logger.error(f"Error in get_atm_strategy_analysis: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@fastapi_app.post("/api/strategy/context")
+async def update_strategy_context(data: Dict[str, str]):
+    """Updates manual context for the strategy."""
+    symbol = data.get('symbol', 'NIFTY')
+    global_cues = data.get('global_cues', 'Neutral')
+    major_events = data.get('major_events', 'None')
+    atm_strategy.set_context(symbol, global_cues, major_events)
+    return {"status": "success"}
+
+@fastapi_app.get("/api/strategy/search-cues")
+async def search_market_cues():
+    """Returns placeholder market cues."""
+    return {
+        "global_cues": "US Markets: Neutral | Gift Nifty: Slightly Positive (+20 pts) | Crude Oil: Stable",
+        "major_events": "RBI Monetary Policy Meeting today at 10:00 AM | Reliance Industries Results later today"
+    }
+
+
 @fastapi_app.get("/api/trade_signals/{instrument_key}")
 async def get_trade_signals(instrument_key: str):
     """Queries MongoDB for trade signals for a specific instrument."""
@@ -397,8 +450,24 @@ async def get_oi_data_route(instrument_key: str):
         logger.error(f"Error fetching OI data: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch OI data")
 
+@fastapi_app.post("/api/cleanup/oi", response_model=Dict[str, Any])
+async def trigger_oi_cleanup(symbol: Optional[str] = None):
+    """
+    Manually triggers cleanup of potentially incorrect OI data for today.
+    """
+    try:
+        from scripts.cleanup_db import cleanup_oi_data
+        cleanup_oi_data(symbol=symbol)
+        return {"status": "success", "message": "Cleanup completed successfully"}
+    except Exception as e:
+        logger.error(f"Manual cleanup failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @fastapi_app.post("/api/backfill/trendlyne", response_model=Dict[str, Any])
-async def trigger_trendlyne_backfill(symbol: str = Query("NIFTY", description="The trading symbol to backfill (e.g., NIFTY, BANKNIFTY)")):
+async def trigger_trendlyne_backfill(
+    symbol: str = Query("NIFTY", description="The trading symbol to backfill (e.g., NIFTY, BANKNIFTY)"),
+    interval: int = Query(5, description="Interval in minutes (e.g., 5, 15)")
+):
     """
     Triggers a historical Open Interest (OI) data backfill from the Trendlyne SmartOptions API.
     """
@@ -406,8 +475,8 @@ async def trigger_trendlyne_backfill(symbol: str = Query("NIFTY", description="T
         raise HTTPException(status_code=400, detail="Symbol is required")
 
     try:
-        logger.info(f"Triggering Trendlyne backfill for {symbol}")
-        result = trendlyne_service.perform_backfill(symbol)
+        logger.info(f"Triggering Trendlyne backfill for {symbol} at {interval}min interval")
+        result = trendlyne_service.perform_backfill(symbol, interval_minutes=interval)
         if result.get("status") == "success":
             return result
         else:
@@ -421,22 +490,25 @@ async def trigger_trendlyne_backfill(symbol: str = Query("NIFTY", description="T
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @fastapi_app.get("/api/upstox/intraday/{instrument_key}")
-async def get_upstox_intraday(instrument_key: str):
+async def get_upstox_intraday(instrument_key: str, date: Optional[str] = None):
     """Fetch intraday candles from DB backfill or Upstox V3."""
     try:
         clean_key = unquote(instrument_key)
 
         # 1. Try backfill from MongoDB via data_engine
-        db_history = data_engine.load_intraday_data(clean_key)
-        if db_history and len(db_history) > 10: # If we have significant data in DB
+        # Use provided date or default to today
+        db_history = data_engine.load_intraday_data(clean_key, date_str=date)
+        if db_history and len(db_history) > 5: # If we have significant data in DB
             # Convert footprint bars to OHLC format expected by UI
             candles = []
             for bar in db_history:
                 candles.append([
                     datetime.fromtimestamp(bar['ts']/1000).isoformat(),
-                    bar['open'], bar['high'], bar['low'], bar['close'], bar['volume'], 0
+                    bar['open'], bar['high'], bar['low'], bar['close'], bar['volume'], bar.get('oi', 0)
                 ])
-            return {"candles": candles}
+            # Reverse to match Upstox V3 descending order (newest first)
+            # Frontend upstoxService reverses it back to chronological ascending.
+            return {"candles": candles[::-1]}
 
         # 2. Fallback to Upstox API
         data = upstox_api.get_intraday_candles(clean_key)
@@ -466,9 +538,11 @@ async def get_upstox_option_chain(instrument_key: str, expiry_date: str):
 async def get_trendlyne_expiry(symbol: str):
     """Fetch expiry dates from Trendlyne."""
     try:
+        logger.info(f"Fetching Trendlyne expiry for symbol: {symbol}")
         stock_id = trendlyne_service.get_stock_id_for_symbol(symbol)
         if not stock_id:
-            raise HTTPException(status_code=404, detail=f"Stock ID not found for {symbol}")
+            logger.warning(f"Stock ID not found for {symbol}")
+            return []
 
         dates = trendlyne_service.get_expiry_dates(stock_id)
         # Format labels like frontend does
@@ -511,29 +585,63 @@ async def get_trendlyne_option_buildup(symbol: str, expiry: str, strike: int, op
         raise HTTPException(status_code=500, detail=str(e))
 
 @fastapi_app.get("/api/analytics/pcr/{symbol}")
-async def get_historical_pcr(symbol: str):
+async def get_historical_pcr(symbol: str, date: Optional[str] = None):
     """Fetch historical PCR and Spot data for analytics."""
     try:
         oi_coll = get_oi_collection()
         # Fetch today's OI data
-        today_str = datetime.now().strftime("%Y-%m-%d")
+        today_str = date or datetime.now().strftime("%Y-%m-%d")
+
+        # Support both BANKNIFTY and NIFTY BANK for historical compatibility
+        symbol_query = [symbol]
+        if symbol == 'BANKNIFTY':
+            symbol_query.append('NIFTY BANK')
+        elif symbol == 'NIFTY BANK':
+            symbol_query.append('BANKNIFTY')
+
         cursor = oi_coll.find({
-            'symbol': symbol,
+            'symbol': {'$in': symbol_query},
             'date': today_str
         }).sort('timestamp', 1)
 
-        results = []
+        results_map = {}
         for doc in cursor:
+            ts = f"{doc['date']}T{doc['timestamp']}:00"
             call_oi = doc.get('call_oi', 0)
             put_oi = doc.get('put_oi', 0)
             pcr = round(put_oi / call_oi, 2) if call_oi > 0 else 0
+            source = doc.get('source', 'unknown')
 
-            results.append({
-                'timestamp': f"{doc['date']}T{doc['timestamp']}:00",
-                'pcr': pcr,
-                'call_oi': call_oi,
-                'put_oi': put_oi
-            })
+            # Prefer Trendlyne or Upstox Full over Live Partial
+            if ts not in results_map or source in ['trendlyne', 'upstox_full', 'trendlyne_pcr_history']:
+                results_map[ts] = {
+                    'timestamp': ts,
+                    'pcr': pcr,
+                    'call_oi': call_oi,
+                    'put_oi': put_oi,
+                    'source': source
+                }
+
+        results = sorted(results_map.values(), key=lambda x: x['timestamp'])
+
+        # If no data for today, try getting last 10 points and trigger a backfill
+        if not results:
+            # Trigger Trendlyne backfill in background
+            logger.info(f"No PCR data for {symbol} today. Triggering Trendlyne backfill...")
+            import threading
+            threading.Thread(target=trendlyne_service.perform_backfill, args=(symbol,), kwargs={'interval_minutes': 5}, daemon=True).start()
+
+            cursor = oi_coll.find({'symbol': {'$in': symbol_query}}).sort([('date', -1), ('timestamp', -1)]).limit(10)
+            for doc in list(cursor)[::-1]:
+                call_oi = doc.get('call_oi', 0)
+                put_oi = doc.get('put_oi', 0)
+                pcr = round(put_oi / call_oi, 2) if call_oi > 0 else 0
+                results.append({
+                    'timestamp': f"{doc['date']}T{doc['timestamp']}:00",
+                    'pcr': pcr,
+                    'call_oi': call_oi,
+                    'put_oi': put_oi
+                })
 
         return results
     except Exception as e:
@@ -549,9 +657,21 @@ async def get_replay_dates():
         # In a real app we'd have a 'sessions' collection.
         # Let's try to get distinct dates from the Insertion time or similar.
         # For now, let's look at OI data which is grouped by date.
-        oi_coll = get_oi_collection()
-        dates = oi_coll.distinct('date')
-        return sorted(dates, reverse=True)
+        # Check both collections
+        db = get_db()
+        dates = set()
+        for doc in db['oi_data'].find({}, {"date": 1}):
+            if "date" in doc: dates.add(doc["date"])
+        for doc in db['strike_oi_data'].find({}, {"date": 1}):
+            if "date" in doc: dates.add(doc["date"])
+
+        # If still empty, check ticks and extract dates from _insertion_time
+        if not dates:
+             for doc in db['ticks'].find({}, {"_insertion_time": 1}):
+                 if "_insertion_time" in doc:
+                     dates.add(doc["_insertion_time"].strftime("%Y-%m-%d"))
+
+        return sorted(list(dates), reverse=True)
     except Exception as e:
         logger.error(f"Error fetching replay dates: {e}")
         return []
@@ -605,6 +725,7 @@ async def get_replay_session_info(date: str, index_key: str):
         # Find matching keys from the recorded list
         suggested_ce = None
         suggested_pe = None
+        expiry = None
 
         for key in all_keys:
             if clean_key in key: continue # skip index
@@ -616,13 +737,16 @@ async def get_replay_session_info(date: str, index_key: str):
             # A more robust way would be to check the instrument master's strike_price field
             if instr.get('instrument_type') == 'CE' and instr.get('strike_price') == atm:
                 suggested_ce = key
+                expiry = instr.get('expiry_date') or instr.get('expiry')
             elif instr.get('instrument_type') == 'PE' and instr.get('strike_price') == atm:
                 suggested_pe = key
+                if not expiry: expiry = instr.get('expiry_date') or instr.get('expiry')
 
         return {
             "date": date,
             "start_price": start_price,
             "atm": atm,
+            "expiry": expiry,
             "suggested_ce": suggested_ce,
             "suggested_pe": suggested_pe,
             "available_keys": all_keys
@@ -658,9 +782,7 @@ async def get_instruments():
         raise HTTPException(status_code=500, detail="Failed to fetch instruments")
 
 # Static Files (Serving Frontend Build)
-frontend_dist = os.path.abspath(os.path.join(os.path.dirname(__file__), "../frontend/angular-ui/dist/angular-ui/browser"))
-if not os.path.exists(frontend_dist):
-    frontend_dist = os.path.abspath(os.path.join(os.path.dirname(__file__), "../frontend/dist"))
+frontend_dist = os.path.abspath(os.path.join(os.path.dirname(__file__), "../frontend/dist"))
 
 if os.path.exists(frontend_dist):
     fastapi_app.mount("/static", StaticFiles(directory=frontend_dist), name="static")

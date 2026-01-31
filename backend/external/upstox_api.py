@@ -45,6 +45,8 @@ class UpstoxAPI:
             return response.json()
         except Exception as e:
             logger.error(f"Error fetching option chain: {e}")
+            import traceback
+            traceback.print_exc()
             return None
 
     def get_intraday_candles(self, instrument_key: str, interval: str = '1') -> Optional[Dict[str, Any]]:

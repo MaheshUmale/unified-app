@@ -2,7 +2,7 @@ import os
 
 # --- Global Configuration ---
 # It is recommended to set these in environment variables for security
-ACCESS_TOKEN = os.getenv('UPSTOX_ACCESS_TOKEN', 'eyJ0eXAiOiJKV1QiLCJrZXlfaWQiOiJza192MS4wIiwiYWxnIjoiSFMyNTYifQ.eyJzdWIiOiI3NkFGMzUiLCJqdGkiOiI2OTdhZDgwODJjODE3ZjdiOGM0YzhkYTIiLCJpc011bHRpQ2xpZW50IjpmYWxzZSwiaXNQbHVzUGxhbiI6ZmFsc2UsImlhdCI6MTc2OTY1ODM3NiwiaXNzIjoidWRhcGktZ2F0ZXdheS1zZXJ2aWNlIiwiZXhwIjoxNzY5NzI0MDAwfQ.0SmLYKXaJnqcCFkROlsFEZ7LGQ6b8mDMgS_YTJle0t4')
+ACCESS_TOKEN = os.getenv('UPSTOX_ACCESS_TOKEN', 'eyJ0eXAiOiJKV1QiLCJrZXlfaWQiOiJza192MS4wIiwiYWxnIjoiSFMyNTYifQ.eyJzdWIiOiI3NkFGMzUiLCJqdGkiOiI2OTdlMWI3NTFhY2FiMjBhNzE3ZTQ1MDEiLCJpc011bHRpQ2xpZW50IjpmYWxzZSwiaXNQbHVzUGxhbiI6ZmFsc2UsImlhdCI6MTc2OTg3MjI0NSwiaXNzIjoidWRhcGktZ2F0ZXdheS1zZXJ2aWNlIiwiZXhwIjoxNzY5ODk2ODAwfQ.rqDhbTBeqBWhO7eVCDIBFAlz-dOefmREe6MNlDMAWnE')
 SANDBOX_ACCESS_TOKEN = os.getenv('UPSTOX_SANDBOX_ACCESS_TOKEN', 'YOUR_SANDBOX_ACCESS_TOKEN_HERE')
 
 # MongoDB Config
@@ -13,7 +13,7 @@ DB_NAME = os.getenv('DB_NAME', "upstox_strategy_db_new")
 UPSTOX_API_VERSION = "2.0"
 
 # --- Strategy Configuration ---
-INITIAL_INSTRUMENTS = ["NSE_INDEX|Nifty 50", "NSE_INDEX|Nifty Bank"]
+INITIAL_INSTRUMENTS = ["NSE_INDEX|Nifty 50", "NSE_INDEX|Nifty Bank", "NSE_INDEX|India VIX"]
 
 # --- Logging Configuration ---
 LOGGING_CONFIG = {

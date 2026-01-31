@@ -18,3 +18,4 @@ pytest
 playwright
 dnspython
 mongomock
+python-socketio
