@@ -490,14 +490,15 @@ async def trigger_trendlyne_backfill(
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @fastapi_app.get("/api/upstox/intraday/{instrument_key}")
-async def get_upstox_intraday(instrument_key: str):
+async def get_upstox_intraday(instrument_key: str, date: Optional[str] = None):
     """Fetch intraday candles from DB backfill or Upstox V3."""
     try:
         clean_key = unquote(instrument_key)
 
         # 1. Try backfill from MongoDB via data_engine
-        db_history = data_engine.load_intraday_data(clean_key)
-        if db_history and len(db_history) > 10: # If we have significant data in DB
+        # Use provided date or default to today
+        db_history = data_engine.load_intraday_data(clean_key, date_str=date)
+        if db_history and len(db_history) > 5: # If we have significant data in DB
             # Convert footprint bars to OHLC format expected by UI
             candles = []
             for bar in db_history:
