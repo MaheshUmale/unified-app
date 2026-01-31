@@ -45,8 +45,13 @@ stop_replay_flag = False
 last_emit_times = {}  # Track last emit time per instrument for throttling
 subscribed_instruments = set()
 
-# Real-time PCR tracking
+# Real-time Strategy & PCR tracking
 latest_oi = {}  # instrument_key -> oi
+latest_iv = {}  # instrument_key -> iv
+latest_greeks = {} # instrument_key -> {delta, theta, gamma, vega}
+latest_vix = {'value': 0}
+latest_bid_ask = {} # instrument_key -> {'bid': p, 'ask': p}
+latest_vtt = {} # instrument_key -> total_volume_today
 latest_prices = {} # instrument_key -> price
 instrument_metadata = {} # instrument_key -> {'symbol': str, 'type': 'CE'|'PE'|'FUT'|'INDEX', 'expiry': 'YYYY-MM-DD'}
 pcr_running_totals = {} # symbol -> {'CE': total_oi, 'PE': total_oi, 'last_save': timestamp}
@@ -217,22 +222,61 @@ def on_message(message: Union[Dict, bytes, str]):
             # Extract common timestamp for easier replay/querying
             ff = feed_datum.get('fullFeed', {})
 
-            # Real-time OI extraction
+            # Real-time extraction (OI, IV, Greeks, VIX)
             market_ff = ff.get('marketFF', {})
+            index_ff = ff.get('indexFF', {})
+
+            if inst_key == "NSE_INDEX|India VIX":
+                vix_ltpc = index_ff.get('ltpc', {})
+                if vix_ltpc and vix_ltpc.get('ltp'):
+                    latest_vix['value'] = float(vix_ltpc['ltp'])
+                    threading.Thread(target=save_vix_to_db, args=(latest_vix['value'],), daemon=True).start()
+
             if 'oi' in market_ff:
                 new_oi = float(market_ff['oi'])
                 latest_oi[inst_key] = new_oi
                 update_pcr_for_instrument(inst_key)
 
-                # Also save per-strike OI for Flow tab fallback
-                if inst_key in instrument_metadata:
-                    meta = instrument_metadata[inst_key]
-                    if meta['type'] in ['CE', 'PE', 'FUT']:
-                        ltpc = market_ff.get('ltpc')
-                        price = float(ltpc['ltp']) if ltpc and ltpc.get('ltp') else 0
-                        threading.Thread(target=save_strike_oi_to_db, args=(inst_key, new_oi, price), daemon=True).start()
+            if 'iv' in market_ff:
+                latest_iv[inst_key] = float(market_ff['iv'])
 
-            ltpc = market_ff.get('ltpc') or ff.get('indexFF', {}).get('ltpc')
+            if 'optionGreeks' in market_ff:
+                g = market_ff['optionGreeks']
+                latest_greeks[inst_key] = {
+                    'delta': float(g.get('delta', 0)),
+                    'theta': float(g.get('theta', 0)),
+                    'gamma': float(g.get('gamma', 0)),
+                    'vega': float(g.get('vega', 0))
+                }
+
+            if 'vtt' in market_ff:
+                latest_vtt[inst_key] = float(market_ff['vtt'])
+
+            market_levels = market_ff.get('marketLevel', {}).get('bidAskQuote', [])
+            if market_levels:
+                top = market_levels[0]
+                latest_bid_ask[inst_key] = {
+                    'bid': float(top.get('bidP', 0)),
+                    'ask': float(top.get('askP', 0))
+                }
+
+            # Persist per-strike metrics for strategy analysis
+            if inst_key in instrument_metadata:
+                meta = instrument_metadata[inst_key]
+                if meta['type'] in ['CE', 'PE', 'FUT']:
+                    ltpc = market_ff.get('ltpc')
+                    price = float(ltpc['ltp']) if ltpc and ltpc.get('ltp') else 0
+                    oi = latest_oi.get(inst_key, 0)
+                    iv = latest_iv.get(inst_key, 0)
+                    greeks = latest_greeks.get(inst_key, {})
+
+                    threading.Thread(
+                        target=save_strike_metrics_to_db,
+                        args=(inst_key, oi, price, iv, greeks),
+                        daemon=True
+                    ).start()
+
+            ltpc = market_ff.get('ltpc') or index_ff.get('ltpc')
             if ltpc and ltpc.get('ltt'):
                 feed_datum['ts_ms'] = int(ltpc['ltt'])
                 if ltpc.get('ltp'):
@@ -473,27 +517,55 @@ def update_pcr_for_instrument(instrument_key: str):
             threading.Thread(target=save_oi_to_db, args=(symbol, total_ce_oi, total_pe_oi, index_price), daemon=True).start()
             pcr_running_totals[symbol]['last_save'] = now_time
 
-def save_strike_oi_to_db(instrument_key, oi, price):
-    """Persists per-instrument OI for buildup analysis."""
+def save_vix_to_db(vix_value):
+    """Persists India VIX for strategy context."""
+    try:
+        db = get_db()
+        coll = db['vix_data']
+        now = datetime.now()
+        doc = {
+            'value': vix_value,
+            'date': now.strftime("%Y-%m-%d"),
+            'timestamp': now.strftime("%H:%M:%S"),
+            'updated_at': now
+        }
+        last_save = last_emit_times.get("SAVE_VIX", 0)
+        if time.time() - last_save > 60:
+            coll.insert_one(doc)
+            last_emit_times["SAVE_VIX"] = time.time()
+    except Exception as e:
+        logging.error(f"Error saving VIX: {e}")
+
+def save_strike_metrics_to_db(instrument_key, oi, price, iv=0, greeks=None):
+    """Persists per-instrument metrics for buildup and strategy analysis."""
     try:
         db = get_db()
         coll = db['strike_oi_data']
         now = datetime.now()
+
+        ba = latest_bid_ask.get(instrument_key, {})
+        spread = abs(ba.get('ask', 0) - ba.get('bid', 0)) if ba else 0
+
         doc = {
             'instrument_key': instrument_key,
             'date': now.strftime("%Y-%m-%d"),
             'timestamp': now.strftime("%H:%M:%S"),
             'oi': oi,
             'price': price,
+            'iv': iv,
+            'gamma': greeks.get('gamma', 0) if greeks else 0,
+            'theta': greeks.get('theta', 0) if greeks else 0,
+            'delta': greeks.get('delta', 0) if greeks else 0,
+            'spread': spread,
             'updated_at': now
         }
-        # Only save if OI changed or every 1 minute to avoid bloat
+        # Only save every 1 minute to avoid bloat
         last_emit = last_emit_times.get(f"SAVE_STRIKE_{instrument_key}", 0)
         if time.time() - last_emit > 60: # Every 1 minute
             coll.insert_one(doc)
             last_emit_times[f"SAVE_STRIKE_{instrument_key}"] = time.time()
     except Exception as e:
-        logging.error(f"Error saving strike OI: {e}")
+        logging.error(f"Error saving strike metrics: {e}")
 
 def save_oi_to_db(symbol, call_oi, put_oi, price=0):
     """Persists aggregated OI to MongoDB for historical analytics."""
