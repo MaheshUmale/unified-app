@@ -776,9 +776,7 @@ async def get_instruments():
         raise HTTPException(status_code=500, detail="Failed to fetch instruments")
 
 # Static Files (Serving Frontend Build)
-frontend_dist = os.path.abspath(os.path.join(os.path.dirname(__file__), "../frontend/angular-ui/dist/angular-ui/browser"))
-if not os.path.exists(frontend_dist):
-    frontend_dist = os.path.abspath(os.path.join(os.path.dirname(__file__), "../frontend/dist"))
+frontend_dist = os.path.abspath(os.path.join(os.path.dirname(__file__), "../frontend/dist"))
 
 if os.path.exists(frontend_dist):
     fastapi_app.mount("/static", StaticFiles(directory=frontend_dist), name="static")
