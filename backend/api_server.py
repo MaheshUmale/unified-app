@@ -27,6 +27,7 @@ from core.replay_engine import ReplayEngine
 from external import trendlyne_api as trendlyne_service
 from external.upstox_api import UpstoxAPI
 from core.strategies.candle_cross import CandleCrossStrategy, DataPersistor
+from core.strategies.atm_buying_strategy import ATMOptionBuyingStrategy
 try:
     from core.strategies.combined_signal import CombinedSignalEngine
 except ImportError:
@@ -111,6 +112,9 @@ sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
 
 # Initialize Upstox API
 upstox_api = UpstoxAPI(ACCESS_TOKEN)
+
+# Initialize Strategy Engines
+atm_strategy = ATMOptionBuyingStrategy()
 
 # Initialize Replay Engine
 main_loop = None
@@ -340,6 +344,42 @@ async def live_pnl_api():
     if "error" in data:
         raise HTTPException(status_code=500, detail=data["error"])
     return data
+
+@fastapi_app.get("/api/strategy/atm-buying")
+async def get_atm_strategy_analysis(index_key: str, atm_strike: int, expiry: str):
+    """Triggers and returns the ATM Option Buying Strategy analysis."""
+    try:
+        clean_key = unquote(index_key)
+        symbol = "NIFTY" if "Nifty 50" in clean_key else "BANKNIFTY"
+
+        # 1. Fetch current data
+        market_data = atm_strategy.fetch_market_data(symbol, clean_key, atm_strike, expiry)
+        if not market_data:
+            return {"error": "Could not fetch required market data for ATM strikes"}
+
+        # 2. Analyze
+        results = atm_strategy.analyze(symbol, market_data)
+        return results
+    except Exception as e:
+        logger.error(f"Error in get_atm_strategy_analysis: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@fastapi_app.post("/api/strategy/context")
+async def update_strategy_context(data: Dict[str, str]):
+    """Updates manual context for the strategy."""
+    symbol = data.get('symbol', 'NIFTY')
+    global_cues = data.get('global_cues', 'Neutral')
+    major_events = data.get('major_events', 'None')
+    atm_strategy.set_context(symbol, global_cues, major_events)
+    return {"status": "success"}
+
+@fastapi_app.get("/api/strategy/search-cues")
+async def search_market_cues():
+    """Returns placeholder market cues."""
+    return {
+        "global_cues": "US Markets: Neutral | Gift Nifty: Slightly Positive (+20 pts) | Crude Oil: Stable",
+        "major_events": "RBI Monetary Policy Meeting today at 10:00 AM | Reliance Industries Results later today"
+    }
 
 @fastapi_app.get("/api/trade_signals/{instrument_key}")
 async def get_trade_signals(instrument_key: str):

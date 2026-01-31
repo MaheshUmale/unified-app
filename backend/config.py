@@ -13,7 +13,7 @@ DB_NAME = os.getenv('DB_NAME', "upstox_strategy_db_new")
 UPSTOX_API_VERSION = "2.0"
 
 # --- Strategy Configuration ---
-INITIAL_INSTRUMENTS = ["NSE_INDEX|Nifty 50", "NSE_INDEX|Nifty Bank"]
+INITIAL_INSTRUMENTS = ["NSE_INDEX|Nifty 50", "NSE_INDEX|Nifty Bank", "NSE_INDEX|India VIX"]
 
 # --- Logging Configuration ---
 LOGGING_CONFIG = {
