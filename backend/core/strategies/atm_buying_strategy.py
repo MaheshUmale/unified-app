@@ -35,9 +35,10 @@ class ATMOptionBuyingStrategy:
 
         db = get_db()
         coll = db['strike_oi_data']
+        now = data_engine.get_now()
 
         # 15 mins ago data
-        time_15m_ago = datetime.now() - timedelta(minutes=15)
+        time_15m_ago = now - timedelta(minutes=15)
 
         def get_historical_metrics(key):
             doc = coll.find_one({
@@ -47,7 +48,7 @@ class ATMOptionBuyingStrategy:
             return doc or {}
 
         def get_opening_metrics(key):
-            today = datetime.now().strftime("%Y-%m-%d")
+            today = now.strftime("%Y-%m-%d")
             doc = coll.find_one({
                 'instrument_key': key,
                 'date': today
@@ -146,7 +147,15 @@ class ATMOptionBuyingStrategy:
             filter_e = filter_e_ce or filter_e_pe
 
             # 6. TIME CUT-OFF
-            now_ist = datetime.now()
+            now = data_engine.get_now()
+            # Ensure we are checking IST hour
+            import pytz
+            ist = pytz.timezone('Asia/Kolkata')
+            if now.tzinfo is None:
+                now_ist = ist.localize(now) # Assume naive is IST or handle accordingly
+            else:
+                now_ist = now.astimezone(ist)
+
             filter_f = now_ist.hour < 14
 
             filters = {
@@ -218,7 +227,7 @@ class ATMOptionBuyingStrategy:
                     "regimes": regimes
                 },
                 "context": self.contexts[symbol],
-                "timestamp": datetime.now().isoformat()
+                "timestamp": data_engine.get_now().isoformat()
             }
             self.last_results = results
             return results

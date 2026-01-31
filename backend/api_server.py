@@ -381,6 +381,7 @@ async def search_market_cues():
         "major_events": "RBI Monetary Policy Meeting today at 10:00 AM | Reliance Industries Results later today"
     }
 
+
 @fastapi_app.get("/api/trade_signals/{instrument_key}")
 async def get_trade_signals(instrument_key: str):
     """Queries MongoDB for trade signals for a specific instrument."""
@@ -655,9 +656,21 @@ async def get_replay_dates():
         # In a real app we'd have a 'sessions' collection.
         # Let's try to get distinct dates from the Insertion time or similar.
         # For now, let's look at OI data which is grouped by date.
-        oi_coll = get_oi_collection()
-        dates = oi_coll.distinct('date')
-        return sorted(dates, reverse=True)
+        # Check both collections
+        db = get_db()
+        dates = set()
+        for doc in db['oi_data'].find({}, {"date": 1}):
+            if "date" in doc: dates.add(doc["date"])
+        for doc in db['strike_oi_data'].find({}, {"date": 1}):
+            if "date" in doc: dates.add(doc["date"])
+
+        # If still empty, check ticks and extract dates from _insertion_time
+        if not dates:
+             for doc in db['ticks'].find({}, {"_insertion_time": 1}):
+                 if "_insertion_time" in doc:
+                     dates.add(doc["_insertion_time"].strftime("%Y-%m-%d"))
+
+        return sorted(list(dates), reverse=True)
     except Exception as e:
         logger.error(f"Error fetching replay dates: {e}")
         return []

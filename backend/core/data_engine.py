@@ -46,6 +46,15 @@ last_emit_times = {}  # Track last emit time per instrument for throttling
 subscribed_instruments = set()
 
 # Real-time Strategy & PCR tracking
+replay_mode = False
+sim_time = None # datetime representing simulated 'now'
+
+def get_now():
+    """Returns simulated time if in replay mode, else real time."""
+    if replay_mode and sim_time:
+        return sim_time
+    return datetime.now()
+
 latest_oi = {}  # instrument_key -> oi
 latest_iv = {}  # instrument_key -> iv
 latest_greeks = {} # instrument_key -> {delta, theta, gamma, vega}
@@ -518,11 +527,12 @@ def update_pcr_for_instrument(instrument_key: str):
             pcr_running_totals[symbol]['last_save'] = now_time
 
 def save_vix_to_db(vix_value):
-    """Persists India VIX for strategy context."""
+    """Persists India VIX for strategy context. Disabled in replay."""
+    if replay_mode: return
     try:
         db = get_db()
         coll = db['vix_data']
-        now = datetime.now()
+        now = get_now()
         doc = {
             'value': vix_value,
             'date': now.strftime("%Y-%m-%d"),
@@ -537,11 +547,12 @@ def save_vix_to_db(vix_value):
         logging.error(f"Error saving VIX: {e}")
 
 def save_strike_metrics_to_db(instrument_key, oi, price, iv=0, greeks=None):
-    """Persists per-instrument metrics for buildup and strategy analysis."""
+    """Persists per-instrument metrics for buildup and strategy analysis. Disabled in replay."""
+    if replay_mode: return
     try:
         db = get_db()
         coll = db['strike_oi_data']
-        now = datetime.now()
+        now = get_now()
 
         ba = latest_bid_ask.get(instrument_key, {})
         spread = abs(ba.get('ask', 0) - ba.get('bid', 0)) if ba else 0
@@ -568,10 +579,11 @@ def save_strike_metrics_to_db(instrument_key, oi, price, iv=0, greeks=None):
         logging.error(f"Error saving strike metrics: {e}")
 
 def save_oi_to_db(symbol, call_oi, put_oi, price=0):
-    """Persists aggregated OI to MongoDB for historical analytics."""
+    """Persists aggregated OI to MongoDB for historical analytics. Disabled in replay."""
+    if replay_mode: return
     try:
         oi_coll = get_oi_collection()
-        now = datetime.now()
+        now = get_now()
         doc = {
             'symbol': symbol,
             'date': now.strftime("%Y-%m-%d"),

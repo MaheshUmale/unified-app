@@ -11,6 +11,7 @@ import traceback
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional, Set
 from db.mongodb import get_tick_data_collection, get_oi_collection, get_instruments_collection
+from core import data_engine
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,9 @@ class ReplayEngine:
         if self.is_running:
             self.stop_replay()
 
+        # Enable replay mode in data engine
+        data_engine.replay_mode = True
+
         self.stop_event.clear()
         self.is_running = True
         self.is_paused = False
@@ -56,6 +60,8 @@ class ReplayEngine:
 
     def stop_replay(self):
         self.is_running = False
+        data_engine.replay_mode = False
+        data_engine.sim_time = None
         self.stop_event.set()
         if self.replay_thread:
             self.replay_thread.join(timeout=2)
@@ -219,6 +225,35 @@ class ReplayEngine:
                 if not ltt: continue
 
                 current_tick_time = ltt
+                # Sync sim_time for strategy analysis
+                data_engine.sim_time = datetime.fromtimestamp(ltt / 1000)
+
+                # Sync with data_engine for strategy analysis
+                inst_key = tick['instrumentKey']
+                ff = tick.get('fullFeed', {})
+                market_ff = ff.get('marketFF', {})
+                index_ff = ff.get('indexFF', {})
+                ltpc = market_ff.get('ltpc') or index_ff.get('ltpc')
+
+                if ltpc and ltpc.get('ltp'):
+                    data_engine.latest_prices[inst_key] = float(ltpc['ltp'])
+                    if inst_key == "NSE_INDEX|India VIX":
+                        data_engine.latest_vix['value'] = float(ltpc['ltp'])
+
+                if 'oi' in market_ff:
+                    data_engine.latest_oi[inst_key] = float(market_ff['oi'])
+
+                if 'iv' in market_ff:
+                    data_engine.latest_iv[inst_key] = float(market_ff['iv'])
+
+                if 'optionGreeks' in market_ff:
+                    g = market_ff['optionGreeks']
+                    data_engine.latest_greeks[inst_key] = {
+                        'delta': float(g.get('delta', 0)),
+                        'theta': float(g.get('theta', 0)),
+                        'gamma': float(g.get('gamma', 0)),
+                        'vega': float(g.get('vega', 0))
+                    }
 
                 # Emit any OI updates that occurred before or at this tick time
                 # OI timestamp in DB is "HH:MM", we need to convert to ms
@@ -264,6 +299,8 @@ class ReplayEngine:
 
             self.emit_fn('replay_finished', {'date': date_str})
             self.is_running = False
+            data_engine.replay_mode = False
+            data_engine.sim_time = None
 
         except Exception as e:
             logger.error(f"Error in replay loop: {e}")
