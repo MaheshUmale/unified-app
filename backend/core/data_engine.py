@@ -751,21 +751,43 @@ def start_websocket_thread(access_token: str, instrument_keys: List[str]):
     threading.Thread(target=market_hour_monitor, daemon=True).start()
     threading.Thread(target=subscription_keep_alive, daemon=True).start()
 
-def load_intraday_data(instrument_key):
+def load_intraday_data(instrument_key, date_str=None):
     """
-    Fetches and aggregates today's data from 9:15 AM to NOW for an instrument.
+    Fetches and aggregates data for a specific date (defaults to today) from 9:15 AM to 3:30 PM.
 
     Args:
         instrument_key (str): The instrument key.
+        date_str (str): Optional date in YYYY-MM-DD format.
 
     Returns:
         list: A list of aggregated OHLC/Footprint bars.
     """
-    now = datetime.now()
-    start_time = now.replace(hour=9, minute=15, second=0, microsecond=0)
-    start_ts = start_time.timestamp()
+    import pytz
+    ist = pytz.timezone('Asia/Kolkata')
 
-    cursor = tick_collection.find({'instrumentKey': instrument_key}).sort('_id', 1)
+    if not date_str:
+        now = datetime.now(ist)
+        date_str = now.strftime("%Y-%m-%d")
+
+    start_time = ist.localize(datetime.strptime(f"{date_str} 09:15:00", "%Y-%m-%d %H:%M:%S"))
+    end_time = ist.localize(datetime.strptime(f"{date_str} 15:30:00", "%Y-%m-%d %H:%M:%S"))
+
+    start_ms = int(start_time.timestamp() * 1000)
+    end_ms = int(end_time.timestamp() * 1000)
+
+    # Query ticks within the date's market hours
+    query = {
+        'instrumentKey': instrument_key,
+        '$or': [
+            {'ts_ms': {'$gte': start_ms, '$lte': end_ms}},
+            {'fullFeed.marketFF.ltpc.ltt': {'$gte': str(start_ms), '$lte': str(end_ms)}},
+            {'fullFeed.indexFF.ltpc.ltt': {'$gte': str(start_ms), '$lte': str(end_ms)}},
+            {'fullFeed.marketFF.ltpc.ltt': {'$gte': start_ms, '$lte': end_ms}},
+            {'fullFeed.indexFF.ltpc.ltt': {'$gte': start_ms, '$lte': end_ms}}
+        ]
+    }
+
+    cursor = tick_collection.find(query).sort('_id', 1)
     bars = []
 
     try:
@@ -777,12 +799,6 @@ def load_intraday_data(instrument_key):
         replay = ReplayManager(emit_fn=collect_bar)
         replay.timeframe_sec = 60
         for doc in cursor:
-            full_feed = doc.get('fullFeed', {})
-            ff = full_feed.get('marketFF') or full_feed.get('indexFF')
-            if not ff: continue
-            ltpc = ff.get('ltpc', {})
-            ltt = int(ltpc.get('ltt', 0))
-            if (ltt / 1000.0) < start_ts: continue
             replay.process_replay_tick(doc)
 
         if replay.aggregated_bar:

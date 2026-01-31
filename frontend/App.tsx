@@ -34,6 +34,7 @@ const App = () => {
   const [lastSync, setLastSync] = useState<Date>(new Date());
   const [trendlyneReady, setTrendlyneReady] = useState(false);
   const [isReplayMode, setIsReplayMode] = useState(false);
+  const [replayDate, setReplayDate] = useState<string | null>(null);
 
   const atmOptionKeysRef = useRef({ ce: '', pe: '' });
   const indexKeyRef = useRef(indexKey);
@@ -138,6 +139,7 @@ const App = () => {
     const cleanupMessage = socket.onMessage((msg) => {
         if (msg.type === 'replay_status') {
             setIsReplayMode(msg.active);
+            setReplayDate(msg.date || null);
             // If it's a fresh replay start
             if (msg.active && msg.is_new) {
                 setIndexData([]);
@@ -187,7 +189,9 @@ const App = () => {
   }, [updateCandle]);
 
   const loadData = useCallback(async () => {
-    if (isReplayMode) return;
+    // In replay mode, we only load data if we have a replay date
+    if (isReplayMode && !replayDate) return;
+
     const currentSymbol = indexKey.includes('Nifty 50') ? 'NIFTY' : 'BANKNIFTY';
 
     setLoading(true);
@@ -196,7 +200,7 @@ const App = () => {
         socket.setSubscriptions([indexKey]);
 
         // 1. Fetch Index Candles first (unconditionally)
-        const candles = await API.getIntradayCandles(indexKey).catch(() => []);
+        const candles = await API.getIntradayCandles(indexKey, isReplayMode ? replayDate! : undefined).catch(() => []);
         let currentAtm = atmStrike;
 
         if (candles && candles.length > 0) {
@@ -221,8 +225,8 @@ const App = () => {
                     atmOptionKeysRef.current = { ce: ceKey, pe: peKey };
 
                     const [ceHist, peHist, fBuildup, cBuildup, pBuildup] = await Promise.all([
-                        API.getIntradayCandles(ceKey).catch(() => []),
-                        API.getIntradayCandles(peKey).catch(() => []),
+                        API.getIntradayCandles(ceKey, isReplayMode ? replayDate! : undefined).catch(() => []),
+                        API.getIntradayCandles(peKey, isReplayMode ? replayDate! : undefined).catch(() => []),
                         Trendlyne.fetchFuturesBuildup(currentSymbol, expiryDate).catch(() => []),
                         Trendlyne.fetchOptionBuildup(currentSymbol, expiryDate, currentAtm, 'call').catch(() => []),
                         Trendlyne.fetchOptionBuildup(currentSymbol, expiryDate, currentAtm, 'put').catch(() => [])
@@ -255,7 +259,7 @@ const App = () => {
     } finally {
         setLoading(false);
     }
-  }, [indexKey, expiryLabel, isReplayMode]);
+  }, [indexKey, expiryLabel, isReplayMode, replayDate]);
 
   useEffect(() => {
     loadData();

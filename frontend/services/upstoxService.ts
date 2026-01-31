@@ -27,8 +27,10 @@ export const getReplaySessionInfo = async (date: string, indexKey: string) => {
     return await safeFetch(`/api/replay/session_info/${date}/${encodeURIComponent(indexKey)}`);
 };
 
-export const getIntradayCandles = async (key: string): Promise<OhlcData[]> => {
-    const url = `${API_BASE}/intraday/${encodeURIComponent(key)}`;
+export const getIntradayCandles = async (key: string, date?: string): Promise<OhlcData[]> => {
+    let url = `${API_BASE}/intraday/${encodeURIComponent(key)}`;
+    if (date) url += `?date=${date}`;
+
     const data = await safeFetch(url);
 
     if (data && data.candles) {

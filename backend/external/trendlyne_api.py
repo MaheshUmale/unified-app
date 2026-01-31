@@ -427,53 +427,77 @@ def perform_backfill(symbol: str, interval_minutes=5):
 
 def fetch_pcr_history(symbol: str, expiry: str) -> List[Dict[str, Any]]:
     """
-    Fetches 5-minute interval PCR history for a symbol and expiry from Trendlyne.
-    URL: /phoenix/api/fno/pcr-history/{expiry}/{symbol}/
+    Simulates PCR history by fetching snapshots for the current day.
+    Matches logic from backfill_trendlyne.py.
     """
-    session = TrendlyneSession.get_session()
-    # Trendlyne uses different formats, we try the most likely one based on phoenix structure
-    url = f"https://smartoptions.trendlyne.com/phoenix/api/fno/pcr-history/{expiry}/{symbol}/?format=json"
+    stock_id = get_stock_id_for_symbol(symbol)
+    if not stock_id:
+        return []
 
-    try:
-        logger.info(f"Fetching PCR history from Trendlyne for {symbol} ({expiry})")
-        resp = session.get(url, timeout=10)
-        if resp.status_code == 200:
-            data = resp.json()
-            results = data.get('results', [])
-            if results:
-                # Cache in MongoDB
-                oi_coll = get_oi_collection()
-                for item in results:
-                    # Map Trendlyne fields to our schema
-                    # Trendlyne usually returns: {'timestamp': '...', 'pcr': 1.2, 'total_call_oi': ..., 'total_put_oi': ...}
-                    ts = item.get('timestamp')
-                    if ts:
-                        dt = datetime.fromisoformat(ts.replace('Z', ''))
-                        doc = {
-                            'symbol': symbol,
-                            'date': dt.strftime("%Y-%m-%d"),
-                            'timestamp': dt.strftime("%H:%M"),
-                            'call_oi': item.get('total_call_oi', 0),
-                            'put_oi': item.get('total_put_oi', 0),
-                            'pcr': item.get('pcr', 0),
-                            'source': 'trendlyne_pcr_history',
-                            'updated_at': datetime.now()
-                        }
-                        query = {'symbol': symbol, 'date': doc['date'], 'timestamp': doc['timestamp']}
-                        oi_coll.update_one(query, {'$set': doc}, upsert=True)
-                return results
-        else:
-            logger.warning(f"Trendlyne PCR history API returned {resp.status_code}")
-    except Exception as e:
-        logger.error(f"Error fetching PCR history for {symbol}: {e}")
+    now = datetime.now()
+    market_close = now.replace(hour=15, minute=30, second=0, microsecond=0)
+    end_time_str = "15:30" if now > market_close else now.strftime("%H:%M")
+    time_slots = generate_time_intervals(end_time=end_time_str)
 
-    return []
+    results = []
+    logger.info(f"Re-fetching PCR history via snapshots for {symbol}...")
+    for ts in time_slots:
+        # We don't want to spam the API too much in a single request
+        # but for a daily view it's necessary if no bulk API exists.
+        try:
+            success = fetch_and_save_oi_snapshot(symbol, stock_id, expiry, ts)
+            if success:
+                results.append({"timestamp": ts})
+        except:
+            continue
+
+    return results
 
 def fetch_latest_pcr(symbol: str, expiry: str) -> Optional[Dict[str, Any]]:
-    """Fetches the latest available PCR data point from Trendlyne."""
-    history = fetch_pcr_history(symbol, expiry)
-    if history:
-        # Assuming Trendlyne returns newest first or last item is newest
-        # Usually it's chronological, so last is newest
-        return history[-1]
+    """Fetches the latest available PCR data point from Trendlyne snapshot."""
+    stock_id = get_stock_id_for_symbol(symbol)
+    if not stock_id:
+        return None
+
+    now = datetime.now()
+    market_open = now.replace(hour=9, minute=15, second=0, microsecond=0)
+    if now < market_open:
+        return None
+
+    current_ts = now.strftime("%H:%M")
+
+    # Try multiple intervals to find the latest
+    session = TrendlyneSession.get_session()
+    url = "https://smartoptions.trendlyne.com/phoenix/api/live-oi-data/"
+    params = {
+        'stockId': stock_id,
+        'expDateList': expiry,
+        'minTime': "09:15",
+        'maxTime': current_ts
+    }
+
+    try:
+        response = session.get(url, params=params, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            if data['head']['status'] == '0':
+                body = data['body']
+                oi_data = body.get('oiData', {})
+
+                total_call_oi = 0
+                total_put_oi = 0
+                for strike_data in oi_data.values():
+                    total_call_oi += int(strike_data.get('callOi', 0))
+                    total_put_oi += int(strike_data.get('putOi', 0))
+
+                if total_call_oi > 0:
+                    return {
+                        'pcr': round(total_put_oi / total_call_oi, 2),
+                        'total_call_oi': total_call_oi,
+                        'total_put_oi': total_put_oi,
+                        'timestamp': current_ts
+                    }
+    except Exception as e:
+        logger.error(f"Error fetching latest PCR for {symbol}: {e}")
+
     return None

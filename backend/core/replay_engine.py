@@ -243,6 +243,17 @@ class ReplayEngine:
                 if 'oi' in market_ff:
                     data_engine.latest_oi[inst_key] = float(market_ff['oi'])
 
+                if 'vtt' in market_ff:
+                    data_engine.latest_vtt[inst_key] = float(market_ff['vtt'])
+
+                market_levels = market_ff.get('marketLevel', {}).get('bidAskQuote', [])
+                if market_levels:
+                    top = market_levels[0]
+                    data_engine.latest_bid_ask[inst_key] = {
+                        'bid': float(top.get('bidP', 0)),
+                        'ask': float(top.get('askP', 0))
+                    }
+
                 if 'iv' in market_ff:
                     data_engine.latest_iv[inst_key] = float(market_ff['iv'])
 
