@@ -291,7 +291,7 @@ def get_local_buildup(symbol: str, mtype='futures', strike=None, option_type=Non
             instrument_key = upstox_helper.resolve_instrument_key(res_symbol, opt_type, strike=strike, expiry=expiry)
 
         if not instrument_key:
-            logger.warning(f"Buildup Fallback: Could not resolve key for {symbol} {mtype} {strike}")
+            logger.warning(f"Buildup Fallback: Could not resolve key for {symbol} {mtype} strike={strike} expiry={expiry} opt_type={opt_type}")
             return []
 
         logger.info(f"Buildup Fallback: Using key {instrument_key} for {symbol}")
