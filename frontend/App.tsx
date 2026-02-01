@@ -356,24 +356,28 @@ const App = () => {
           />
       </div>
 
-      <main className="p-4 flex-1 overflow-hidden flex flex-col gap-4">
-        {/* Top: Strategy Dashboard (Consolidated) */}
-        <div className="h-[40%] min-h-0">
+      <main className="p-4 flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-6">
+        {/* Strategy Section */}
+        <section className="animate-fadeIn">
             <StrategyDashboard
                 indexKey={indexKey}
                 atmStrike={atmStrike}
                 expiryDate={expiryDate}
                 symbol={symbolLabel}
             />
-        </div>
+        </section>
 
-        {/* Bottom: Visual Terminal */}
-        <div className="h-[60%] min-h-0 flex flex-col gap-4 animate-fadeIn">
-            {/* Charts Row */}
-            <div className="grid grid-cols-12 gap-4 h-[65%] min-h-0">
-                <div className="col-span-12 xl:col-span-6 flex flex-col gap-4">
-                    <div className="flex-1 glass-panel rounded-xl p-2 glow-border-blue relative">
-                        <div className="absolute top-4 left-4 z-10 bg-brand-blue/20 px-2 py-0.5 rounded text-[8px] font-black text-brand-blue uppercase">Spot Execution</div>
+        {/* Execution Section */}
+        <section className="flex flex-col gap-4 animate-fadeIn">
+            <div className="flex items-center gap-2 mb-2">
+                <div className="h-4 w-1 bg-brand-blue rounded-full"></div>
+                <h2 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Execution Terminal</h2>
+            </div>
+
+            <div className="grid grid-cols-12 gap-4">
+                <div className="col-span-12 xl:col-span-6 h-[400px]">
+                    <div className="w-full h-full glass-panel rounded-xl p-2 glow-border-blue relative">
+                        <div className="absolute top-4 left-4 z-10 bg-brand-blue/20 px-2 py-0.5 rounded text-[8px] font-black text-brand-blue uppercase">Spot Price</div>
                         {indexData.length > 0 ? (
                             <MarketChart title={`${symbolLabel} INDEX`} data={indexData} />
                         ) : (
@@ -381,9 +385,9 @@ const App = () => {
                         )}
                     </div>
                 </div>
-                <div className="col-span-12 xl:col-span-3 flex flex-col gap-4">
-                    <div className="flex-1 glass-panel rounded-xl p-2 relative">
-                        <div className="absolute top-4 right-4 z-10 bg-brand-green/20 px-2 py-0.5 rounded text-[8px] font-black text-brand-green uppercase">CE Premium</div>
+                <div className="col-span-12 xl:col-span-3 h-[400px]">
+                    <div className="w-full h-full glass-panel rounded-xl p-2 relative">
+                        <div className="absolute top-4 right-4 z-10 bg-brand-green/20 px-2 py-0.5 rounded text-[8px] font-black text-brand-green uppercase">ATM CALL</div>
                         {ceData.length > 0 ? (
                             <MarketChart title={`ATM CE`} data={ceData} />
                         ) : (
@@ -391,9 +395,9 @@ const App = () => {
                         )}
                     </div>
                 </div>
-                <div className="col-span-12 xl:col-span-3 flex flex-col gap-4">
-                    <div className="flex-1 glass-panel rounded-xl p-2 relative">
-                        <div className="absolute top-4 right-4 z-10 bg-brand-red/20 px-2 py-0.5 rounded text-[8px] font-black text-brand-red uppercase">PE Premium</div>
+                <div className="col-span-12 xl:col-span-3 h-[400px]">
+                    <div className="w-full h-full glass-panel rounded-xl p-2 relative">
+                        <div className="absolute top-4 right-4 z-10 bg-brand-red/20 px-2 py-0.5 rounded text-[8px] font-black text-brand-red uppercase">ATM PUT</div>
                         {peData.length > 0 ? (
                             <MarketChart title={`ATM PE`} data={peData} />
                         ) : (
@@ -402,33 +406,47 @@ const App = () => {
                     </div>
                 </div>
             </div>
+        </section>
 
-            {/* Analytics & Tape Row */}
-            <div className="grid grid-cols-12 gap-4 h-[35%] min-h-0">
-                <div className="col-span-12 xl:col-span-3 flex flex-col gap-4 h-full min-h-0">
-                    <div className="flex-1 overflow-y-auto custom-scrollbar">
-                        {sentiment ? (
-                            <SentimentAnalysis sentiment={sentiment} />
-                        ) : (
-                            <div className="glass-panel rounded-xl p-8 flex items-center justify-center text-[9px] text-gray-600 font-mono uppercase tracking-widest h-full">Crunching Sentiment...</div>
-                        )}
+        {/* Analytics Section */}
+        <section className="grid grid-cols-12 gap-6 animate-fadeIn pb-8">
+            <div className="col-span-12 lg:col-span-3">
+                <div className="flex flex-col gap-4 h-full">
+                    <div className="flex items-center gap-2 mb-1">
+                        <div className="h-4 w-1 bg-brand-orange rounded-full"></div>
+                        <h2 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Market DNA</h2>
                     </div>
+                    {sentiment ? (
+                        <SentimentAnalysis sentiment={sentiment} />
+                    ) : (
+                        <div className="glass-panel rounded-xl p-8 flex items-center justify-center text-[9px] text-gray-600 font-mono uppercase tracking-widest h-full min-h-[300px]">Crunching Sentiment...</div>
+                    )}
                 </div>
-                <div className="col-span-12 xl:col-span-5 flex flex-col gap-4 overflow-hidden h-full min-h-0">
-                    <div className="flex-1 glass-panel rounded-xl p-4 flex flex-col min-h-0">
-                        <div className="flex-1">
-                          <PCRVsSpotChart pcrData={historicalPcr} spotData={indexData} title="Sentiment Convergence (PCR)" />
-                        </div>
+            </div>
+
+            <div className="col-span-12 lg:col-span-5">
+                <div className="flex flex-col gap-4 h-full">
+                    <div className="flex items-center gap-2 mb-1">
+                        <div className="h-4 w-1 bg-brand-blue rounded-full"></div>
+                        <h2 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Sentiment Convergence</h2>
                     </div>
-                </div>
-                <div className="col-span-12 xl:col-span-4 h-full min-h-0 overflow-y-auto custom-scrollbar">
-                    <div className="flex flex-col gap-4">
-                        <BuildupPanel title={`ATM CE FLOW`} data={ceBuildup} />
-                        <BuildupPanel title={`ATM PE FLOW`} data={peBuildup} />
+                    <div className="flex-1 glass-panel rounded-xl p-4 min-h-[350px]">
+                      <PCRVsSpotChart pcrData={historicalPcr} spotData={indexData} title="PCR vs SPOT" />
                     </div>
                 </div>
             </div>
-        </div>
+
+            <div className="col-span-12 lg:col-span-4">
+                <div className="flex flex-col gap-4">
+                    <div className="flex items-center gap-2 mb-1">
+                        <div className="h-4 w-1 bg-brand-green rounded-full"></div>
+                        <h2 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Live OI Flow</h2>
+                    </div>
+                    <BuildupPanel title={`ATM CE FLOW`} data={ceBuildup} />
+                    <BuildupPanel title={`ATM PE FLOW`} data={peBuildup} />
+                </div>
+            </div>
+        </section>
       </main>
 
       <footer className="h-8 glass-panel border-t border-white/5 flex items-center justify-between px-6 text-[8px] font-mono text-gray-600 uppercase tracking-[0.2em]">
