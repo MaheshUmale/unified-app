@@ -97,11 +97,12 @@ const App = () => {
   useEffect(() => {
     socket.connect();
     const handleUpdate = (quotes: any) => {
-        const idxKey = indexKeyRef.current;
         const { ce, pe } = atmOptionKeysRef.current;
+        const idxKey = indexKeyRef.current;
 
         if (quotes[idxKey]) {
             setIndexData(prev => updateCandle(prev, quotes[idxKey]));
+            setLastSync(new Date());
         }
 
         if (ce && quotes[ce]) {
