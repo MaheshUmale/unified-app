@@ -367,12 +367,15 @@ async def get_atm_strategy_analysis(index_key: str, atm_strike: int, expiry: str
         # 1. Fetch current data
         market_data = atm_strategy.fetch_market_data(symbol, clean_key, atm_strike, expiry)
         if not market_data:
+            print(f"Failed to fetch market data for {symbol} {clean_key} {atm_strike} {expiry}")
             return {"error": "Could not fetch required market data for ATM strikes"}
 
         # 2. Analyze
         results = atm_strategy.analyze(symbol, market_data)
         return results
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         logger.error(f"Error in get_atm_strategy_analysis: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -509,7 +512,7 @@ async def get_upstox_intraday(instrument_key: str, date: Optional[str] = None):
 
         # 1. Try backfill from MongoDB via data_engine
         # Use provided date or default to today
-        db_history = data_engine.load_intraday_data(clean_key, date_str=date)
+        db_history = data_engine.load_intraday_data(clean_key)
         if db_history and len(db_history) > 5: # If we have significant data in DB
             # Convert footprint bars to OHLC format expected by UI
             candles = []
