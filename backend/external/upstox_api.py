@@ -62,17 +62,26 @@ class UpstoxAPI:
         """Fetches historical candle data using Upstox History SDK."""
         api_instance = upstox_client.HistoryV3Api(self.api_client)
         try:
-            iv_name = "day"
+            iv_name = "minutes"
             iv_val = "1"
-
-            if "minute" in interval:
-                iv_name = "minutes"
-                iv_val = interval.replace("minute", "")
-            elif interval == "day":
-                iv_name = "day"
-                iv_val = "1"
+        #    if interval == "15":
+        #         iv_name = "minutes"
+        #         iv_val = "15"
+        #     elif interval == "60":
+        #         iv_name = "hour"
+        #         iv_val = "1"
+        #     elif interval == "1D":
+        #         iv_name = "day"
+        #         iv_val = "1"
+        #     elif interval == "1W":
+        #         iv_name = "week"
+        #         iv_val = "1"
+        #     elif interval == "1M":
+        #         iv_name = "month"
+        #         iv_val = "1"
 
             if from_date:
+                print
                 response = api_instance.get_historical_candle_data1(instrument_key, iv_name, iv_val, to_date, from_date)
             else:
                 response = api_instance.get_historical_candle_data(instrument_key, iv_name, iv_val, to_date)
