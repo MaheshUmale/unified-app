@@ -12,6 +12,7 @@ interface StrategyDashboardProps {
 const StrategyDashboard: React.FC<StrategyDashboardProps> = ({ indexKey, atmStrike, expiryDate, symbol }) => {
     const [analysis, setAnalysis] = useState<any>(null);
     const [loading, setLoading] = useState(false);
+    const [syncing, setSyncing] = useState(false);
     const [cues, setCues] = useState({ global_cues: '', major_events: '' });
     const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
@@ -35,6 +36,16 @@ const StrategyDashboard: React.FC<StrategyDashboardProps> = ({ indexKey, atmStri
     const handleContextUpdate = async () => {
         await StrategyService.updateStrategyContext(symbol, cues.global_cues, cues.major_events);
         fetchAnalysis();
+    };
+
+    const handleSyncSession = async () => {
+        setSyncing(true);
+        const result = await StrategyService.syncSessionData();
+        if (result && result.status === 'success') {
+            console.log('Session synced:', result);
+            fetchAnalysis();
+        }
+        setSyncing(false);
     };
 
     const handleFetchCues = async () => {
@@ -250,12 +261,21 @@ const StrategyDashboard: React.FC<StrategyDashboardProps> = ({ indexKey, atmStri
                                 placeholder="Scheduled Events..."
                                 className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-[11px] text-gray-300 h-24 outline-none focus:border-blue-500 transition-all font-mono"
                             />
-                            <button
-                                onClick={handleContextUpdate}
-                                className="w-full bg-blue-600 hover:bg-blue-500 text-white font-black uppercase text-[10px] py-3 rounded-xl transition-all shadow-lg shadow-blue-500/20"
-                            >
-                                Re-sync Engine
-                            </button>
+                            <div className="grid grid-cols-2 gap-2">
+                                <button
+                                    onClick={handleSyncSession}
+                                    disabled={syncing}
+                                    className={`bg-gray-800 hover:bg-gray-700 text-white font-black uppercase text-[9px] py-3 rounded-xl transition-all border border-white/5 ${syncing ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                >
+                                    {syncing ? 'Syncing...' : 'Sync Session'}
+                                </button>
+                                <button
+                                    onClick={handleContextUpdate}
+                                    className="bg-blue-600 hover:bg-blue-500 text-white font-black uppercase text-[9px] py-3 rounded-xl transition-all shadow-lg shadow-blue-500/20"
+                                >
+                                    Update Context
+                                </button>
+                            </div>
                         </div>
                     </div>
 

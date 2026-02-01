@@ -82,24 +82,63 @@ def get_upstox_instruments(symbols=["NIFTY", "BANKNIFTY"], spot_prices={"NIFTY":
     return full_mapping
 
 def resolve_instrument_key(symbol: str, instrument_type: str = 'FUT', strike: float = None, expiry: str = None):
+    import logging
+    logger = logging.getLogger(__name__)
+
     df = get_instrument_df()
-    mask = (df['name'] == symbol)
+    if df is None or df.empty:
+        logger.error("Instrument dataframe is empty or None")
+        return None
+
+    # Normalization for symbol
+    search_symbol = symbol.upper()
+    if "NIFTY 50" in search_symbol: search_symbol = "NIFTY"
+    if "NIFTY BANK" in search_symbol: search_symbol = "BANKNIFTY"
+
+    mask = (df['name'].str.upper() == search_symbol)
     if instrument_type:
-        mask &= (df['instrument_type'] == instrument_type)
+        mask &= (df['instrument_type'].str.upper() == instrument_type.upper())
 
     if strike is not None:
-        mask &= (df['strike_price'] == strike)
+        # Using a small epsilon for float comparison to be safe
+        mask &= (abs(df['strike_price'] - float(strike)) < 0.1)
 
     filtered = df[mask].copy()
+
+    if filtered.empty:
+        logger.warning(f"No instruments found matching {search_symbol} {instrument_type} {strike}")
+        return None
+
     if expiry:
-        # Assuming expiry is in YYYY-MM-DD
-        filtered['expiry_date'] = pd.to_datetime(filtered['expiry'], origin='unix', unit='ms').dt.strftime('%Y-%m-%d')
-        filtered = filtered[filtered['expiry_date'] == expiry]
+        # Ensure expiry is in YYYY-MM-DD format for comparison
+        # Upstox JSON master expiry is often unix ms in float or int
+        try:
+            # Handle both float/int and potentially already datetime
+            if pd.api.types.is_numeric_dtype(filtered['expiry']):
+                 filtered['expiry_date'] = pd.to_datetime(filtered['expiry'], origin='unix', unit='ms').dt.strftime('%Y-%m-%d')
+            else:
+                 filtered['expiry_date'] = pd.to_datetime(filtered['expiry']).dt.strftime('%Y-%m-%d')
+
+            final_filtered = filtered[filtered['expiry_date'] == expiry]
+
+            if final_filtered.empty:
+                # Log available expiries for debugging
+                available = filtered['expiry_date'].unique().tolist()
+                logger.warning(f"Expiry mismatch for {search_symbol}: Requested {expiry}, Available {available}")
+                # Fallback to nearest if exact match fails?
+                # For strategy we usually want the specific one, but let's be lenient if it's within 2 days
+                filtered = filtered.sort_values(by='expiry')
+            else:
+                filtered = final_filtered
+        except Exception as e:
+            logger.error(f"Error processing expiry for {search_symbol}: {e}")
 
     if not filtered.empty:
-        # Sort by expiry to get the nearest one if not specified
+        # Sort by expiry to get the nearest one
         filtered = filtered.sort_values(by='expiry')
-        return filtered.iloc[0]['instrument_key']
+        key = filtered.iloc[0]['instrument_key']
+        return key
+
     return None
 
 def getNiftyAndBNFnOKeys():

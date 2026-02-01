@@ -83,32 +83,42 @@ class ATMOptionBuyingStrategy:
 
         def calculate_metrics(key, opening_doc):
             ba = data_engine.latest_bid_ask.get(key, {})
-            current_spread = abs(ba.get('ask', 0) - ba.get('bid', 0)) if ba else 0.5
+            bid = ba.get('bid', 0) or 0
+            ask = ba.get('ask', 0) or 0
+            current_spread = abs(ask - bid) if ask and bid else 0.5
 
-            vtt = data_engine.latest_vtt.get(key, 0)
-            vol_spike = vtt > (adv / 375 * 5) # Heuristic
+            vtt = data_engine.latest_vtt.get(key, 0) or 0
+            vol_spike = vtt > (adv / 375 * 5) if adv else False
+
+            greeks = data_engine.latest_greeks.get(key, {}) or {}
 
             return {
                 "instrument_key": key,
-                "price": data_engine.latest_prices.get(key, 0),
-                "iv": data_engine.latest_iv.get(key, 0),
-                "oi": data_engine.latest_oi.get(key, 0),
-                "theta": data_engine.latest_greeks.get(key, {}).get('theta', 0),
-                "gamma": data_engine.latest_greeks.get(key, {}).get('gamma', 0),
+                "price": data_engine.latest_prices.get(key, 0) or 0,
+                "iv": data_engine.latest_iv.get(key, 0) or 0,
+                "oi": data_engine.latest_oi.get(key, 0) or 0,
+                "theta": greeks.get('theta', 0) or 0,
+                "gamma": greeks.get('gamma', 0) or 0,
                 "spread": current_spread,
-                "open_spread": opening_doc.get('spread', current_spread),
+                "open_spread": opening_doc.get('spread', current_spread) or current_spread,
                 "vol_spike": vol_spike
             }
 
         ce_metrics = calculate_metrics(ce_key, ce_open)
-        ce_metrics.update({"oi_15m_ago": ce_hist.get('oi', 0), "iv_15m_ago": ce_hist.get('iv', 0)})
+        ce_metrics.update({
+            "oi_15m_ago": ce_hist.get('oi', 0) or 0,
+            "iv_15m_ago": ce_hist.get('iv', 0) or 0
+        })
 
         pe_metrics = calculate_metrics(pe_key, pe_open)
-        pe_metrics.update({"oi_15m_ago": pe_hist.get('oi', 0), "iv_15m_ago": pe_hist.get('iv', 0)})
+        pe_metrics.update({
+            "oi_15m_ago": pe_hist.get('oi', 0) or 0,
+            "iv_15m_ago": pe_hist.get('iv', 0) or 0
+        })
 
         data = {
-            "spot_price": data_engine.latest_prices.get(index_key, 0),
-            "india_vix": data_engine.latest_vix.get('value', 0),
+            "spot_price": data_engine.latest_prices.get(index_key, 0) or 0,
+            "india_vix": data_engine.latest_vix.get('value', 0) or 0,
             "atm_strike": atm_strike,
             "expiry": expiry,
             "atm_ce": ce_metrics,
@@ -132,34 +142,49 @@ class ATMOptionBuyingStrategy:
                 return {"error": "Insufficient ATM data"}
 
             # 1. IV VELOCITY FILTER
-            ce_iv_vel = (ce.get('iv', 0) - ce.get('iv_15m_ago', ce.get('iv', 0))) / 15
-            pe_iv_vel = (pe.get('iv', 0) - pe.get('iv_15m_ago', pe.get('iv', 0))) / 15
+            ce_iv = ce.get('iv', 0) or 0
+            pe_iv = pe.get('iv', 0) or 0
+            ce_iv_15m = ce.get('iv_15m_ago', ce_iv) or ce_iv
+            pe_iv_15m = pe.get('iv_15m_ago', pe_iv) or pe_iv
 
-            ce_theta_15m = abs(ce.get('theta', 0)) / 96
-            pe_theta_15m = abs(pe.get('theta', 0)) / 96
+            ce_iv_vel = (ce_iv - ce_iv_15m) / 15
+            pe_iv_vel = (pe_iv - pe_iv_15m) / 15
+
+            ce_theta_15m = abs(ce.get('theta', 0) or 0) / 96
+            pe_theta_15m = abs(pe.get('theta', 0) or 0) / 96
 
             filter_a_ce = ce_iv_vel > (ce_theta_15m * 0.6)
             filter_a_pe = pe_iv_vel > (pe_theta_15m * 0.6)
             filter_a = filter_a_ce or filter_a_pe
 
             # 2. STRADDLE-MATH FILTER
-            straddle_price = ce.get('price', 0) + pe.get('price', 0)
-            iv_decimal = (ce.get('iv', 0) + pe.get('iv', 0)) / 200
+            ce_price = ce.get('price', 0) or 0
+            pe_price = pe.get('price', 0) or 0
+            straddle_price = ce_price + pe_price
+            iv_decimal = (ce_iv + pe_iv) / 200
             expected_move_15m = spot * iv_decimal * math.sqrt(15 / 525600)
             filter_b = expected_move_15m >= (0.9 * straddle_price)
 
             # 3. OI-MICRO FILTER
-            adv = get_nifty_adv()
+            adv = get_nifty_adv() or 5000000
             threshold = 0.002 * adv
-            ce_oi_change = ce.get('oi', 0) - ce.get('oi_15m_ago', ce.get('oi', 0))
-            pe_oi_change = pe.get('oi', 0) - pe.get('oi_15m_ago', pe.get('oi', 0))
+
+            ce_oi = ce.get('oi', 0) or 0
+            pe_oi = pe.get('oi', 0) or 0
+            ce_oi_15m = ce.get('oi_15m_ago', ce_oi) or ce_oi
+            pe_oi_15m = pe.get('oi_15m_ago', pe_oi) or pe_oi
+
+            ce_oi_change = ce_oi - ce_oi_15m
+            pe_oi_change = pe_oi - pe_oi_15m
 
             filter_c = (abs(ce_oi_change) > threshold) or (abs(pe_oi_change) > threshold)
 
             # 4. GAMMA-AMPLIFICATION FILTER
-            ce_gamma_median = get_5day_median_gamma(ce.get('instrument_key'))
-            pe_gamma_median = get_5day_median_gamma(pe.get('instrument_key'))
-            filter_d = (ce.get('gamma', 0) > ce_gamma_median) or (pe.get('gamma', 0) > pe_gamma_median)
+            ce_gamma = ce.get('gamma', 0) or 0
+            pe_gamma = pe.get('gamma', 0) or 0
+            ce_gamma_median = get_5day_median_gamma(ce.get('instrument_key')) or 0
+            pe_gamma_median = get_5day_median_gamma(pe.get('instrument_key')) or 0
+            filter_d = (ce_gamma > ce_gamma_median) or (pe_gamma > pe_gamma_median)
 
             # 5. MICROSTRUCTURE FILTER
             filter_e_ce = (ce.get('spread', 999) < ce.get('open_spread', 999)) and (ce.get('vol_spike', False))
@@ -189,8 +214,8 @@ class ATMOptionBuyingStrategy:
             true_count = sum(1 for f in filters.values() if f)
             edge_met = true_count >= 4 and filter_f
 
-            call_score = (int(filter_a_ce) + int(filter_b) + int(ce_oi_change > threshold) + int(ce.get('gamma', 0) > ce_gamma_median) + int(filter_e_ce)) * 20
-            put_score = (int(filter_a_pe) + int(filter_b) + int(pe_oi_change > threshold) + int(pe.get('gamma', 0) > pe_gamma_median) + int(filter_e_pe)) * 20
+            call_score = (int(filter_a_ce) + int(filter_b) + int(ce_oi_change > threshold) + int(ce_gamma > ce_gamma_median) + int(filter_e_ce)) * 20
+            put_score = (int(filter_a_pe) + int(filter_b) + int(pe_oi_change > threshold) + int(pe_gamma > pe_gamma_median) + int(filter_e_pe)) * 20
             straddle_score = (int(filter_a) + int(filter_b) + int(filter_c) + int(filter_d) + int(filter_e)) * 20
 
             decision = "NO TRADE"
