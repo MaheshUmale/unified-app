@@ -11,7 +11,7 @@ import PCRVsSpotChart from './components/AnalyticsCharts';
 import { ReplayControls } from './components/ReplayControls';
 import StrategyDashboard from './components/StrategyDashboard';
 
-type TabType = 'TERMINAL' | 'STRATEGY' | 'ANALYTICS';
+type TabType = 'STRATEGY' | 'TERMINAL';
 
 const App = () => {
   const [activeTab, setActiveTab] = useState<TabType>('STRATEGY');
@@ -224,6 +224,7 @@ const App = () => {
 
         // 2. Fetch Option Chain and Buildup if expiry is available
         if (expiryDate) {
+            console.log(`[App] Loading Option Data for expiry: ${expiryDate}, ATM: ${currentAtm}`);
             let ceKey = atmOptionKeysRef.current.ce;
             let peKey = atmOptionKeysRef.current.pe;
 
@@ -295,7 +296,7 @@ const App = () => {
           </div>
           <div className="h-8 w-[1px] bg-gray-800 mx-1"></div>
           <div className="flex gap-1 p-1 bg-black/40 rounded-lg border border-white/5">
-            {(['STRATEGY', 'TERMINAL', 'ANALYTICS'] as TabType[]).map(tab => (
+            {(['STRATEGY', 'TERMINAL'] as TabType[]).map(tab => (
                 <button
                     key={tab}
                     onClick={() => setActiveTab(tab)}
@@ -303,7 +304,7 @@ const App = () => {
                         activeTab === tab ? 'bg-brand-blue text-white shadow-lg shadow-brand-blue/20' : 'text-gray-500 hover:text-gray-300'
                     }`}
                 >
-                    {tab === 'ANALYTICS' ? 'FLOW & DATA' : tab}
+                    {tab === 'TERMINAL' ? 'FLOW & TERMINAL' : tab}
                 </button>
             ))}
           </div>
@@ -370,83 +371,69 @@ const App = () => {
 
       <main className="p-4 flex-1 overflow-hidden flex flex-col">
         {activeTab === 'TERMINAL' && (
-            <div className="grid grid-cols-12 gap-4 h-full animate-fadeIn">
-                <div className="col-span-12 xl:col-span-8 flex flex-col gap-4">
-                    <div className="flex-1 glass-panel rounded-xl p-2 glow-border-blue relative">
-                        <div className="absolute top-4 left-4 z-10 bg-brand-blue/20 px-2 py-0.5 rounded text-[8px] font-black text-brand-blue uppercase">Spot Execution</div>
-                        {indexData.length > 0 ? (
-                            <MarketChart title={`${symbolLabel} INDEX`} data={indexData} />
-                        ) : (
-                            <div className="w-full h-full flex items-center justify-center text-[10px] text-gray-600 uppercase font-mono tracking-widest">Awaiting Index Feed...</div>
-                        )}
-                    </div>
-                </div>
-                <div className="col-span-12 xl:col-span-4 flex flex-col gap-4">
-                    <div className="flex-1 glass-panel rounded-xl p-2 relative">
-                        <div className="absolute top-4 right-4 z-10 bg-brand-green/20 px-2 py-0.5 rounded text-[8px] font-black text-brand-green uppercase">CE Premium</div>
-                        {ceData.length > 0 ? (
-                            <MarketChart title={`ATM ${atmStrike} CE`} data={ceData} />
-                        ) : (
-                            <div className="w-full h-full flex items-center justify-center text-[10px] text-gray-600 uppercase font-mono tracking-widest">Awaiting Call Data...</div>
-                        )}
-                    </div>
-                    <div className="flex-1 glass-panel rounded-xl p-2 relative">
-                        <div className="absolute top-4 right-4 z-10 bg-brand-red/20 px-2 py-0.5 rounded text-[8px] font-black text-brand-red uppercase">PE Premium</div>
-                        {peData.length > 0 ? (
-                            <MarketChart title={`ATM ${atmStrike} PE`} data={peData} />
-                        ) : (
-                            <div className="w-full h-full flex items-center justify-center text-[10px] text-gray-600 uppercase font-mono tracking-widest">Awaiting Put Data...</div>
-                        )}
-                    </div>
-                </div>
-            </div>
-        )}
-
-        {activeTab === 'ANALYTICS' && (
             <div className="flex flex-col gap-4 h-full animate-fadeIn overflow-hidden">
-                <div className="grid grid-cols-12 gap-4 h-1/2 min-h-0">
+                {/* Main Execution Row */}
+                <div className="grid grid-cols-12 gap-4 h-[45%] min-h-0">
+                    <div className="col-span-12 xl:col-span-6 flex flex-col gap-4">
+                        <div className="flex-1 glass-panel rounded-xl p-2 glow-border-blue relative">
+                            <div className="absolute top-4 left-4 z-10 bg-brand-blue/20 px-2 py-0.5 rounded text-[8px] font-black text-brand-blue uppercase">Spot Execution</div>
+                            {indexData.length > 0 ? (
+                                <MarketChart title={`${symbolLabel} INDEX`} data={indexData} />
+                            ) : (
+                                <div className="w-full h-full flex items-center justify-center text-[10px] text-gray-600 uppercase font-mono tracking-widest">Awaiting Index Feed...</div>
+                            )}
+                        </div>
+                    </div>
+                    <div className="col-span-12 xl:col-span-3 flex flex-col gap-4">
+                        <div className="flex-1 glass-panel rounded-xl p-2 relative">
+                            <div className="absolute top-4 right-4 z-10 bg-brand-green/20 px-2 py-0.5 rounded text-[8px] font-black text-brand-green uppercase">CE Premium</div>
+                            {ceData.length > 0 ? (
+                                <MarketChart title={`ATM CE`} data={ceData} />
+                            ) : (
+                                <div className="w-full h-full flex items-center justify-center text-[10px] text-gray-600 uppercase font-mono tracking-widest">Awaiting Call Data...</div>
+                            )}
+                        </div>
+                    </div>
+                    <div className="col-span-12 xl:col-span-3 flex flex-col gap-4">
+                        <div className="flex-1 glass-panel rounded-xl p-2 relative">
+                            <div className="absolute top-4 right-4 z-10 bg-brand-red/20 px-2 py-0.5 rounded text-[8px] font-black text-brand-red uppercase">PE Premium</div>
+                            {peData.length > 0 ? (
+                                <MarketChart title={`ATM PE`} data={peData} />
+                            ) : (
+                                <div className="w-full h-full flex items-center justify-center text-[10px] text-gray-600 uppercase font-mono tracking-widest">Awaiting Put Data...</div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Flow & Analytics Row */}
+                <div className="grid grid-cols-12 gap-4 h-[30%] min-h-0">
                     <div className="col-span-12 xl:col-span-3 flex flex-col gap-4">
                         {sentiment ? (
                             <SentimentAnalysis sentiment={sentiment} />
                         ) : (
                             <div className="glass-panel rounded-xl p-8 flex items-center justify-center text-[9px] text-gray-600 font-mono uppercase tracking-widest">Crunching Sentiment...</div>
                         )}
-                        <div className="glass-panel rounded-xl p-4">
-                          <div className="flex justify-between items-center mb-2">
-                            <h3 className="text-[8px] font-black text-gray-600 uppercase">System Status</h3>
-                            <div className="flex items-center gap-1.5">
-                                <div className="w-1.5 h-1.5 rounded-full bg-brand-green animate-pulse"></div>
-                                <span className="text-[8px] font-black text-brand-green">LIVE</span>
-                            </div>
-                          </div>
-                          <div className="space-y-1 font-mono-data text-[9px]">
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Last Pulse:</span>
-                              <span className="text-gray-400">{lastSync.toLocaleTimeString()}</span>
-                            </div>
-                          </div>
-                        </div>
                     </div>
                     <div className="col-span-12 xl:col-span-9 flex flex-col gap-4 overflow-hidden">
                         <div className="flex-1 glass-panel rounded-xl p-4 flex flex-col min-h-0">
-                            <div className="flex justify-between items-center mb-4">
-                               <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Sentiment Convergence (PCR)</h3>
-                            </div>
                             <div className="flex-1">
-                              <PCRVsSpotChart pcrData={historicalPcr} spotData={indexData} title="Market Sentiment Convergence" />
+                              <PCRVsSpotChart pcrData={historicalPcr} spotData={indexData} title="Sentiment Convergence (PCR)" />
                             </div>
                         </div>
                     </div>
                 </div>
-                <div className="grid grid-cols-12 gap-4 h-1/2 min-h-0">
+
+                {/* Buildup Row */}
+                <div className="grid grid-cols-12 gap-4 h-[25%] min-h-0">
                     <div className="col-span-12 xl:col-span-4 h-full min-h-0">
                         <BuildupPanel title={`${symbolLabel} FUTURES FLOW`} data={futuresBuildup} />
                     </div>
                     <div className="col-span-12 xl:col-span-4 h-full min-h-0">
-                        <BuildupPanel title={`ATM CE ${atmStrike} FLOW`} data={ceBuildup} />
+                        <BuildupPanel title={`ATM CE FLOW`} data={ceBuildup} />
                     </div>
                     <div className="col-span-12 xl:col-span-4 h-full min-h-0">
-                        <BuildupPanel title={`ATM PE ${atmStrike} FLOW`} data={peBuildup} />
+                        <BuildupPanel title={`ATM PE FLOW`} data={peBuildup} />
                     </div>
                 </div>
             </div>

@@ -27,7 +27,12 @@ export const ReplayControls: React.FC<Props> = ({ currentIndexKey, onReplaySessi
         // Fetch available dates for replay
         getReplayDates().then(data => {
             setAvailableDates(data);
-            if (data.length > 0) setSelectedDate(data[0]);
+            if (data.length > 0) {
+                const firstDate = data[0];
+                setSelectedDate(firstDate);
+                // Trigger session info discovery for the default date
+                handleDateChange(firstDate);
+            }
         });
 
         // Listen for replay status updates

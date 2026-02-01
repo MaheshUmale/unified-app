@@ -266,6 +266,14 @@ class ReplayEngine:
                         'vega': float(g.get('vega', 0))
                     }
 
+                # Populate sim_strike_data for strategy lookbacks during replay
+                price = float(ltpc.get('ltp', 0))
+                if price > 0:
+                    oi = data_engine.latest_oi.get(inst_key, 0)
+                    iv = data_engine.latest_iv.get(inst_key, 0)
+                    greeks = data_engine.latest_greeks.get(inst_key, {})
+                    data_engine.save_strike_metrics_to_db(inst_key, oi, price, iv, greeks)
+
                 # Emit any OI updates that occurred before or at this tick time
                 # OI timestamp in DB is "HH:MM", we need to convert to ms
                 while oi_idx < len(oi_records):
