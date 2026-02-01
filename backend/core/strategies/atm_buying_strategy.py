@@ -131,6 +131,7 @@ class ATMOptionBuyingStrategy:
         Executes the ATM Option Buying Strategy analysis.
         """
         try:
+            logger.info(f"Analyzing {symbol} strategy with market data keys: {list(market_data.keys())}")
             spot = market_data.get('spot_price', 0)
             vix = market_data.get('india_vix', 0)
             atm_strike = market_data.get('atm_strike', 0)
@@ -139,7 +140,10 @@ class ATMOptionBuyingStrategy:
             pe = market_data.get('atm_pe', {})
 
             if not ce or not pe:
+                logger.warning(f"Insufficient ATM data for {symbol}: CE={bool(ce)}, PE={bool(pe)}")
                 return {"error": "Insufficient ATM data"}
+
+            logger.info(f"{symbol} ATM Data - Spot: {spot}, CE IV: {ce.get('iv')}, PE IV: {pe.get('iv')}, Straddle: {ce.get('price', 0) + pe.get('price', 0)}")
 
             # 1. IV VELOCITY FILTER
             ce_iv = ce.get('iv', 0) or 0
@@ -150,8 +154,9 @@ class ATMOptionBuyingStrategy:
             ce_iv_vel = (ce_iv - ce_iv_15m) / 15
             pe_iv_vel = (pe_iv - pe_iv_15m) / 15
 
-            ce_theta_15m = abs(ce.get('theta', 0) or 0) / 96
-            pe_theta_15m = abs(pe.get('theta', 0) or 0) / 96
+            # Normalizing daily theta to a 15-minute interval (approx 25 intervals in a 375-min Indian market day)
+            ce_theta_15m = abs(ce.get('theta', 0) or 0) / 25
+            pe_theta_15m = abs(pe.get('theta', 0) or 0) / 25
 
             filter_a_ce = ce_iv_vel > (ce_theta_15m * 0.6)
             filter_a_pe = pe_iv_vel > (pe_theta_15m * 0.6)
@@ -210,6 +215,7 @@ class ATMOptionBuyingStrategy:
                 "GAMMA_AMPLIFICATION": filter_d,
                 "MICROSTRUCTURE": filter_e
             }
+            logger.info(f"{symbol} Filter Results: {filters}")
 
             true_count = sum(1 for f in filters.values() if f)
             edge_met = true_count >= 4 and filter_f

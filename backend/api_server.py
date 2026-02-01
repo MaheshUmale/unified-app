@@ -574,6 +574,19 @@ async def get_trendlyne_expiry(symbol: str):
             return []
 
         dates = trendlyne_service.get_expiry_dates(stock_id)
+
+        # User Requirement: BANKNIFTY should prioritize Monthly
+        if symbol == 'BANKNIFTY':
+            try:
+                from external.upstox_helper import is_monthly_expiry
+                dt_dates = sorted([datetime.strptime(d, "%Y-%m-%d") for d in dates])
+                monthly_dates = [d.strftime("%Y-%m-%d") for d in dt_dates if is_monthly_expiry(d, dt_dates)]
+                # Move monthly dates to the front
+                other_dates = [d for d in dates if d not in monthly_dates]
+                dates = monthly_dates + other_dates
+            except Exception as e:
+                logger.error(f"Error prioritizing monthly BankNifty expiries: {e}")
+
         # Format labels like frontend does
         formatted_dates = []
         for i, date_str in enumerate(dates):
@@ -582,6 +595,7 @@ async def get_trendlyne_expiry(symbol: str):
                 day = d.day
                 month = d.strftime('%b').lower()
                 year = d.year
+                # Re-calculate suffix based on new order
                 suffix = 'near' if i == 0 else 'next' if i == 1 else 'far'
                 label = f"{day}-{month}-{year}-{suffix}"
                 formatted_dates.append({"date": date_str, "label": label})
