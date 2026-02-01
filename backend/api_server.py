@@ -25,6 +25,7 @@ from db.mongodb import (
 )
 from core import data_engine
 from core.replay_engine import ReplayEngine
+from core.backfill_manager import BackfillManager
 from external import trendlyne_api as trendlyne_service
 from external.upstox_api import UpstoxAPI
 from core.strategies.candle_cross import CandleCrossStrategy, DataPersistor
@@ -110,9 +111,10 @@ async def lifespan(app: FastAPI):
     # Ensure remaining ticks are flushed to DB
     try:
         data_engine.flush_tick_buffer()
-        logger.info("Tick buffer flushed to MongoDB.")
+        data_engine.flush_raw_tick_buffer()
+        logger.info("Tick buffers flushed to MongoDB.")
     except Exception as e:
-        logger.error(f"Error flushing tick buffer during shutdown: {e}")
+        logger.error(f"Error flushing tick buffers during shutdown: {e}")
 
 fastapi_app = FastAPI(title="ProTrade Integrated API", lifespan=lifespan)
 sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
@@ -167,8 +169,6 @@ async def handle_subscribe(sid, data):
     """Handles multiple instrument subscriptions."""
     instrument_keys = data.get('instrumentKeys', [])
     logger.info(f"Client {sid} subscribing to {len(instrument_keys)} instruments: {instrument_keys}")
-    # Force log for debugging
-    print(f"DEBUG: Client {sid} subscribing to {instrument_keys}")
     for key in instrument_keys:
         try:
             await handle_subscribe_instrument(sid, {'instrument_key': key})
@@ -473,6 +473,23 @@ async def trigger_oi_cleanup(symbol: Optional[str] = None):
         return {"status": "success", "message": "Cleanup completed successfully"}
     except Exception as e:
         logger.error(f"Manual cleanup failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@fastapi_app.post("/api/backfill/session", response_model=Dict[str, Any])
+async def trigger_session_backfill():
+    """
+    Triggers a full recovery of today's market session data (Price, OI, PCR).
+    """
+    try:
+        logger.info("Manual session backfill triggered")
+        manager = BackfillManager(ACCESS_TOKEN)
+        result = await manager.backfill_today_session()
+        if result.get("status") == "success":
+            return result
+        else:
+            raise HTTPException(status_code=500, detail=result.get("message", "Backfill failed"))
+    except Exception as e:
+        logger.error(f"Session backfill API error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @fastapi_app.post("/api/backfill/trendlyne", response_model=Dict[str, Any])

@@ -74,7 +74,39 @@ raw_tick_collection = get_raw_tick_data_collection()
 # Batching for MongoDB
 TICK_BATCH_SIZE = 50
 tick_buffer = []
+raw_tick_buffer = []
 buffer_lock = threading.Lock()
+raw_buffer_lock = threading.Lock()
+
+# Worker Queue for non-blocking persistence
+import queue
+persistence_queue = queue.Queue()
+
+def persistence_worker():
+    """Background thread to handle throttled persistence tasks."""
+    last_processed = {}
+    while True:
+        try:
+            task = persistence_queue.get(timeout=5)
+            func = task[0]
+            args = task[1:]
+
+            # Additional throttling check to be safe
+            task_id = f"{func.__name__}_{args[0] if args else ''}"
+            now = time.time()
+            if now - last_processed.get(task_id, 0) < 0.5: # 500ms global safety throttle
+                persistence_queue.task_done()
+                continue
+
+            func(*args)
+            last_processed[task_id] = now
+            persistence_queue.task_done()
+        except queue.Empty:
+            continue
+        except Exception as e:
+            logging.error(f"Persistence Worker Error: {e}")
+
+threading.Thread(target=persistence_worker, daemon=True).start()
 
 class MongoJSONEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -144,6 +176,21 @@ def flush_tick_buffer():
         except Exception as e:
             logging.error(f"MongoDB Batch Insert Error: {e}")
 
+def flush_raw_tick_buffer():
+    """Flushes the raw tick buffer to MongoDB."""
+    global raw_tick_buffer
+    to_insert = []
+    with raw_buffer_lock:
+        if raw_tick_buffer:
+            to_insert = raw_tick_buffer
+            raw_tick_buffer = []
+
+    if to_insert:
+        try:
+            raw_tick_collection.insert_many(to_insert, ordered=False)
+        except Exception as e:
+            logging.error(f"MongoDB Raw Batch Insert Error: {e}")
+
 # Session State (Per-Instrument)
 active_bars = {}
 session_stats = {}
@@ -211,17 +258,25 @@ def on_message(message: Union[Dict, bytes, str]):
 
     feeds_map = data.get('feeds', {})
     if feeds_map:
-        logging.info(f"WSS: Received ticks for {list(feeds_map.keys())}")
+        # logging.info(f"WSS: Received ticks for {list(feeds_map.keys())}")
+        pass
 
-    try:
-        raw_tick_collection.insert_one(data)
-    except Exception as e:
-        logging.error(f"MongoDB Raw Insert Error: {e}")
+    # Batch raw tick persistence
+    global raw_tick_buffer
+    with raw_buffer_lock:
+        raw_tick_buffer.append(data)
+        if len(raw_tick_buffer) >= TICK_BATCH_SIZE:
+            threading.Thread(target=flush_raw_tick_buffer, daemon=True).start()
 
+    # Throttled SocketIO Emission (Global per feed message)
     try:
         if socketio_instance:
-            jsonData = json.dumps(feeds_map)
-            emit_event('raw_tick', jsonData)
+            now = time.time()
+            # Only emit if 100ms has passed since last global 'raw_tick'
+            if now - last_emit_times.get('GLOBAL_RAW_TICK', 0) > 0.1:
+                jsonData = json.dumps(feeds_map)
+                emit_event('raw_tick', jsonData)
+                last_emit_times['GLOBAL_RAW_TICK'] = now
     except Exception as e:
         logging.error(f"SocketIO raw_tick Emit Error: {e}")
 
@@ -243,7 +298,8 @@ def on_message(message: Union[Dict, bytes, str]):
                 vix_ltpc = index_ff.get('ltpc', {})
                 if vix_ltpc and vix_ltpc.get('ltp'):
                     latest_vix['value'] = float(vix_ltpc['ltp'])
-                    threading.Thread(target=save_vix_to_db, args=(latest_vix['value'],), daemon=True).start()
+                    # Offload to queue instead of starting a new thread
+                    persistence_queue.put((save_vix_to_db, latest_vix['value']))
 
             if 'oi' in market_ff:
                 new_oi = float(market_ff['oi'])
@@ -283,11 +339,8 @@ def on_message(message: Union[Dict, bytes, str]):
                     iv = latest_iv.get(inst_key, 0)
                     greeks = latest_greeks.get(inst_key, {})
 
-                    threading.Thread(
-                        target=save_strike_metrics_to_db,
-                        args=(inst_key, oi, price, iv, greeks),
-                        daemon=True
-                    ).start()
+                    # Offload to queue instead of starting a new thread
+                    persistence_queue.put((save_strike_metrics_to_db, inst_key, oi, price, iv, greeks))
 
             ltpc = market_ff.get('ltpc') or index_ff.get('ltpc')
             if ltpc and ltpc.get('ltt'):

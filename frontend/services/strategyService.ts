@@ -25,3 +25,7 @@ export const updateStrategyContext = async (symbol: string, globalCues: string, 
 export const searchMarketCues = async () => {
     return await safeFetch(`/api/strategy/search-cues`);
 };
+
+export const syncSessionData = async () => {
+    return await safeFetch(`/api/backfill/session`, { method: 'POST' });
+};
