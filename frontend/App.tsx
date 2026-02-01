@@ -184,7 +184,7 @@ const App = () => {
                     updated[updated.length - 1] = newPoint;
                     return updated;
                 }
-                return [...prev, newPoint].slice(-100);
+                return [...prev, newPoint].slice(-1000); // Increased buffer for high-res data
             });
         }
         handleUpdate(msg);

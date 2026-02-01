@@ -564,7 +564,7 @@ def update_pcr_for_instrument(instrument_key: str):
         symbol = raw_symbol
 
     if symbol not in pcr_running_totals:
-        pcr_running_totals[symbol] = {'CE': 0, 'PE': 0, 'last_save': 0}
+        pcr_running_totals[symbol] = {'CE': 0, 'PE': 0, 'last_save': 0, 'last_emit': 0}
 
     # Re-calculate totals for the symbol (only for the nearest expiry)
     total_ce_oi = 0
@@ -588,6 +588,20 @@ def update_pcr_for_instrument(instrument_key: str):
         pcr = round(total_pe_oi / total_ce_oi, 2)
 
         now_time = time.time()
+
+        # 1. Emit to UI (Throttled to 30 seconds)
+        last_emit = pcr_running_totals[symbol].get('last_emit', 0)
+        if now_time - last_emit > 30:
+            emit_event('oi_update', {
+                'symbol': symbol,
+                'pcr': pcr,
+                'timestamp': datetime.now().isoformat(),
+                'put_oi': total_pe_oi,
+                'call_oi': total_ce_oi,
+                'source': 'live_tick'
+            })
+            pcr_running_totals[symbol]['last_emit'] = now_time
+
         # 2. Save to MongoDB (Throttled to 1 minute)
         last_save = pcr_running_totals[symbol]['last_save']
         if now_time - last_save > 60:
@@ -719,6 +733,9 @@ def start_pcr_calculation_thread():
                             'call_oi': total_ce,
                             'source': 'trendlyne'
                         })
+                        # Update the emit throttle for live ticks so we don't double emit immediately
+                        if symbol in pcr_running_totals:
+                            pcr_running_totals[symbol]['last_emit'] = time.time()
                         continue # Skip Upstox if Trendlyne succeeded
 
                     # 3. Fallback to Upstox full option chain
@@ -747,10 +764,13 @@ def start_pcr_calculation_thread():
                                 'call_oi': total_ce_oi,
                                 'source': 'upstox_full'
                             })
+                            # Update the emit throttle for live ticks
+                            if symbol in pcr_running_totals:
+                                pcr_running_totals[symbol]['last_emit'] = time.time()
                 except Exception as e:
                     logging.error(f"Error in full chain PCR for {symbol}: {e}")
 
-            time.sleep(300) # Every 5 minutes
+            time.sleep(60) # Every 1 minute
 
     threading.Thread(target=run_full_chain_pcr, daemon=True).start()
 
