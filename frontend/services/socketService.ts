@@ -38,13 +38,15 @@ class SocketService {
 
                 Object.keys(rawData).forEach(key => {
                     const instrument = rawData[key];
+                    // Normalize key to use pipe instead of colon
+                    const normalizedKey = key.replace(/:/g, '|');
                     const fullFeed = instrument?.fullFeed;
 
                     // Handle both Index (indexFF) and Regular Market (marketFF) structures
                     const ltpc = fullFeed?.indexFF?.ltpc || fullFeed?.marketFF?.ltpc;
 
                     if (ltpc && typeof ltpc.ltp === 'number') {
-                        flattenedQuotes[key] = {
+                        flattenedQuotes[normalizedKey] = {
                             last_price: ltpc.ltp,
                             timestamp: ltpc.ltt ? parseInt(ltpc.ltt) : Date.now()
                         };

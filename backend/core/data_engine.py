@@ -222,6 +222,11 @@ def decode_protobuf(buffer: bytes) -> pb.FeedResponse:
     feed_response.ParseFromString(buffer)
     return feed_response
 
+def normalize_key(key: str) -> str:
+    """Normalizes instrument keys to use pipe separator instead of colon."""
+    if not key: return key
+    return key.replace(':', '|')
+
 def on_message(message: Union[Dict, bytes, str]):
     """
     Primary callback for incoming WebSocket messages from Upstox.
@@ -283,6 +288,16 @@ def on_message(message: Union[Dict, bytes, str]):
     if feeds_map:
         current_time = datetime.now()
         new_ticks = []
+
+        # Normalize keys in feeds_map before processing and emitting
+        normalized_feeds = {}
+        for k, v in feeds_map.items():
+            n_k = normalize_key(k)
+            normalized_feeds[n_k] = v
+            if k != n_k:
+                logging.info(f"Normalized key: {k} -> {n_k}")
+        feeds_map = normalized_feeds
+
         for inst_key, feed_datum in feeds_map.items():
             feed_datum['instrumentKey'] = inst_key
             feed_datum['_insertion_time'] = current_time
@@ -601,6 +616,8 @@ def update_pcr_for_instrument(instrument_key: str):
                 'source': 'live_tick'
             })
             pcr_running_totals[symbol]['last_emit'] = now_time
+            # Also update the last pulse indicator
+            emit_event('last_pulse', {'symbol': symbol, 'time': datetime.now().isoformat()})
 
         # 2. Save to MongoDB (Throttled to 1 minute)
         last_save = pcr_running_totals[symbol]['last_save']
@@ -713,6 +730,16 @@ def start_pcr_calculation_thread():
             for symbol in ['NIFTY', 'BANKNIFTY']:
                 try:
                     # 1. Get nearest expiry
+                    # Ensure we have the latest expiry by resolving keys if needed
+                    if symbol not in current_expiries:
+                         from external import upstox_helper
+                         current_spots = {
+                            "NIFTY": latest_prices.get("NSE_INDEX|Nifty 50", 0),
+                            "BANKNIFTY": latest_prices.get("NSE_INDEX|Nifty Bank", 0)
+                         }
+                         if current_spots[symbol] > 0:
+                             upstox_helper.get_upstox_instruments([symbol], current_spots)
+
                     expiry_str = current_expiries.get(symbol)
                     if not expiry_str:
                         continue

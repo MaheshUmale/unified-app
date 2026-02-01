@@ -177,7 +177,8 @@ const App = () => {
             });
 
             setHistoricalPcr(prev => {
-                const newPoint = { timestamp: msg.timestamp, pcr: msg.pcr, price: 0 };
+                const currentPrice = indexData.length > 0 ? indexData[indexData.length - 1].close : 0;
+                const newPoint = { timestamp: msg.timestamp, pcr: msg.pcr, price: currentPrice };
                 // Avoid duplicate timestamps
                 if (prev.length > 0 && prev[prev.length - 1].timestamp === msg.timestamp) {
                     const updated = [...prev];

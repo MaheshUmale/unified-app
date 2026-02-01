@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import List, Dict, Any, Optional
 import pandas as pd
 import requests
 import gzip
@@ -22,6 +23,11 @@ def get_instrument_df():
         _LAST_FETCH = now
     return _INSTRUMENT_DF
 
+def is_monthly_expiry(expiry_dt: datetime, all_expiries: List[datetime]) -> bool:
+    """Checks if the given expiry date is a monthly expiry (last expiry of its month)."""
+    month_expiries = [d for d in all_expiries if d.year == expiry_dt.year and d.month == expiry_dt.month]
+    return expiry_dt == max(month_expiries) if month_expiries else False
+
 def get_upstox_instruments(symbols=["NIFTY", "BANKNIFTY"], spot_prices={"NIFTY": 0, "BANKNIFTY": 0}):
     # 1. Download and Load Instrument Master (NSE_FO for Futures and Options)
     df = get_instrument_df()
@@ -41,7 +47,18 @@ def get_upstox_instruments(symbols=["NIFTY", "BANKNIFTY"], spot_prices={"NIFTY":
 
         # Ensure expiry is in datetime format for accurate sorting
         opt_df['expiry'] = pd.to_datetime(opt_df['expiry'], origin='unix', unit='ms')
-        nearest_expiry = opt_df['expiry'].min()
+
+        all_unique_expiries = sorted(opt_df['expiry'].unique())
+
+        # User Requirement: NIFTY is Weekly, BANKNIFTY is Monthly
+        if symbol == 'BANKNIFTY':
+            # Pick nearest MONTHLY expiry
+            monthly_expiries = [d for d in all_unique_expiries if is_monthly_expiry(d, all_unique_expiries)]
+            nearest_expiry = monthly_expiries[0] if monthly_expiries else all_unique_expiries[0]
+        else:
+            # Default to absolute nearest (Weekly)
+            nearest_expiry = opt_df['expiry'].min()
+
         near_opt_df = opt_df[opt_df['expiry'] == nearest_expiry]
 
         # --- 3. Identify the 7 Strikes (3 OTM, 1 ATM, 3 ITM) ---
@@ -124,10 +141,17 @@ def resolve_instrument_key(symbol: str, instrument_type: str = 'FUT', strike: fl
             if final_filtered.empty:
                 # Log available expiries for debugging
                 available = filtered['expiry_date'].unique().tolist()
-                logger.warning(f"Expiry mismatch for {search_symbol}: Requested {expiry}, Available {available}")
-                # Fallback to nearest if exact match fails?
-                # For strategy we usually want the specific one, but let's be lenient if it's within 2 days
-                filtered = filtered.sort_values(by='expiry')
+
+                # SPECIAL HANDLING FOR FUTURES:
+                # If we requested a weekly expiry for a FUTURE (common mismatch),
+                # fallback to the nearest Monthly future instead of failing.
+                if instrument_type.upper() == 'FUT':
+                    logger.info(f"FUT expiry mismatch for {search_symbol}: Weekly {expiry} requested, choosing nearest FUT {available[0] if available else 'None'}")
+                    filtered = filtered.sort_values(by='expiry')
+                else:
+                    logger.warning(f"Expiry mismatch for {search_symbol}: Requested {expiry}, Available {available}")
+                    # Fallback to nearest if exact match fails
+                    filtered = filtered.sort_values(by='expiry')
             else:
                 filtered = final_filtered
         except Exception as e:

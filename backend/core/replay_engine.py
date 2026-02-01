@@ -147,12 +147,18 @@ class ReplayEngine:
 
             logger.info(f"Replay Query: Range {start_ms} to {end_ms} for {instrument_keys}")
 
+            # Normalize and expand keys to handle both | and : formats in DB
+            search_keys = set()
+            for k in instrument_keys:
+                search_keys.add(k.replace(':', '|'))
+                search_keys.add(k.replace('|', ':'))
+
             # Query for ticks within range.
             # Broaden to include all data for the day if exact range fails,
             # or just use the date field if we start adding it to ticks.
             # For now, let's stick to the ms range but make it more robust.
             query = {
-                'instrumentKey': {'$in': instrument_keys},
+                'instrumentKey': {'$in': list(search_keys)},
                 '$or': [
                     {'ts_ms': {'$gte': start_ms, '$lte': end_ms}},
                     # Legacy fallback (try both int and str)
@@ -298,7 +304,8 @@ class ReplayEngine:
 
                 # Emit the tick
                 # Wrap it in the same structure as live WSS
-                inst_key = tick['instrumentKey']
+                # Normalize key before emitting to ensure UI consistency
+                inst_key = data_engine.normalize_key(tick['instrumentKey'])
                 feeds_map = {inst_key: tick}
                 self.emit_fn('raw_tick', json.dumps(feeds_map, cls=MongoJSONEncoder))
 
