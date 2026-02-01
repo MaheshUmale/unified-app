@@ -20,7 +20,8 @@ from db.mongodb import (
     get_instruments_collection,
     get_oi_collection,
     get_trade_signals_collection,
-    SIGNAL_COLLECTION_NAME
+    SIGNAL_COLLECTION_NAME,
+    ensure_indexes
 )
 from core import data_engine
 from core.replay_engine import ReplayEngine
@@ -44,6 +45,12 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Initializes strategies and starts the Upstox WebSocket thread."""
     logger.info("Initializing ProTrade Platform...")
+
+    # 0. Ensure Indexes
+    try:
+        ensure_indexes()
+    except Exception as e:
+        logger.error(f"Failed to ensure indexes: {e}")
 
     # Capture main loop and inject into data_engine
     global main_loop
@@ -159,7 +166,7 @@ async def connect(sid, environ):
 async def handle_subscribe(sid, data):
     """Handles multiple instrument subscriptions."""
     instrument_keys = data.get('instrumentKeys', [])
-    logger.info(f"Client {sid} subscribing to {instrument_keys}")
+    logger.info(f"Client {sid} subscribing to {len(instrument_keys)} instruments: {instrument_keys}")
     for key in instrument_keys:
         try:
             await handle_subscribe_instrument(sid, {'instrument_key': key})
@@ -177,6 +184,9 @@ async def handle_subscribe_instrument(sid, data):
         return
 
     logger.info(f"Client {sid} subscribing to instrument: {instrument_key}")
+    # Acknowledge subscription
+    await sio.emit('subscription_status', {'key': instrument_key, 'status': 'success'}, to=sid)
+
     try:
         await sio.enter_room(sid, instrument_key)
     except ValueError as e:
@@ -188,8 +198,8 @@ async def handle_subscribe_instrument(sid, data):
     # Delegate to data_engine for Upstox subscription
     data_engine.subscribe_instrument(instrument_key)
 
-    # Load and send intraday history
-    history = data_engine.load_intraday_data(instrument_key)
+    # Load and send intraday history (Offload heavy DB query to thread to prevent event loop lag)
+    history = await asyncio.to_thread(data_engine.load_intraday_data, instrument_key)
     if history:
         await sio.emit('footprint_history', history, to=sid)
 
@@ -810,7 +820,7 @@ else:
 
 # Final Wrap with Socket.io
 app = socketio.ASGIApp(sio, fastapi_app)
-data_engine.set_socketio(sio)
+# Do NOT call set_socketio(sio) here as it will overwrite the loop-aware injection in lifespan()
 
 if __name__ == "__main__":
     import uvicorn

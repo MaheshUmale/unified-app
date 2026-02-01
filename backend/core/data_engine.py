@@ -449,6 +449,21 @@ def resolve_metadata(instrument_key: str):
                 'strike': float(row.get('strike_price', 0)),
                 'expiry': expiry_date
             }
+
+            # Cache in MongoDB for future replay discovery
+            db = get_db()
+            db['instruments'].update_one(
+                {'instrument_key': instrument_key},
+                {'$set': {
+                    'name': row['name'],
+                    'instrument_type': row['instrument_type'],
+                    'strike_price': float(row.get('strike_price', 0)),
+                    'expiry_date': expiry_date,
+                    'trading_symbol': row.get('trading_symbol') or row.get('symbol'),
+                    'updated_at': datetime.now()
+                }},
+                upsert=True
+            )
         else:
             # 2. Try MongoDB (for expired/historical instruments)
             db = get_db()

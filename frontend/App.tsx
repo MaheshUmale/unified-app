@@ -224,6 +224,7 @@ const App = () => {
 
         // 2. Fetch Option Chain and Buildup if expiry is available
         if (expiryDate) {
+            console.log(`[App] Loading Option Data for expiry: ${expiryDate}, ATM: ${currentAtm}`);
             let ceKey = atmOptionKeysRef.current.ce;
             let peKey = atmOptionKeysRef.current.pe;
 

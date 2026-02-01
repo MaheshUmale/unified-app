@@ -79,13 +79,19 @@ def ensure_indexes() -> bool:
     """
     db = get_db()
 
-    # Index on tick_data.instrumentKey for fast instrument-specific queries
+    # Index on tick_data for fast instrument-specific and time-based queries
     tick_data = db['tick_data']
-    tick_data.create_index('instrumentKey', background=True)
+    tick_data.create_index([('instrumentKey', 1), ('ts_ms', 1)], background=True)
     tick_data.create_index('ts_ms', background=True)
-    print("[DB] Created index on tick_data.instrumentKey and ts_ms")
+    tick_data.create_index('_insertion_time', background=True)
 
-    # Optional: Compound index for time-based queries
-    # tick_data.create_index([('instrumentKey', 1), ('_id', 1)], background=True)
+    # Index for strike_oi_data
+    db['strike_oi_data'].create_index([('instrument_key', 1), ('updated_at', -1)], background=True)
+    db['strike_oi_data'].create_index('date', background=True)
 
+    # Index for instruments collection
+    db['instruments'].create_index('instrument_key', unique=True, background=True)
+    db['instruments'].create_index([('instrument_type', 1), ('strike_price', 1)], background=True)
+
+    print("[DB] Optimized collection indexes created.")
     return True

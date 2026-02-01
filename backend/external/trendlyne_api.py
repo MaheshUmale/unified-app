@@ -226,7 +226,7 @@ def fetch_futures_buildup(symbol: str, expiry: str) -> List[Dict[str, Any]]:
         return results
 
     # Fallback to local data if Trendlyne fails
-    return get_local_buildup(symbol, mtype='futures')
+    return get_local_buildup(symbol, mtype='futures', expiry=expiry)
 
 def fetch_option_buildup(symbol: str, expiry: str, strike: int, option_type: str) -> List[Dict[str, Any]]:
     """Fetches option buildup data and caches it. Falls back to local data if needed."""
@@ -264,9 +264,9 @@ def fetch_option_buildup(symbol: str, expiry: str, strike: int, option_type: str
         return results
 
     # Fallback to local data
-    return get_local_buildup(symbol, mtype='options', strike=strike, option_type=option_type)
+    return get_local_buildup(symbol, mtype='options', strike=strike, option_type=option_type, expiry=expiry)
 
-def get_local_buildup(symbol: str, mtype='futures', strike=None, option_type=None) -> List[Dict[str, Any]]:
+def get_local_buildup(symbol: str, mtype='futures', strike=None, option_type=None, expiry=None) -> List[Dict[str, Any]]:
     """Calculates buildup from local MongoDB strike_oi_data, intraday bars, or Upstox API."""
     try:
         from db.mongodb import get_db
@@ -282,10 +282,13 @@ def get_local_buildup(symbol: str, mtype='futures', strike=None, option_type=Non
         # Standardize symbol for Upstox resolution
         res_symbol = "NIFTY" if "nifty 50" in symbol.lower() else "BANKNIFTY" if "bank" in symbol.lower() else symbol
 
+        # Standardize option type: Map CALL/PUT to CE/PE for Upstox resolution
+        opt_type = 'CE' if option_type and option_type.upper() in ['CALL', 'CE'] else 'PE' if option_type and option_type.upper() in ['PUT', 'PE'] else option_type.upper() if option_type else None
+
         if mtype == 'futures':
-            instrument_key = upstox_helper.resolve_instrument_key(res_symbol, 'FUT')
+            instrument_key = upstox_helper.resolve_instrument_key(res_symbol, 'FUT', expiry=expiry)
         else:
-            instrument_key = upstox_helper.resolve_instrument_key(res_symbol, option_type.upper(), strike=strike)
+            instrument_key = upstox_helper.resolve_instrument_key(res_symbol, opt_type, strike=strike, expiry=expiry)
 
         if not instrument_key:
             logger.warning(f"Buildup Fallback: Could not resolve key for {symbol} {mtype} {strike}")
