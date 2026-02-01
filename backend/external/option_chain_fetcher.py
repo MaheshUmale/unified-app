@@ -51,8 +51,6 @@ def get_option_chain(api_client, instrument_key):
         return response.json()
     except  Exception as e:
         print(f"Error fetching option chain: {e}")
-        
-
         import traceback
 
         traceback.print_exc()

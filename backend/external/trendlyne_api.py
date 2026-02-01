@@ -430,7 +430,6 @@ def fetch_pcr_history(symbol: str, expiry: str) -> List[Dict[str, Any]]:
     Simulates PCR history by fetching snapshots for the current day.
     Matches logic from backfill_trendlyne.py.
     """
-<<<<<<< Updated upstream
     stock_id = get_stock_id_for_symbol(symbol)
     if not stock_id:
         return []
@@ -439,46 +438,6 @@ def fetch_pcr_history(symbol: str, expiry: str) -> List[Dict[str, Any]]:
     market_close = now.replace(hour=15, minute=30, second=0, microsecond=0)
     end_time_str = "15:30" if now > market_close else now.strftime("%H:%M")
     time_slots = generate_time_intervals(end_time=end_time_str)
-=======
-    session = TrendlyneSession.get_session()
-    # Trendlyne uses different formats, we try the most likely one based on phoenix structure
-    url = f"https://smartoptions.trendlyne.com/phoenix/api/fno/pcr-history/{expiry}/{symbol}/?format=json"
-    print(url)
-    try:
-        logger.info(f"Fetching PCR history from Trendlyne for {symbol} ({expiry})")
-        resp = session.get(url, timeout=10)
-        if resp.status_code == 200:
-            data = resp.json()
-            results = data.get('results', [])
-            if results:
-                # Cache in MongoDB
-                oi_coll = get_oi_collection()
-                for item in results:
-                    # Map Trendlyne fields to our schema
-                    # Trendlyne usually returns: {'timestamp': '...', 'pcr': 1.2, 'total_call_oi': ..., 'total_put_oi': ...}
-                    ts = item.get('timestamp')
-                    if ts:
-                        dt = datetime.fromisoformat(ts.replace('Z', ''))
-                        doc = {
-                            'symbol': symbol,
-                            'date': dt.strftime("%Y-%m-%d"),
-                            'timestamp': dt.strftime("%H:%M"),
-                            'call_oi': item.get('total_call_oi', 0),
-                            'put_oi': item.get('total_put_oi', 0),
-                            'pcr': item.get('pcr', 0),
-                            'source': 'trendlyne_pcr_history',
-                            'updated_at': datetime.now()
-                        }
-                        query = {'symbol': symbol, 'date': doc['date'], 'timestamp': doc['timestamp']}
-                        oi_coll.update_one(query, {'$set': doc}, upsert=True)
-                return results
-        else:
-            logger.warning(url)
-            # logger.warning(resp.text)
-            logger.warning(f"Trendlyne PCR history API returned {resp.status_code}")
-    except Exception as e:
-        logger.error(f"Error fetching PCR history for {symbol}: {e}")
->>>>>>> Stashed changes
 
     results = []
     logger.info(f"Re-fetching PCR history via snapshots for {symbol}...")
