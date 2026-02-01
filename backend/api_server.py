@@ -167,6 +167,8 @@ async def handle_subscribe(sid, data):
     """Handles multiple instrument subscriptions."""
     instrument_keys = data.get('instrumentKeys', [])
     logger.info(f"Client {sid} subscribing to {len(instrument_keys)} instruments: {instrument_keys}")
+    # Force log for debugging
+    print(f"DEBUG: Client {sid} subscribing to {instrument_keys}")
     for key in instrument_keys:
         try:
             await handle_subscribe_instrument(sid, {'instrument_key': key})

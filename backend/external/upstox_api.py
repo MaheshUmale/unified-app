@@ -48,35 +48,36 @@ class UpstoxAPI:
             return None
 
     def get_intraday_candles(self, instrument_key: str, interval: str = '1') -> Optional[Dict[str, Any]]:
-        """Fetches intraday candle data using Upstox V3 API."""
-        url = f'https://api.upstox.com/v3/historical-candle/intraday/{instrument_key}/minutes/{interval}'
-        headers = {
-            'Accept': 'application/json',
-            'Authorization': f'Bearer {self.access_token}'
-        }
+        """Fetches intraday candle data using Upstox History SDK."""
+        api_instance = upstox_client.HistoryV3Api(self.api_client)
         try:
-            response = requests.get(url, headers=headers, timeout=10)
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            logger.error(f"Error fetching intraday candles for {instrument_key}: {e}")
+            response = api_instance.get_intra_day_candle_data(instrument_key, "minutes", interval)
+            # Map SDK response to expected dict format
+            return {"status": "success", "data": {"candles": response.data.candles if hasattr(response.data, 'candles') else []}}
+        except ApiException as e:
+            logger.error(f"Exception when calling HistoryV3Api->get_intra_day_candle_data: {e}")
             return None
 
     def get_historical_candles(self, instrument_key: str, interval: str, to_date: str, from_date: Optional[str] = None) -> Optional[Dict[str, Any]]:
-        """Fetches historical candle data using Upstox V3 API."""
-        if from_date:
-            url = f'https://api.upstox.com/v3/historical-candle/{instrument_key}/{interval}/{to_date}/{from_date}'
-        else:
-            url = f'https://api.upstox.com/v3/historical-candle/{instrument_key}/{interval}/{to_date}'
-
-        headers = {
-            'Accept': 'application/json',
-            'Authorization': f'Bearer {self.access_token}'
-        }
+        """Fetches historical candle data using Upstox History SDK."""
+        api_instance = upstox_client.HistoryV3Api(self.api_client)
         try:
-            response = requests.get(url, headers=headers, timeout=10)
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            logger.error(f"Error fetching historical candles for {instrument_key}: {e}")
+            iv_name = "day"
+            iv_val = "1"
+
+            if "minute" in interval:
+                iv_name = "minutes"
+                iv_val = interval.replace("minute", "")
+            elif interval == "day":
+                iv_name = "day"
+                iv_val = "1"
+
+            if from_date:
+                response = api_instance.get_historical_candle_data1(instrument_key, iv_name, iv_val, to_date, from_date)
+            else:
+                response = api_instance.get_historical_candle_data(instrument_key, iv_name, iv_val, to_date)
+
+            return {"status": "success", "data": {"candles": response.data.candles if hasattr(response.data, 'candles') else []}}
+        except ApiException as e:
+            logger.error(f"Exception when calling HistoryV3Api->get_historical_candle: {e}")
             return None

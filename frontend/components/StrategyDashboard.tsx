@@ -82,11 +82,19 @@ const StrategyDashboard: React.FC<StrategyDashboardProps> = ({ indexKey, atmStri
                             {analysis.decision}
                         </h2>
                     </div>
-                    <div className="flex flex-col items-end">
-                        <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">System Confidence</span>
-                        <span className="text-white font-black font-mono-data text-2xl">
-                            {Math.max(scores.call || 0, scores.put || 0, scores.straddle || 0)}%
-                        </span>
+                    <div className="flex gap-12">
+                        <div className="flex flex-col items-end">
+                            <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">ATM Straddle</span>
+                            <span className="text-brand-blue font-black font-mono-data text-2xl">
+                                ₹{metrics.straddle_price?.toFixed(2)}
+                            </span>
+                        </div>
+                        <div className="flex flex-col items-end border-l border-white/10 pl-12">
+                            <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">System Confidence</span>
+                            <span className="text-white font-black font-mono-data text-2xl">
+                                {Math.max(scores.call || 0, scores.put || 0, scores.straddle || 0)}%
+                            </span>
+                        </div>
                     </div>
                 </div>
 
@@ -252,13 +260,33 @@ const StrategyDashboard: React.FC<StrategyDashboardProps> = ({ indexKey, atmStri
                     </div>
 
                     <div className="glass-panel rounded-2xl p-6 flex flex-col gap-4">
+                        <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Straddle Math (Required Move)</h3>
+                        <div className="bg-black/40 rounded-xl p-4 font-mono text-[10px] space-y-2 border border-white/5">
+                            <div className="flex justify-between">
+                                <span className="text-gray-500">ATM Straddle Cost:</span>
+                                <span className="text-white">₹{metrics.straddle_price?.toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="text-gray-500">Exp. 15m Move (IV):</span>
+                                <span className="text-blue-400">±{metrics.expected_move?.toFixed(2)} pts</span>
+                            </div>
+                            <div className="pt-2 border-t border-white/5 flex justify-between font-black">
+                                <span className="text-gray-400 uppercase">Edge Efficiency:</span>
+                                <span className={metrics.expected_move >= metrics.straddle_price * 0.9 ? 'text-green-500' : 'text-red-500'}>
+                                    {((metrics.expected_move / metrics.straddle_price) * 100).toFixed(1)}%
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="glass-panel rounded-2xl p-6 flex flex-col gap-4">
                         <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Alpha One-Liner</h3>
                         <p className="text-xs text-gray-400 font-mono leading-relaxed italic border-l-2 border-blue-500 pl-4">
                             "Should ATM options be BOUGHT today?
                             <span className={`ml-1 font-black not-italic ${analysis.decision === 'NO TRADE' ? 'text-red-500' : 'text-green-500'}`}>
                                 {analysis.decision === 'NO TRADE' ? 'NO' : 'YES'}
                             </span>
-                            — ({Math.max(scores.call, scores.put)}% probability, Expectancy {metrics.expected_move?.toFixed(1)} pts)."
+                            — ({Math.max(scores.call, scores.put, scores.straddle)}% probability, Expectancy {metrics.expected_move?.toFixed(1)} pts)."
                         </p>
                     </div>
                 </div>

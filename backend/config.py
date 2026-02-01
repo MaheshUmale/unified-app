@@ -2,7 +2,7 @@ import os
 
 # --- Global Configuration ---
 # It is recommended to set these in environment variables for security
-ACCESS_TOKEN = os.getenv('UPSTOX_ACCESS_TOKEN', 'eyJ0eXAiOiJKV1QiLCJrZXlfaWQiOiJza192MS4wIiwiYWxnIjoiSFMyNTYifQ.eyJzdWIiOiI3NkFGMzUiLCJqdGkiOiI2OTdjMjk1NWRiMmJkNDMyYjA5ZDM3NmQiLCJpc011bHRpQ2xpZW50IjpmYWxzZSwiaXNQbHVzUGxhbiI6ZmFsc2UsImlhdCI6MTc2OTc0NDcyNSwiaXNzIjoidWRhcGktZ2F0ZXdheS1zZXJ2aWNlIiwiZXhwIjoxNzY5ODEwNDAwfQ.8mt1Xz4vzP7HQVflLerHKWrtfvIt7PlD0gVjrzdyo90')
+ACCESS_TOKEN = os.getenv('UPSTOX_ACCESS_TOKEN', 'YOUR_ACCESS_TOKEN_HERE')
 SANDBOX_ACCESS_TOKEN = os.getenv('UPSTOX_SANDBOX_ACCESS_TOKEN', 'YOUR_SANDBOX_ACCESS_TOKEN_HERE')
 
 # MongoDB Config

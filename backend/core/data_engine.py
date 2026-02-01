@@ -210,6 +210,10 @@ def on_message(message: Union[Dict, bytes, str]):
         logging.info(f"WSS: Market Info Received. Status: {info.get('segmentStatus', 'Unknown')}")
 
     feeds_map = data.get('feeds', {})
+    # LOG EVERY TICK FOR VERIFICATION
+    if feeds_map:
+        logging.info(f"WSS: Received ticks for {list(feeds_map.keys())}")
+
     try:
         raw_tick_collection.insert_one(data)
     except Exception as e:
@@ -291,6 +295,8 @@ def on_message(message: Union[Dict, bytes, str]):
                 feed_datum['ts_ms'] = int(ltpc['ltt'])
                 if ltpc.get('ltp'):
                     latest_prices[inst_key] = float(ltpc['ltp'])
+                    if inst_key == "NSE_INDEX|Nifty 50":
+                        logging.info(f"LIVE NIFTY PRICE: {latest_prices[inst_key]}")
 
             new_ticks.append(feed_datum)
 
@@ -734,16 +740,16 @@ def is_market_hours() -> bool:
     """Checks if the current time is within Indian market hours (09:15 - 15:30 IST)."""
     import pytz
     ist = pytz.timezone('Asia/Kolkata')
-    now_ist = datetime.now(ist)
+    now = datetime.now(ist)
 
-    # Weekends (Saturday=5, Sunday=6)
-    if now_ist.weekday() >= 5:
+    # Monday = 0, Sunday = 6
+    if now.weekday() >= 5:
         return False
 
-    start_time = now_ist.replace(hour=9, minute=15, second=0, microsecond=0)
-    end_time = now_ist.replace(hour=15, minute=30, second=0, microsecond=0)
+    start_time = now.replace(hour=9, minute=15, second=0, microsecond=0)
+    end_time = now.replace(hour=15, minute=30, second=0, microsecond=0)
 
-    return start_time <= now_ist <= end_time
+    return start_time <= now <= end_time
 
 def start_websocket_thread(access_token: str, instrument_keys: List[str]):
     """
