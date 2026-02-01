@@ -37,17 +37,9 @@ const PCRVsSpotChart: React.FC<Props> = ({ pcrData, spotData, title }) => {
   useEffect(() => {
     if (!chartRef.current) return;
 
-    // Align data by timestamp (simplified for same intervals)
-    const timestamps = pcrData.map(d => new Date(d.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-    const pcrValues = pcrData.map(d => d.pcr);
-
-    // Align spot data to PCR timestamps for accurate plotting
-    const spotValues = pcrData.map(p => {
-        const pTs = new Date(p.timestamp).getTime();
-        // Find closest spot candle (within 1 minute)
-        const closest = spotData.find(s => Math.abs(new Date(s.timestamp).getTime() - pTs) < 60000);
-        return closest ? closest.close : null;
-    });
+    // Use actual timestamp pairs for ECharts 'time' axis
+    const pcrSeriesData = pcrData.map(d => [new Date(d.timestamp).getTime(), d.pcr]);
+    const spotSeriesData = spotData.map(d => [new Date(d.timestamp).getTime(), d.close]);
 
     const option = {
         backgroundColor: 'transparent',
@@ -56,7 +48,19 @@ const PCRVsSpotChart: React.FC<Props> = ({ pcrData, spotData, title }) => {
             axisPointer: { type: 'cross' },
             backgroundColor: '#111827',
             borderColor: '#374151',
-            textStyle: { color: '#e5e7eb' }
+            textStyle: { color: '#e5e7eb' },
+            formatter: (params: any) => {
+              let res = `<div style="font-size: 10px; color: #9ca3af; margin-bottom: 4px;">${new Date(params[0].value[0]).toLocaleTimeString()}</div>`;
+              params.forEach((p: any) => {
+                const color = p.color;
+                const value = p.value[1];
+                res += `<div style="display: flex; justify-content: space-between; gap: 20px;">
+                          <span style="color: ${color}">${p.seriesName}:</span>
+                          <span style="font-weight: bold; color: #fff">${typeof value === 'number' ? value.toFixed(2) : value}</span>
+                        </div>`;
+              });
+              return res;
+            }
         },
         legend: {
             data: ['PCR', 'SPOT'],
@@ -65,10 +69,17 @@ const PCRVsSpotChart: React.FC<Props> = ({ pcrData, spotData, title }) => {
         },
         grid: { top: 40, left: 10, right: 10, bottom: 20, containLabel: true },
         xAxis: {
-            type: 'category',
-            data: timestamps,
+            type: 'time',
             axisLine: { lineStyle: { color: '#4b5563' } },
-            axisLabel: { color: '#9ca3af', fontSize: 9 }
+            axisLabel: {
+              color: '#9ca3af',
+              fontSize: 9,
+              formatter: (value: number) => {
+                const date = new Date(value);
+                return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+              }
+            },
+            splitLine: { show: false }
         },
         yAxis: [
             {
@@ -92,7 +103,7 @@ const PCRVsSpotChart: React.FC<Props> = ({ pcrData, spotData, title }) => {
             {
                 name: 'PCR',
                 type: 'line',
-                data: pcrValues,
+                data: pcrSeriesData,
                 smooth: true,
                 lineStyle: { color: '#3b82f6', width: 2 },
                 itemStyle: { color: '#3b82f6' },
@@ -102,7 +113,7 @@ const PCRVsSpotChart: React.FC<Props> = ({ pcrData, spotData, title }) => {
                 name: 'SPOT',
                 type: 'line',
                 yAxisIndex: 1,
-                data: spotValues,
+                data: spotSeriesData,
                 smooth: true,
                 lineStyle: { color: '#9ca3af', width: 1, type: 'dashed' },
                 itemStyle: { color: '#9ca3af' },
