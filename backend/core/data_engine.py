@@ -45,8 +45,23 @@ stop_replay_flag = False
 last_emit_times = {}  # Track last emit time per instrument for throttling
 subscribed_instruments = set()
 
-# Real-time PCR tracking
+# Real-time Strategy & PCR tracking
+replay_mode = False
+sim_time = None # datetime representing simulated 'now'
+sim_strike_data = {} # instrument_key -> list of docs (for replay)
+
+def get_now():
+    """Returns simulated time if in replay mode, else real time."""
+    if replay_mode and sim_time:
+        return sim_time
+    return datetime.now()
+
 latest_oi = {}  # instrument_key -> oi
+latest_iv = {}  # instrument_key -> iv
+latest_greeks = {} # instrument_key -> {delta, theta, gamma, vega}
+latest_vix = {'value': 0}
+latest_bid_ask = {} # instrument_key -> {'bid': p, 'ask': p}
+latest_vtt = {} # instrument_key -> total_volume_today
 latest_prices = {} # instrument_key -> price
 instrument_metadata = {} # instrument_key -> {'symbol': str, 'type': 'CE'|'PE'|'FUT'|'INDEX', 'expiry': 'YYYY-MM-DD'}
 pcr_running_totals = {} # symbol -> {'CE': total_oi, 'PE': total_oi, 'last_save': timestamp}
@@ -195,6 +210,9 @@ def on_message(message: Union[Dict, bytes, str]):
         logging.info(f"WSS: Market Info Received. Status: {info.get('segmentStatus', 'Unknown')}")
 
     feeds_map = data.get('feeds', {})
+    if feeds_map:
+        logging.info(f"WSS: Received ticks for {list(feeds_map.keys())}")
+
     try:
         raw_tick_collection.insert_one(data)
     except Exception as e:
@@ -217,22 +235,61 @@ def on_message(message: Union[Dict, bytes, str]):
             # Extract common timestamp for easier replay/querying
             ff = feed_datum.get('fullFeed', {})
 
-            # Real-time OI extraction
+            # Real-time extraction (OI, IV, Greeks, VIX)
             market_ff = ff.get('marketFF', {})
+            index_ff = ff.get('indexFF', {})
+
+            if inst_key == "NSE_INDEX|India VIX":
+                vix_ltpc = index_ff.get('ltpc', {})
+                if vix_ltpc and vix_ltpc.get('ltp'):
+                    latest_vix['value'] = float(vix_ltpc['ltp'])
+                    threading.Thread(target=save_vix_to_db, args=(latest_vix['value'],), daemon=True).start()
+
             if 'oi' in market_ff:
                 new_oi = float(market_ff['oi'])
                 latest_oi[inst_key] = new_oi
                 update_pcr_for_instrument(inst_key)
 
-                # Also save per-strike OI for Flow tab fallback
-                if inst_key in instrument_metadata:
-                    meta = instrument_metadata[inst_key]
-                    if meta['type'] in ['CE', 'PE', 'FUT']:
-                        ltpc = market_ff.get('ltpc')
-                        price = float(ltpc['ltp']) if ltpc and ltpc.get('ltp') else 0
-                        threading.Thread(target=save_strike_oi_to_db, args=(inst_key, new_oi, price), daemon=True).start()
+            if 'iv' in market_ff:
+                latest_iv[inst_key] = float(market_ff['iv'])
 
-            ltpc = market_ff.get('ltpc') or ff.get('indexFF', {}).get('ltpc')
+            if 'optionGreeks' in market_ff:
+                g = market_ff['optionGreeks']
+                latest_greeks[inst_key] = {
+                    'delta': float(g.get('delta', 0)),
+                    'theta': float(g.get('theta', 0)),
+                    'gamma': float(g.get('gamma', 0)),
+                    'vega': float(g.get('vega', 0))
+                }
+
+            if 'vtt' in market_ff:
+                latest_vtt[inst_key] = float(market_ff['vtt'])
+
+            market_levels = market_ff.get('marketLevel', {}).get('bidAskQuote', [])
+            if market_levels:
+                top = market_levels[0]
+                latest_bid_ask[inst_key] = {
+                    'bid': float(top.get('bidP', 0)),
+                    'ask': float(top.get('askP', 0))
+                }
+
+            # Persist per-strike metrics for strategy analysis
+            if inst_key in instrument_metadata:
+                meta = instrument_metadata[inst_key]
+                if meta['type'] in ['CE', 'PE', 'FUT']:
+                    ltpc = market_ff.get('ltpc')
+                    price = float(ltpc['ltp']) if ltpc and ltpc.get('ltp') else 0
+                    oi = latest_oi.get(inst_key, 0)
+                    iv = latest_iv.get(inst_key, 0)
+                    greeks = latest_greeks.get(inst_key, {})
+
+                    threading.Thread(
+                        target=save_strike_metrics_to_db,
+                        args=(inst_key, oi, price, iv, greeks),
+                        daemon=True
+                    ).start()
+
+            ltpc = market_ff.get('ltpc') or index_ff.get('ltpc')
             if ltpc and ltpc.get('ltt'):
                 feed_datum['ts_ms'] = int(ltpc['ltt'])
                 if ltpc.get('ltp'):
@@ -376,8 +433,9 @@ def subscribe_instrument(instrument_key: str):
         threading.Thread(target=resolve_metadata, args=(instrument_key,), daemon=True).start()
 
 def resolve_metadata(instrument_key: str):
-    """Resolves and caches instrument metadata (Symbol, Type, Strike, Expiry)."""
+    """Resolves and caches instrument metadata (Symbol, Type, Strike, Expiry). Falls back to DB for historical."""
     try:
+        # 1. Try Live Master
         df = ExtractInstrumentKeys.get_instrument_df()
         match = df[df['instrument_key'] == instrument_key]
         if not match.empty:
@@ -395,8 +453,37 @@ def resolve_metadata(instrument_key: str):
                 'expiry': expiry_date
             }
 
-            # Update current nearest expiry for the symbol (only future/today)
-            symbol = row['name']
+            # Cache in MongoDB for future replay discovery
+            db = get_db()
+            db['instruments'].update_one(
+                {'instrument_key': instrument_key},
+                {'$set': {
+                    'name': row['name'],
+                    'instrument_type': row['instrument_type'],
+                    'strike_price': float(row.get('strike_price', 0)),
+                    'expiry_date': expiry_date,
+                    'trading_symbol': row.get('trading_symbol') or row.get('symbol'),
+                    'updated_at': datetime.now()
+                }},
+                upsert=True
+            )
+        else:
+            # 2. Try MongoDB (for expired/historical instruments)
+            db = get_db()
+            doc = db['instruments'].find_one({'instrument_key': instrument_key})
+            if doc:
+                instrument_metadata[instrument_key] = {
+                    'symbol': doc.get('name') or doc.get('underlying_symbol') or 'UNKNOWN',
+                    'type': doc.get('instrument_type') or 'UNKNOWN',
+                    'strike': float(doc.get('strike_price', 0)),
+                    'expiry': doc.get('expiry_date') or ''
+                }
+
+        # 3. Update current nearest expiry for the symbol (only future/today)
+        if instrument_key in instrument_metadata:
+            meta = instrument_metadata[instrument_key]
+            symbol = meta['symbol']
+            expiry_date = meta['expiry']
             today_str = datetime.now().strftime('%Y-%m-%d')
             if expiry_date and expiry_date >= today_str:
                 if symbol not in current_expiries or expiry_date < current_expiries[symbol]:
@@ -448,20 +535,6 @@ def update_pcr_for_instrument(instrument_key: str):
         pcr = round(total_pe_oi / total_ce_oi, 2)
 
         now_time = time.time()
-        # 1. Emit live update (Throttled to 5s) - DEACTIVATED to prevent Partial PCR mismatch
-        # We now rely on run_full_chain_pcr for Total PCR
-        # last_pcr_emit = last_emit_times.get(f"PCR_{symbol}", 0)
-        # if now_time - last_pcr_emit > 5:
-        #     emit_event('oi_update', {
-        #         'symbol': symbol,
-        #         'pcr': pcr,
-        #         'timestamp': datetime.now().isoformat(),
-        #         'put_oi': total_pe_oi,
-        #         'call_oi': total_ce_oi,
-        #         'source': 'live_partial'
-        #     })
-        #     last_emit_times[f"PCR_{symbol}"] = now_time
-
         # 2. Save to MongoDB (Throttled to 1 minute)
         last_save = pcr_running_totals[symbol]['last_save']
         if now_time - last_save > 60:
@@ -473,33 +546,74 @@ def update_pcr_for_instrument(instrument_key: str):
             threading.Thread(target=save_oi_to_db, args=(symbol, total_ce_oi, total_pe_oi, index_price), daemon=True).start()
             pcr_running_totals[symbol]['last_save'] = now_time
 
-def save_strike_oi_to_db(instrument_key, oi, price):
-    """Persists per-instrument OI for buildup analysis."""
+def save_vix_to_db(vix_value):
+    """Persists India VIX for strategy context. Gated by replay timestamps."""
+    if replay_mode: return # Keep simulation in memory
     try:
         db = get_db()
-        coll = db['strike_oi_data']
-        now = datetime.now()
+        coll = db['vix_data']
+        now = get_now()
+        doc = {
+            'value': vix_value,
+            'date': now.strftime("%Y-%m-%d"),
+            'timestamp': now.strftime("%H:%M:%S"),
+            'updated_at': now
+        }
+        last_save = last_emit_times.get("SAVE_VIX", 0)
+        if time.time() - last_save > 60:
+            coll.insert_one(doc)
+            last_emit_times["SAVE_VIX"] = time.time()
+    except Exception as e:
+        logging.error(f"Error saving VIX: {e}")
+
+def save_strike_metrics_to_db(instrument_key, oi, price, iv=0, greeks=None):
+    """Persists per-instrument metrics for buildup and strategy analysis. Gated by replay timestamps."""
+    try:
+        now = get_now()
+        ba = latest_bid_ask.get(instrument_key, {})
+        spread = abs(ba.get('ask', 0) - ba.get('bid', 0)) if ba else 0
+
         doc = {
             'instrument_key': instrument_key,
             'date': now.strftime("%Y-%m-%d"),
             'timestamp': now.strftime("%H:%M:%S"),
             'oi': oi,
             'price': price,
+            'iv': iv,
+            'gamma': greeks.get('gamma', 0) if greeks else 0,
+            'theta': greeks.get('theta', 0) if greeks else 0,
+            'delta': greeks.get('delta', 0) if greeks else 0,
+            'spread': spread,
             'updated_at': now
         }
-        # Only save if OI changed or every 1 minute to avoid bloat
+
+        if replay_mode:
+            # Maintain in-memory history for strategy lookups during replay
+            if instrument_key not in sim_strike_data:
+                sim_strike_data[instrument_key] = []
+            sim_strike_data[instrument_key].append(doc)
+            # Limit history to 2 hours of 1-min data
+            if len(sim_strike_data[instrument_key]) > 120:
+                sim_strike_data[instrument_key].pop(0)
+            return
+
+        # Regular live persistence
+        db = get_db()
+        coll = db['strike_oi_data']
+        # Only save every 1 minute to avoid bloat
         last_emit = last_emit_times.get(f"SAVE_STRIKE_{instrument_key}", 0)
         if time.time() - last_emit > 60: # Every 1 minute
             coll.insert_one(doc)
             last_emit_times[f"SAVE_STRIKE_{instrument_key}"] = time.time()
     except Exception as e:
-        logging.error(f"Error saving strike OI: {e}")
+        logging.error(f"Error saving strike metrics: {e}")
 
 def save_oi_to_db(symbol, call_oi, put_oi, price=0):
-    """Persists aggregated OI to MongoDB for historical analytics."""
+    """Persists aggregated OI to MongoDB for historical analytics. Gated by replay timestamps."""
+    if replay_mode: return # Skip for replay to avoid pollution
     try:
         oi_coll = get_oi_collection()
-        now = datetime.now()
+        now = get_now()
         doc = {
             'symbol': symbol,
             'date': now.strftime("%Y-%m-%d"),
@@ -580,12 +694,6 @@ def start_pcr_calculation_thread():
                                 'call_oi': total_ce_oi,
                                 'source': 'upstox_full'
                             })
-
-                            # Update local running totals to align roughly
-                            if symbol in pcr_running_totals:
-                                # We don't overwrite latest_oi as that's from live ticks,
-                                # but we can signal the frontend that this is the authoritative PCR.
-                                pass
                 except Exception as e:
                     logging.error(f"Error in full chain PCR for {symbol}: {e}")
 
@@ -609,16 +717,16 @@ def is_market_hours() -> bool:
     """Checks if the current time is within Indian market hours (09:15 - 15:30 IST)."""
     import pytz
     ist = pytz.timezone('Asia/Kolkata')
-    now_ist = datetime.now(ist)
+    now = datetime.now(ist)
 
-    # Weekends (Saturday=5, Sunday=6)
-    if now_ist.weekday() >= 5:
+    # Monday = 0, Sunday = 6
+    if now.weekday() >= 5:
         return False
 
-    start_time = now_ist.replace(hour=9, minute=15, second=0, microsecond=0)
-    end_time = now_ist.replace(hour=15, minute=30, second=0, microsecond=0)
+    start_time = now.replace(hour=9, minute=15, second=0, microsecond=0)
+    end_time = now.replace(hour=15, minute=30, second=0, microsecond=0)
 
-    return start_time <= now_ist <= end_time
+    return start_time <= now <= end_time
 
 def start_websocket_thread(access_token: str, instrument_keys: List[str]):
     """
@@ -667,21 +775,43 @@ def start_websocket_thread(access_token: str, instrument_keys: List[str]):
     threading.Thread(target=market_hour_monitor, daemon=True).start()
     threading.Thread(target=subscription_keep_alive, daemon=True).start()
 
-def load_intraday_data(instrument_key):
+def load_intraday_data(instrument_key, date_str=None):
     """
-    Fetches and aggregates today's data from 9:15 AM to NOW for an instrument.
+    Fetches and aggregates data for a specific date (defaults to today) from 9:15 AM to 3:30 PM.
 
     Args:
         instrument_key (str): The instrument key.
+        date_str (str): Optional date in YYYY-MM-DD format.
 
     Returns:
         list: A list of aggregated OHLC/Footprint bars.
     """
-    now = datetime.now()
-    start_time = now.replace(hour=9, minute=15, second=0, microsecond=0)
-    start_ts = start_time.timestamp()
+    import pytz
+    ist = pytz.timezone('Asia/Kolkata')
 
-    cursor = tick_collection.find({'instrumentKey': instrument_key}).sort('_id', 1)
+    if not date_str:
+        now = datetime.now(ist)
+        date_str = now.strftime("%Y-%m-%d")
+
+    start_time = ist.localize(datetime.strptime(f"{date_str} 09:15:00", "%Y-%m-%d %H:%M:%S"))
+    end_time = ist.localize(datetime.strptime(f"{date_str} 15:30:00", "%Y-%m-%d %H:%M:%S"))
+
+    start_ms = int(start_time.timestamp() * 1000)
+    end_ms = int(end_time.timestamp() * 1000)
+
+    # Query ticks within the date's market hours
+    query = {
+        'instrumentKey': instrument_key,
+        '$or': [
+            {'ts_ms': {'$gte': start_ms, '$lte': end_ms}},
+            {'fullFeed.marketFF.ltpc.ltt': {'$gte': str(start_ms), '$lte': str(end_ms)}},
+            {'fullFeed.indexFF.ltpc.ltt': {'$gte': str(start_ms), '$lte': str(end_ms)}},
+            {'fullFeed.marketFF.ltpc.ltt': {'$gte': start_ms, '$lte': end_ms}},
+            {'fullFeed.indexFF.ltpc.ltt': {'$gte': start_ms, '$lte': end_ms}}
+        ]
+    }
+
+    cursor = tick_collection.find(query).sort('_id', 1)
     bars = []
 
     try:
@@ -693,12 +823,6 @@ def load_intraday_data(instrument_key):
         replay = ReplayManager(emit_fn=collect_bar)
         replay.timeframe_sec = 60
         for doc in cursor:
-            full_feed = doc.get('fullFeed', {})
-            ff = full_feed.get('marketFF') or full_feed.get('indexFF')
-            if not ff: continue
-            ltpc = ff.get('ltpc', {})
-            ltt = int(ltpc.get('ltt', 0))
-            if (ltt / 1000.0) < start_ts: continue
             replay.process_replay_tick(doc)
 
         if replay.aggregated_bar:
