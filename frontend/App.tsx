@@ -150,46 +150,45 @@ const App = () => {
     const cleanupMessage = socket.onMessage((msg) => {
         if (msg.type === 'replay_status') {
             setIsReplayMode(msg.active);
+            setReplayDate(msg.date || null);
+            // If it's a fresh replay start
             if (msg.active && msg.is_new) {
-                setIndexData([]); setCeData([]); setPeData([]);
-                setHistoricalPcr([]); setFuturesBuildup([]); setCeBuildup([]); setPeBuildup([]);
-                setSentiment(null);
+                setIndexData([]);
+                setCeData([]);
+                setPeData([]);
+                setHistoricalPcr([]);
+                setFuturesBuildup([]);
+                setCeBuildup([]);
+                setPeBuildup([]);
             }
         }
         if (msg.type === 'oi_update') {
-            const lastPrice = indexKeyRef.current && indexData.length ? indexData[indexData.length-1].close : 0;
-            const timestamp = msg.timestamp.includes('T') ? msg.timestamp : `${new Date().toISOString().split('T')[0]}T${msg.timestamp}:00`;
+            const currentSymbol = indexKeyRef.current.includes('Nifty 50') ? 'NIFTY' : 'BANKNIFTY';
+            if (msg.symbol !== currentSymbol) return;
 
-            setHistoricalPcr(prev => {
-                const newPoint = {
-                    timestamp,
+            setLastSync(new Date());
+
+            setSentiment(prev => {
+                if (!prev) return null;
+                return {
+                    ...prev,
                     pcr: msg.pcr,
-                    call_oi: msg.call_oi,
-                    put_oi: msg.put_oi,
-                    price: lastPrice
+                    trend: msg.pcr > 1.2 ? 'BULLISH' : msg.pcr < 0.8 ? 'BEARISH' : 'NEUTRAL',
+                    maxCallOI: msg.call_oi || prev.maxCallOI,
+                    maxPutOI: msg.put_oi || prev.put_oi
                 };
-                return [...prev, newPoint].slice(-500);
             });
 
-            setSentiment(prev => ({
-                pcr: msg.pcr,
-                trend: msg.pcr > 1 ? 'BULLISH' : 'BEARISH',
-                maxCallStrike: prev?.maxCallStrike || 0,
-                maxPutStrike: prev?.maxPutStrike || 0,
-                maxCallOI: msg.call_oi,
-                maxPutOI: msg.put_oi
-            }));
-
-            // Prepend to buildup tape for FLOW tab
-            const buildup: Trendlyne.BuildupData = {
-                timestamp,
-                price: lastPrice,
-                price_change: 0,
-                oi: msg.call_oi + msg.put_oi,
-                oi_change: 0,
-                buildup_type: msg.pcr > 1.05 ? 'Long Buildup' : msg.pcr < 0.95 ? 'Short Buildup' : 'Neutral'
-            };
-            setFuturesBuildup(prev => [buildup, ...prev.slice(0, 99)]);
+            setHistoricalPcr(prev => {
+                const newPoint = { timestamp: msg.timestamp, pcr: msg.pcr, price: 0 };
+                // Avoid duplicate timestamps
+                if (prev.length > 0 && prev[prev.length - 1].timestamp === msg.timestamp) {
+                    const updated = [...prev];
+                    updated[updated.length - 1] = newPoint;
+                    return updated;
+                }
+                return [...prev, newPoint].slice(-100);
+            });
         }
         handleUpdate(msg);
     });
@@ -285,7 +284,7 @@ const App = () => {
   const symbolLabel = indexKey.includes('Nifty 50') ? 'NIFTY' : 'BANKNIFTY';
 
   return (
-    <div className="h-screen bg-gray-950 text-gray-300 flex flex-col antialiased w-full overflow-hidden">
+    <div className="min-h-screen bg-gray-950 text-gray-300 flex flex-col antialiased w-full h-full">
       {loading && <div className="absolute top-0 left-0 w-full z-[100] loading-bar"></div>}
 
       <header className="h-16 glass-panel border-b border-white/5 sticky top-0 z-50 px-6 flex items-center justify-between">
@@ -369,89 +368,63 @@ const App = () => {
           />
       </div>
 
-      <main className="p-4 flex-1 flex flex-col min-h-0 overflow-hidden">
+      <main className="p-4 flex-1 overflow-hidden flex flex-col">
         {activeTab === 'TERMINAL' && (
-            <div className="grid grid-cols-12 gap-4 h-full min-h-0 animate-fadeIn">
-                <div className="col-span-12 xl:col-span-8 flex flex-col gap-4 min-h-0">
-                    <div className="flex-[2] glass-panel rounded-xl p-2 glow-border-blue relative flex flex-col min-h-0">
+            <div className="grid grid-cols-12 gap-4 h-full animate-fadeIn">
+                <div className="col-span-12 xl:col-span-8 flex flex-col gap-4">
+                    <div className="flex-1 glass-panel rounded-xl p-2 glow-border-blue relative">
                         <div className="absolute top-4 left-4 z-10 bg-brand-blue/20 px-2 py-0.5 rounded text-[8px] font-black text-brand-blue uppercase">Spot Execution</div>
-                        <div className="flex-1 min-h-0">
-                            {indexData.length > 0 ? (
-                                <MarketChart title={`${symbolLabel} INDEX`} data={indexData} />
-                            ) : (
-                                <div className="w-full h-full flex items-center justify-center text-[10px] text-gray-600 uppercase font-mono tracking-widest">Awaiting Index Feed...</div>
-                            )}
-                        </div>
+                        {indexData.length > 0 ? (
+                            <MarketChart title={`${symbolLabel} INDEX`} data={indexData} />
+                        ) : (
+                            <div className="w-full h-full flex items-center justify-center text-[10px] text-gray-600 uppercase font-mono tracking-widest">Awaiting Index Feed...</div>
+                        )}
                     </div>
                 </div>
-                <div className="col-span-12 xl:col-span-4 flex flex-col gap-4 min-h-0">
-                    <div className="flex-1 glass-panel rounded-xl p-2 relative flex flex-col min-h-0">
+                <div className="col-span-12 xl:col-span-4 flex flex-col gap-4">
+                    <div className="flex-1 glass-panel rounded-xl p-2 relative">
                         <div className="absolute top-4 right-4 z-10 bg-brand-green/20 px-2 py-0.5 rounded text-[8px] font-black text-brand-green uppercase">CE Premium</div>
-                        <div className="flex-1 min-h-0">
-                            {ceData.length > 0 ? (
-                                <MarketChart title={`ATM ${atmStrike} CE`} data={ceData} />
-                            ) : (
-                                <div className="w-full h-full flex items-center justify-center text-[10px] text-gray-600 uppercase font-mono tracking-widest">Awaiting Call Data...</div>
-                            )}
-                        </div>
+                        {ceData.length > 0 ? (
+                            <MarketChart title={`ATM ${atmStrike} CE`} data={ceData} />
+                        ) : (
+                            <div className="w-full h-full flex items-center justify-center text-[10px] text-gray-600 uppercase font-mono tracking-widest">Awaiting Call Data...</div>
+                        )}
                     </div>
-                    <div className="flex-1 glass-panel rounded-xl p-2 relative flex flex-col min-h-0">
+                    <div className="flex-1 glass-panel rounded-xl p-2 relative">
                         <div className="absolute top-4 right-4 z-10 bg-brand-red/20 px-2 py-0.5 rounded text-[8px] font-black text-brand-red uppercase">PE Premium</div>
-                        <div className="flex-1 min-h-0">
-                            {peData.length > 0 ? (
-                                <MarketChart title={`ATM ${atmStrike} PE`} data={peData} />
-                            ) : (
-                                <div className="w-full h-full flex items-center justify-center text-[10px] text-gray-600 uppercase font-mono tracking-widest">Awaiting Put Data...</div>
-                            )}
-                        </div>
+                        {peData.length > 0 ? (
+                            <MarketChart title={`ATM ${atmStrike} PE`} data={peData} />
+                        ) : (
+                            <div className="w-full h-full flex items-center justify-center text-[10px] text-gray-600 uppercase font-mono tracking-widest">Awaiting Put Data...</div>
+                        )}
                     </div>
                 </div>
             </div>
         )}
 
         {activeTab === 'ANALYTICS' && (
-            <div className="grid grid-cols-12 gap-4 h-full min-h-0 animate-fadeIn overflow-hidden">
-                <div className="col-span-12 xl:col-span-3 flex flex-col gap-4 min-h-0">
-                    {sentiment ? (
-                        <SentimentAnalysis sentiment={sentiment} />
-                    ) : (
-                        <div className="glass-panel rounded-xl p-8 flex items-center justify-center text-[9px] text-gray-600 font-mono uppercase tracking-widest">Crunching Sentiment...</div>
-                    )}
-                    <div className="glass-panel rounded-xl p-4">
-                      <h3 className="text-[10px] font-black text-gray-500 uppercase mb-3">System Health</h3>
-                      <div className="space-y-2 font-mono-data text-[9px]">
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Sync Status:</span>
-                          <span className="text-brand-green">ACTIVE</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Last Pulse:</span>
-                          <span className="text-gray-400">{lastSync.toLocaleTimeString()}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Data Feed:</span>
-                          <span className="text-brand-blue">UPSTOX V3 + MONGODB</span>
-                        </div>
-                      </div>
-                    </div>
-                </div>
-                <div className="col-span-12 xl:col-span-9 flex flex-col gap-4 overflow-hidden">
-                    <div className="flex-1 glass-panel rounded-xl p-4 flex flex-col min-h-0">
-                        <div className="flex justify-between items-center mb-4">
-                           <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-widest">PCR vs SPOT Converge</h3>
-                           <div className="flex gap-4">
-                              <div className="flex items-center gap-1.5">
-                                 <div className="w-2 h-0.5 bg-brand-blue"></div>
-                                 <span className="text-[8px] font-bold text-gray-400">PUT-CALL RATIO</span>
-                              </div>
-                              <div className="flex items-center gap-1.5">
-                                 <div className="w-2 h-0.5 bg-gray-500 border-t border-dashed border-gray-400"></div>
-                                 <span className="text-[8px] font-bold text-gray-400">SPOT PRICE</span>
-                              </div>
-                           </div>
-                        </div>
-                        <div className="flex-1">
-                          <PCRVsSpotChart pcrData={historicalPcr} spotData={indexData} title="Market Sentiment Convergence" />
+            <div className="flex flex-col gap-4 h-full animate-fadeIn overflow-hidden">
+                <div className="grid grid-cols-12 gap-4 h-1/2 min-h-0">
+                    <div className="col-span-12 xl:col-span-3 flex flex-col gap-4">
+                        {sentiment ? (
+                            <SentimentAnalysis sentiment={sentiment} />
+                        ) : (
+                            <div className="glass-panel rounded-xl p-8 flex items-center justify-center text-[9px] text-gray-600 font-mono uppercase tracking-widest">Crunching Sentiment...</div>
+                        )}
+                        <div className="glass-panel rounded-xl p-4">
+                          <div className="flex justify-between items-center mb-2">
+                            <h3 className="text-[8px] font-black text-gray-600 uppercase">System Status</h3>
+                            <div className="flex items-center gap-1.5">
+                                <div className="w-1.5 h-1.5 rounded-full bg-brand-green animate-pulse"></div>
+                                <span className="text-[8px] font-black text-brand-green">LIVE</span>
+                            </div>
+                          </div>
+                          <div className="space-y-1 font-mono-data text-[9px]">
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">Last Pulse:</span>
+                              <span className="text-gray-400">{lastSync.toLocaleTimeString()}</span>
+                            </div>
+                          </div>
                         </div>
                     </div>
                     <div className="col-span-12 xl:col-span-9 flex flex-col gap-4 overflow-hidden">
