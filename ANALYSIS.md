@@ -21,25 +21,21 @@
 
 ---
 
-## Frontend Application (React & Angular)
-**Purpose:** High-performance trading dashboards for monitoring market data, sentiment, and flow in real-time.
+## Frontend Application (React)
+**Purpose:** High-performance trading dashboards for monitoring market data and strategy execution in real-time.
 
 **Core Functionality:**
-- Real-time visualization of Index and Option premiums.
-- Sentiment analysis display (PCR Trends).
-- SocketIO integration for low-latency market updates.
-- Dynamic expiry date fetching from Trendlyne API to ensure accurate option chain data.
-- Proxied API calls to the FastAPI backend.
+- **Simplified Terminal**: Focused view for ATM Option Buying strategy.
+- **Data Source Agnostic**: UI only uses Human Readable Names (HRN), abstracting away technical identifiers.
+- **Unified Stream**: Transparent Live/Replay modes with a shared data interface.
+- **Real-time Visualization**: Synchronized OHLC and Footprint charts for Spot and ATM Premiums.
 
 **Key Files (React - frontend/):**
-- `App.tsx`: Main application logic and state management.
-- `services/trendlyneService.ts`: Integration with Trendlyne for dynamic expiries and buildup data.
-- `services/upstoxService.ts`: Upstox API integration.
-
-**Key Files (Angular - frontend/angular-ui/):**
-- `src/app/services/data.service.ts`: RxJS-based data management.
+- `App.tsx`: Unified Strategy Terminal entry point.
+- `components/StrategyDashboard.tsx`: Quantitative strategy analysis display.
+- `components/MarketChart.tsx`: High-density ECharts implementation.
 
 ---
 
 ## Integration Status
-Migrated from Flask/React to FastAPI/Angular. Real-time data flow is unified through the backend WebSocket, eliminating direct Upstox calls from the frontend.
+Unified FastAPI backend with a React frontend. All data sources (Upstox, Trendlyne) are normalized into a Human-Readable format before being persisted in the `PRO_TRADE_DATABASE` and streamed via Socket.IO.

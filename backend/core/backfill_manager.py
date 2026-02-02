@@ -6,6 +6,7 @@ from db.mongodb import get_db, get_tick_data_collection, get_oi_collection
 from external.upstox_api import UpstoxAPI
 from external import upstox_helper
 from external import trendlyne_api
+from core.symbol_mapper import symbol_mapper
 import config
 import asyncio
 
@@ -71,8 +72,11 @@ class BackfillManager:
             return {"status": "error", "message": str(e)}
 
     async def backfill_instrument(self, instrument_key: str):
-        """Fetches intraday candles and persists them to the appropriate collection."""
+        """Fetches intraday candles and persists them to the appropriate collection. instrument_key is raw."""
         try:
+            # Resolve HRN
+            hrn = symbol_mapper.get_hrn(instrument_key)
+
             # Fetch 1-minute intraday candles
             # get_intraday_candles returns {"status": "success", "data": {"candles": [...]}}
             data = await asyncio.to_thread(self.api.get_intraday_candles, instrument_key)
@@ -97,7 +101,8 @@ class BackfillManager:
                 if "NSE_INDEX" in instrument_key:
                     # Index data goes to tick_data as a synthetic tick for historical charts
                     tick_doc = {
-                        'instrumentKey': instrument_key,
+                        'instrumentKey': hrn,
+                        'raw_key': instrument_key,
                         'ts_ms': int(dt.timestamp() * 1000),
                         'fullFeed': {
                             'indexFF': {
@@ -121,7 +126,7 @@ class BackfillManager:
                         '_insertion_time': dt
                     }
                     self.tick_coll.update_one(
-                        {'instrumentKey': instrument_key, 'ts_ms': tick_doc['ts_ms']},
+                        {'instrumentKey': hrn, 'ts_ms': tick_doc['ts_ms']},
                         {'$set': tick_doc},
                         upsert=True
                     )
@@ -129,7 +134,7 @@ class BackfillManager:
                 else:
                     # Option data goes to strike_oi_data
                     doc = {
-                        'instrument_key': instrument_key,
+                        'instrument_key': hrn,
                         'date': dt.strftime("%Y-%m-%d"),
                         'timestamp': dt.strftime("%H:%M:%S"),
                         'oi': float(c[6]) if len(c) > 6 else 0,
@@ -144,7 +149,7 @@ class BackfillManager:
                     }
                     # Upsert based on key and time
                     self.strike_coll.update_one(
-                        {'instrument_key': instrument_key, 'updated_at': dt},
+                        {'instrument_key': hrn, 'updated_at': dt},
                         {'$set': doc},
                         upsert=True
                     )

@@ -124,15 +124,6 @@ def fetch_and_save_oi_snapshot(symbol: str, stock_id: int, expiry_date_str: str,
         oi_collection = get_oi_collection()
         stocks_collection = get_stocks_collection()
 
-        # Ensure stock exists in MongoDB
-        stock = stocks_collection.find_one({'symbol': symbol})
-        if not stock:
-            start_stock = {'symbol': symbol, 'trendlyne_stock_id': stock_id}
-            stocks_collection.insert_one(start_stock)
-            stock_db_id = start_stock['_id']
-        else:
-             stock_db_id = stock['_id']
-
         current_date_str = input_data.get('tradingDate', date.today().strftime("%Y-%m-%d"))
         expiry_str = input_data.get('expDateList', [expiry_date_str])[0]
 
@@ -148,7 +139,7 @@ def fetch_and_save_oi_snapshot(symbol: str, stock_id: int, expiry_date_str: str,
             total_put_change += int(strike_data.get('putOiChange', 0))
 
         doc = {
-            'stock_id': stock_db_id,
+            'stock_id': symbol, # Unified ID
             'symbol': symbol,
             'date': current_date_str,
             'timestamp': timestamp_snapshot,
@@ -378,7 +369,7 @@ def perform_backfill(symbol: str, interval_minutes=5):
     """Triggers a full backfill for the current day for a given symbol"""
     # 0. Cleanup potentially incorrect data for today first
     try:
-        from scripts.cleanup_db import cleanup_oi_data
+        from core.cleanup_db import cleanup_oi_data
         cleanup_oi_data(symbol=symbol)
     except Exception as e:
         logger.error(f"Cleanup failed during backfill: {e}")

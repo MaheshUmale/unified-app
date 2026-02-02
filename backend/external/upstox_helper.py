@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import List, Dict, Any, Optional
+from core.symbol_mapper import symbol_mapper
 import pandas as pd
 import requests
 import gzip
@@ -81,11 +82,19 @@ def get_upstox_instruments(symbols=["NIFTY", "BANKNIFTY"], spot_prices={"NIFTY":
 
             pe_key = near_opt_df[(near_opt_df['strike_price'] == strike) & (near_opt_df['instrument_type'] == 'PE')]['instrument_key'].values[0]
             pe_trading_symbol = near_opt_df[(near_opt_df['strike_price'] == strike) & (near_opt_df['instrument_type'] == 'PE')]['trading_symbol'].values[0]
+            ce_meta = {'symbol': symbol, 'type': 'CE', 'strike': strike, 'expiry': nearest_expiry.strftime('%Y-%m-%d')}
+            pe_meta = {'symbol': symbol, 'type': 'PE', 'strike': strike, 'expiry': nearest_expiry.strftime('%Y-%m-%d')}
+
+            ce_hrn = symbol_mapper.get_hrn(ce_key, ce_meta)
+            pe_hrn = symbol_mapper.get_hrn(pe_key, pe_meta)
+
             option_keys.append({
                 "strike": strike,
                 "ce": ce_key,
+                "ce_hrn": ce_hrn,
                 "ce_trading_symbol" :ce_trading_symbol,
                 "pe": pe_key,
+                "pe_hrn": pe_hrn,
                 "pe_trading_symbol" : pe_trading_symbol
             })
 
@@ -161,7 +170,16 @@ def resolve_instrument_key(symbol: str, instrument_type: str = 'FUT', strike: fl
         # Sort by expiry to get the nearest one
         filtered = filtered.sort_values(by='expiry')
         key = filtered.iloc[0]['instrument_key']
-        return key
+
+        # Ensure metadata is available for HRN generation
+        meta = {
+            'symbol': filtered.iloc[0]['name'],
+            'type': filtered.iloc[0]['instrument_type'],
+            'strike': float(filtered.iloc[0].get('strike_price', 0)),
+            'expiry': filtered.iloc[0].get('expiry_date') or expiry
+        }
+        hrn = symbol_mapper.get_hrn(key, meta)
+        return hrn # Return HRN instead of raw key
 
     return None
 
