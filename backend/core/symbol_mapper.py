@@ -9,8 +9,18 @@ logger = logging.getLogger(__name__)
 
 class SymbolMapper:
     _instance = None
-    _mapping_cache: Dict[str, str] = {} # instrument_key -> HRN
-    _reverse_cache: Dict[str, str] = {} # HRN -> instrument_key
+    _mapping_cache: Dict[str, str] = {
+        "NSE_INDEX|Nifty 50": "NIFTY",
+        "NSE_INDEX|Nifty Bank": "BANKNIFTY",
+        "NSE_INDEX|Nifty Fin Service": "FINNIFTY",
+        "NSE_INDEX|India VIX": "INDIA VIX"
+    } # instrument_key -> HRN
+    _reverse_cache: Dict[str, str] = {
+        "NIFTY": "NSE_INDEX|Nifty 50",
+        "BANKNIFTY": "NSE_INDEX|Nifty Bank",
+        "FINNIFTY": "NSE_INDEX|Nifty Fin Service",
+        "INDIA VIX": "NSE_INDEX|India VIX"
+    } # HRN -> instrument_key
 
     def __new__(cls):
         if cls._instance is None:

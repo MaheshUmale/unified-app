@@ -289,24 +289,18 @@ def on_message(message: Union[Dict, bytes, str]):
     if feeds_map:
         current_time = datetime.now()
         new_ticks = []
-
-        # Normalize keys in feeds_map before processing and emitting
-        normalized_feeds = {}
-        for k, v in feeds_map.items():
-            n_k = normalize_key(k)
-            normalized_feeds[n_k] = v
-            if k != n_k:
-                logging.info(f"Normalized key: {k} -> {n_k}")
-        feeds_map = normalized_feeds
+        hrn_feeds = {}
 
         for inst_key, feed_datum in feeds_map.items():
             # Resolve HRN
+            inst_key = normalize_key(inst_key)
             meta = instrument_metadata.get(inst_key)
             hrn = symbol_mapper.get_hrn(inst_key, meta)
 
             feed_datum['instrumentKey'] = hrn
             feed_datum['raw_key'] = inst_key # Keep raw key for internal use
             feed_datum['_insertion_time'] = current_time
+            hrn_feeds[hrn] = feed_datum
 
             # Extract common timestamp for easier replay/querying
             ff = feed_datum.get('fullFeed', {})

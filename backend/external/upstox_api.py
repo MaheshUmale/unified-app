@@ -29,25 +29,44 @@ class UpstoxAPI:
             return {}
 
     def get_option_chain(self, instrument_key: str, expiry_date: str) -> Optional[Dict[str, Any]]:
-        """Fetches the option chain for a given underlying and expiry."""
-        url = 'https://api.upstox.com/v2/option/chain'
-        params = {
-            'instrument_key': instrument_key,
-            'expiry_date': expiry_date
-        }
-        headers = {
-            'Accept': 'application/json',
-            'Authorization': f'Bearer {self.access_token}'
-        }
+        """Fetches the option chain for a given underlying and expiry using official SDK."""
+        api_instance = upstox_client.OptionsApi(self.api_client)
         try:
-            response = requests.get(url, params=params, headers=headers, timeout=10)
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            logger.error(f"Error fetching option chain: {e}")
-            import traceback
+            # SDK call as per user instructions
+            response = api_instance.get_put_call_option_chain(instrument_key, expiry_date)
 
-            traceback.print_exc()
+            # Convert SDK response to dictionary format expected by the app
+            # SDK objects usually have a to_dict() method
+            if hasattr(response, 'to_dict'):
+                return response.to_dict()
+
+            # Fallback manual mapping if to_dict is not as expected
+            chain_data = []
+            for item in response.data:
+                chain_data.append({
+                    'strike_price': item.strike_price,
+                    'call_options': {
+                        'instrument_key': item.call_options.instrument_key,
+                        'market_data': {
+                            'oi': item.call_options.market_data.oi,
+                            'ltp': item.call_options.market_data.ltp
+                        }
+                    } if item.call_options else None,
+                    'put_options': {
+                        'instrument_key': item.put_options.instrument_key,
+                        'market_data': {
+                            'oi': item.put_options.market_data.oi,
+                            'ltp': item.put_options.market_data.ltp
+                        }
+                    } if item.put_options else None
+                })
+            return {"status": "success", "data": chain_data}
+
+        except ApiException as e:
+            logger.error(f"Exception when calling OptionsApi->get_put_call_option_chain: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Error fetching option chain via SDK: {e}")
             return None
 
     def get_intraday_candles(self, instrument_key: str, interval: str = '1') -> Optional[Dict[str, Any]]:
