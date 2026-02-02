@@ -315,10 +315,9 @@ class ReplayEngine:
                     else:
                         break
 
-                # Emit the tick
-                # Wrap it in the same structure as live WSS
-                # Use HRN for emission to frontend
-                feeds_map = {inst_key: tick}
+                # Emit the tick using HRN
+                hrn = symbol_mapper.get_hrn(raw_key)
+                feeds_map = {hrn: tick}
                 self.emit_fn('raw_tick', json.dumps(feeds_map, cls=MongoJSONEncoder))
 
                 # Aggregate and emit footprint update
