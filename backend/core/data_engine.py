@@ -354,7 +354,12 @@ def on_message(message: Union[Dict, bytes, str]):
 
             ltpc = market_ff.get('ltpc') or index_ff.get('ltpc')
             if ltpc and ltpc.get('ltt'):
-                feed_datum['ts_ms'] = int(ltpc['ltt'])
+                ts_val = int(ltpc['ltt'])
+                # Robustness: Detect 10-digit (seconds) timestamps and convert to milliseconds
+                if ts_val > 0 and ts_val < 10000000000:
+                    ts_val *= 1000
+
+                feed_datum['ts_ms'] = ts_val
                 if ltpc.get('ltp'):
                     latest_prices[inst_key] = float(ltpc['ltp'])
                     latest_prices[hrn] = float(ltpc['ltp'])
@@ -410,6 +415,9 @@ def process_footprint_tick(instrument_key: str, data_datum: Dict[str, Any]):
             return
 
         raw_ltt = int(ltpc['ltt'])
+        if raw_ltt > 0 and raw_ltt < 10000000000:
+            raw_ltt *= 1000
+
         current_bar_ts = (raw_ltt // 60000) * 60000
 
         trade_price = float(ltpc['ltp'])
@@ -919,10 +927,18 @@ def load_intraday_data(instrument_key, date_str=None):
 
     # Query ticks within the date's market hours
     # instrument_key can be HRN or raw key
-    hrn = symbol_mapper.get_hrn(instrument_key) if '|' in instrument_key or ':' in instrument_key else instrument_key
+    keys_to_search = [instrument_key]
+
+    # Resolve technical key if input is HRN
+    raw_key = symbol_mapper.resolve_to_key(instrument_key)
+    if raw_key and raw_key not in keys_to_search:
+        keys_to_search.append(raw_key)
+        # Also support colon version just in case
+        if '|' in raw_key:
+            keys_to_search.append(raw_key.replace('|', ':'))
 
     query = {
-        'instrumentKey': hrn,
+        'instrumentKey': {'$in': keys_to_search},
         '$or': [
             {'ts_ms': {'$gte': start_ms, '$lte': end_ms}},
             {'fullFeed.marketFF.ltpc.ltt': {'$gte': str(start_ms), '$lte': str(end_ms)}},

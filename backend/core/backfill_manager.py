@@ -74,14 +74,18 @@ class BackfillManager:
     async def backfill_instrument(self, instrument_key: str):
         """Fetches intraday candles and persists them to the appropriate collection. instrument_key is raw."""
         import pytz
+        import core.data_engine as data_engine
         ist = pytz.timezone('Asia/Kolkata')
         today_ist = datetime.now(ist).date()
 
         try:
-            # Resolve HRN
+            # 0. Ensure metadata is resolved so HRN generation is accurate
+            data_engine.resolve_metadata(instrument_key)
+
+            # 1. Resolve HRN
             hrn = symbol_mapper.get_hrn(instrument_key)
 
-            # Fetch 1-minute intraday candles
+            # 2. Fetch 1-minute intraday candles
             # get_intraday_candles returns {"status": "success", "data": {"candles": [...]}}
             data = await asyncio.to_thread(self.api.get_intraday_candles, instrument_key)
             if not data or data.get('status') != 'success':

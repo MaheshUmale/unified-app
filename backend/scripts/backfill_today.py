@@ -1,30 +1,32 @@
 
-import os
 import sys
+import os
 import asyncio
 import logging
 
 # Add backend to path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.append(os.path.join(os.getcwd(), 'backend'))
 
 from core.backfill_manager import BackfillManager
-import config
+from config import ACCESS_TOKEN
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
-logger = logging.getLogger("BackfillScript")
 
-async def run_backfill():
-    if not config.ACCESS_TOKEN or config.ACCESS_TOKEN == 'YOUR_ACCESS_TOKEN_HERE':
-        logger.error("UPSTOX_ACCESS_TOKEN not found in environment.")
+async def main():
+    if not ACCESS_TOKEN or ACCESS_TOKEN == 'YOUR_ACCESS_TOKEN_HERE':
+        print("Error: UPSTOX_ACCESS_TOKEN not found in config/env.")
         return
 
-    manager = BackfillManager(config.ACCESS_TOKEN)
+    manager = BackfillManager(ACCESS_TOKEN)
+    print("Starting manual backfill for today's session...")
     result = await manager.backfill_today_session()
 
-    if result.get("status") == "success":
-        logger.info(f"Backfill successful! Recovered {result.get('data_points_recovered')} data points.")
-    else:
-        logger.error(f"Backfill failed: {result.get('message')}")
+    print("\nBackfill Result:")
+    print(f"Status: {result.get('status')}")
+    print(f"Instruments Processed: {result.get('instruments_processed')}")
+    print(f"Data Points Recovered: {result.get('data_points_recovered')}")
+    if 'message' in result:
+        print(f"Message: {result.get('message')}")
 
 if __name__ == "__main__":
-    asyncio.run(run_backfill())
+    asyncio.run(main())
