@@ -103,7 +103,7 @@ class UpstoxAPI:
         api_instance = upstox_client.HistoryV3Api(self.api_client)
         try:
             # Map interval to SDK units
-            unit = "day"
+            unit = "minutes"
             count = 1
             if interval == "1":
                 unit = "minutes"
