@@ -37,12 +37,16 @@ class ATMOptionBuyingStrategy:
     def fetch_market_data(self, symbol: str, index_key: str, atm_strike: int, expiry: str) -> Dict[str, Any]:
         """Fetches required data for analysis from memory and DB."""
         from external import upstox_helper
+        from core.symbol_mapper import symbol_mapper
 
-        ce_key = upstox_helper.resolve_instrument_key(symbol, 'CE', strike=float(atm_strike), expiry=expiry)
-        pe_key = upstox_helper.resolve_instrument_key(symbol, 'PE', strike=float(atm_strike), expiry=expiry)
+        ce_raw = upstox_helper.resolve_instrument_key(symbol, 'CE', strike=float(atm_strike), expiry=expiry)
+        pe_raw = upstox_helper.resolve_instrument_key(symbol, 'PE', strike=float(atm_strike), expiry=expiry)
 
-        if not ce_key or not pe_key:
+        if not ce_raw or not pe_raw:
             return {}
+
+        ce_key = symbol_mapper.get_hrn(ce_raw)
+        pe_key = symbol_mapper.get_hrn(pe_raw)
 
         db = get_db()
         coll = db['strike_oi_data']

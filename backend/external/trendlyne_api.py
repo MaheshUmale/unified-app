@@ -277,25 +277,27 @@ def get_local_buildup(symbol: str, mtype='futures', strike=None, option_type=Non
         opt_type = 'CE' if option_type and option_type.upper() in ['CALL', 'CE'] else 'PE' if option_type and option_type.upper() in ['PUT', 'PE'] else option_type.upper() if option_type else None
 
         if mtype == 'futures':
-            instrument_key = upstox_helper.resolve_instrument_key(res_symbol, 'FUT', expiry=expiry)
+            raw_key = upstox_helper.resolve_instrument_key(res_symbol, 'FUT', expiry=expiry)
         else:
-            instrument_key = upstox_helper.resolve_instrument_key(res_symbol, opt_type, strike=strike, expiry=expiry)
+            raw_key = upstox_helper.resolve_instrument_key(res_symbol, opt_type, strike=strike, expiry=expiry)
 
-        if not instrument_key:
+        if not raw_key:
             logger.warning(f"Buildup Fallback: Could not resolve key for {symbol} {mtype} strike={strike} expiry={expiry} opt_type={opt_type}")
             return []
 
-        logger.info(f"Buildup Fallback: Using key {instrument_key} for {symbol}")
+        hrn = symbol_mapper.get_hrn(raw_key)
+
+        logger.info(f"Buildup Fallback: Using raw {raw_key} / hrn {hrn} for {symbol}")
 
         # 2. Try fetching from strike_oi_data first (cached ticks)
         coll = db['strike_oi_data']
-        cursor = coll.find({'instrument_key': instrument_key}).sort([('date', -1), ('timestamp', -1)]).limit(60)
+        cursor = coll.find({'instrument_key': hrn}).sort([('date', -1), ('timestamp', -1)]).limit(60)
         docs = list(cursor)[::-1] # chronological
         source = "DB_STRIKE_OI"
 
         # 3. If insufficient, use intraday aggregated bars (from tick_data)
         if len(docs) < 2:
-            bars = data_engine.load_intraday_data(instrument_key)
+            bars = data_engine.load_intraday_data(hrn)
             if len(bars) >= 2:
                 docs = []
                 for b in bars:
@@ -309,9 +311,9 @@ def get_local_buildup(symbol: str, mtype='futures', strike=None, option_type=Non
 
         # 4. Final attempt: Fetch from Upstox API if still insufficient
         if len(docs) < 2:
-            logger.info(f"Buildup Fallback: Fetching from Upstox API for {instrument_key}")
+            logger.info(f"Buildup Fallback: Fetching from Upstox API for {raw_key}")
             upstox_api = UpstoxAPI(ACCESS_TOKEN)
-            data = upstox_api.get_intraday_candles(instrument_key)
+            data = upstox_api.get_intraday_candles(raw_key)
             if data and 'data' in data and 'candles' in data['data']:
                 candles = data['data']['candles'] # newest first
                 docs = []

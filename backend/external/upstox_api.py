@@ -30,36 +30,53 @@ class UpstoxAPI:
 
     def get_option_chain(self, instrument_key: str, expiry_date: str) -> Optional[Dict[str, Any]]:
         """Fetches the option chain for a given underlying and expiry using official SDK."""
+        from core.symbol_mapper import symbol_mapper
         api_instance = upstox_client.OptionsApi(self.api_client)
         try:
             # SDK call as per user instructions
             response = api_instance.get_put_call_option_chain(instrument_key, expiry_date)
 
-            # Convert SDK response to dictionary format expected by the app
-            # SDK objects usually have a to_dict() method
-            if hasattr(response, 'to_dict'):
-                return response.to_dict()
-
-            # Fallback manual mapping if to_dict is not as expected
             chain_data = []
             for item in response.data:
-                chain_data.append({
+                entry = {
                     'strike_price': item.strike_price,
-                    'call_options': {
-                        'instrument_key': item.call_options.instrument_key,
+                    'call_options': None,
+                    'put_options': None
+                }
+
+                if item.call_options:
+                    # Map to HRN
+                    hrn = symbol_mapper.get_hrn(item.call_options.instrument_key, {
+                        'symbol': symbol_mapper.get_symbol(instrument_key),
+                        'type': 'CE',
+                        'strike': item.strike_price,
+                        'expiry': expiry_date
+                    })
+                    entry['call_options'] = {
+                        'instrument_key': hrn,
                         'market_data': {
                             'oi': item.call_options.market_data.oi,
                             'ltp': item.call_options.market_data.ltp
                         }
-                    } if item.call_options else None,
-                    'put_options': {
-                        'instrument_key': item.put_options.instrument_key,
+                    }
+
+                if item.put_options:
+                    # Map to HRN
+                    hrn = symbol_mapper.get_hrn(item.put_options.instrument_key, {
+                        'symbol': symbol_mapper.get_symbol(instrument_key),
+                        'type': 'PE',
+                        'strike': item.strike_price,
+                        'expiry': expiry_date
+                    })
+                    entry['put_options'] = {
+                        'instrument_key': hrn,
                         'market_data': {
                             'oi': item.put_options.market_data.oi,
                             'ltp': item.put_options.market_data.ltp
                         }
-                    } if item.put_options else None
-                })
+                    }
+                chain_data.append(entry)
+
             return {"status": "success", "data": chain_data}
 
         except ApiException as e:

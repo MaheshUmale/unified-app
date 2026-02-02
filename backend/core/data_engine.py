@@ -585,11 +585,8 @@ def update_pcr_for_instrument(instrument_key: str):
 
     raw_symbol = meta['symbol']
     # Normalize symbol for frontend consistency
-    if 'NIFTY BANK' in raw_symbol.upper() or 'BANKNIFTY' in raw_symbol.upper():
-        symbol = 'BANKNIFTY'
-    elif 'NIFTY' in raw_symbol.upper():
-        symbol = 'NIFTY'
-    else:
+    symbol = symbol_mapper.get_symbol(raw_symbol)
+    if symbol == "UNKNOWN":
         symbol = raw_symbol
 
     if symbol not in pcr_running_totals:
@@ -638,8 +635,9 @@ def update_pcr_for_instrument(instrument_key: str):
         if now_time - last_save > 60:
             # Get latest index price for this symbol
             index_price = 0
-            index_key = "NSE_INDEX|Nifty 50" if symbol == 'NIFTY' else "NSE_INDEX|Nifty Bank"
-            index_price = latest_prices.get(index_key, 0)
+            index_key = symbol_mapper.resolve_to_key(symbol)
+            if index_key:
+                index_price = latest_prices.get(index_key, 0)
 
             threading.Thread(target=save_oi_to_db, args=(symbol, total_ce_oi, total_pe_oi, index_price), daemon=True).start()
             pcr_running_totals[symbol]['last_save'] = now_time
@@ -690,22 +688,22 @@ def save_strike_metrics_to_db(hrn, oi, price, iv=0, greeks=None):
 
         if replay_mode:
             # Maintain in-memory history for strategy lookups during replay
-            if instrument_key not in sim_strike_data:
-                sim_strike_data[instrument_key] = []
-            sim_strike_data[instrument_key].append(doc)
+            if hrn not in sim_strike_data:
+                sim_strike_data[hrn] = []
+            sim_strike_data[hrn].append(doc)
             # Limit history to 2 hours of 1-min data
-            if len(sim_strike_data[instrument_key]) > 120:
-                sim_strike_data[instrument_key].pop(0)
+            if len(sim_strike_data[hrn]) > 120:
+                sim_strike_data[hrn].pop(0)
             return
 
         # Regular live persistence
         db = get_db()
         coll = db['strike_oi_data']
         # Only save every 1 minute to avoid bloat
-        last_emit = last_emit_times.get(f"SAVE_STRIKE_{instrument_key}", 0)
+        last_emit = last_emit_times.get(f"SAVE_STRIKE_{hrn}", 0)
         if time.time() - last_emit > 60: # Every 1 minute
             coll.insert_one(doc)
-            last_emit_times[f"SAVE_STRIKE_{instrument_key}"] = time.time()
+            last_emit_times[f"SAVE_STRIKE_{hrn}"] = time.time()
     except Exception as e:
         logging.error(f"Error saving strike metrics: {e}")
 
@@ -745,7 +743,7 @@ def start_pcr_calculation_thread():
                 time.sleep(300)
                 continue
 
-            for symbol in ['NIFTY', 'BANKNIFTY']:
+            for symbol in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']:
                 try:
                     # 1. Get nearest expiry
                     # Ensure we have the latest expiry by resolving keys if needed
@@ -753,9 +751,10 @@ def start_pcr_calculation_thread():
                          from external import upstox_helper
                          current_spots = {
                             "NIFTY": latest_prices.get("NSE_INDEX|Nifty 50", 0),
-                            "BANKNIFTY": latest_prices.get("NSE_INDEX|Nifty Bank", 0)
+                            "BANKNIFTY": latest_prices.get("NSE_INDEX|Nifty Bank", 0),
+                            "FINNIFTY": latest_prices.get("NSE_INDEX|Nifty Fin Service", 0)
                          }
-                         if current_spots[symbol] > 0:
+                         if current_spots.get(symbol, 0) > 0:
                              upstox_helper.get_upstox_instruments([symbol], current_spots)
 
                     expiry_str = current_expiries.get(symbol)
@@ -784,7 +783,9 @@ def start_pcr_calculation_thread():
                         continue # Skip Upstox if Trendlyne succeeded
 
                     # 3. Fallback to Upstox full option chain
-                    index_key = "NSE_INDEX|Nifty 50" if symbol == 'NIFTY' else "NSE_INDEX|Nifty Bank"
+                    index_key = symbol_mapper.resolve_to_key(symbol)
+                    if not index_key: continue
+
                     chain = api.get_option_chain(index_key, expiry_str)
                     if chain and chain.get('status') == 'success':
                         data = chain.get('data', [])
