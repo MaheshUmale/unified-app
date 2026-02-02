@@ -363,7 +363,9 @@ async def get_atm_strategy_analysis(index_key: str, atm_strike: int, expiry: str
     """Triggers and returns the ATM Option Buying Strategy analysis."""
     try:
         clean_key = unquote(index_key)
-        symbol = "NIFTY" if "NIFTY" in clean_key.upper() else "BANKNIFTY"
+        symbol = symbol_mapper.get_symbol(clean_key)
+        if symbol == "UNKNOWN":
+            symbol = "NIFTY" # Default fallback
 
         # 1. Fetch current data
         market_data = atm_strategy.fetch_market_data(symbol, clean_key, atm_strike, expiry)

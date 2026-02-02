@@ -117,9 +117,9 @@ def resolve_instrument_key(symbol: str, instrument_type: str = 'FUT', strike: fl
         return None
 
     # Normalization for symbol
-    search_symbol = symbol.upper()
-    if "NIFTY 50" in search_symbol: search_symbol = "NIFTY"
-    if "NIFTY BANK" in search_symbol: search_symbol = "BANKNIFTY"
+    search_symbol = symbol_mapper.get_symbol(symbol)
+    if search_symbol == "UNKNOWN":
+        search_symbol = symbol.upper()
 
     mask = (df['name'].str.upper() == search_symbol)
     if instrument_type:
@@ -170,16 +170,7 @@ def resolve_instrument_key(symbol: str, instrument_type: str = 'FUT', strike: fl
         # Sort by expiry to get the nearest one
         filtered = filtered.sort_values(by='expiry')
         key = filtered.iloc[0]['instrument_key']
-
-        # Ensure metadata is available for HRN generation
-        meta = {
-            'symbol': filtered.iloc[0]['name'],
-            'type': filtered.iloc[0]['instrument_type'],
-            'strike': float(filtered.iloc[0].get('strike_price', 0)),
-            'expiry': filtered.iloc[0].get('expiry_date') or expiry
-        }
-        hrn = symbol_mapper.get_hrn(key, meta)
-        return hrn # Return HRN instead of raw key
+        return key
 
     return None
 
@@ -190,34 +181,28 @@ def getNiftyAndBNFnOKeys():
     apiInstance = upstox_client.MarketQuoteV3Api(upstox_client.ApiClient(configuration))
     try:
         # For a single instrument
-        response = apiInstance.get_ltp(instrument_key="NSE_INDEX|Nifty 50,NSE_INDEX|Nifty Bank")
-        # print(response.data.get("NSE_INDEX|Nifty 50").get("last_price"))
-        # If you want to access a specific index's last price:
-        nifty_bank_data = response.data['NSE_INDEX:Nifty Bank']
-        nifty_bank_last_price = nifty_bank_data.last_price  # Use dot notation here
+        response = apiInstance.get_ltp(instrument_key="NSE_INDEX|Nifty 50,NSE_INDEX|Nifty Bank,NSE_INDEX|Nifty Fin Service")
 
-        nifty_50_data = response.data['NSE_INDEX:Nifty 50']
-        nifty_50_last_price = nifty_50_data.last_price    # Use dot notation here
+        nifty_bank_data = response.data.get('NSE_INDEX:Nifty Bank')
+        nifty_bank_last_price = nifty_bank_data.last_price if nifty_bank_data else 0
 
-        print(f"Nifty Bank last price: {nifty_bank_last_price}")
-        print(f"Nifty 50 last price: {nifty_50_last_price}")
+        nifty_50_data = response.data.get('NSE_INDEX:Nifty 50')
+        nifty_50_last_price = nifty_50_data.last_price if nifty_50_data else 0
+
+        nifty_fin_data = response.data.get('NSE_INDEX:Nifty Fin Service')
+        nifty_fin_last_price = nifty_fin_data.last_price if nifty_fin_data else 0
 
         # --- Execution ---
-        # Replace spot prices with actual live LTP before running
         current_spots = {
             "NIFTY": nifty_50_last_price,
-            "BANKNIFTY": nifty_bank_last_price
+            "BANKNIFTY": nifty_bank_last_price,
+            "FINNIFTY": nifty_fin_last_price
         }
 
-        data = get_upstox_instruments(["NIFTY", "BANKNIFTY"], current_spots)
-        # print(data)
+        data = get_upstox_instruments(["NIFTY", "BANKNIFTY", "FINNIFTY"], current_spots)
 
-        # Accessing NIFTY keys
-        # print(f"NIFTY Fut: {data['NIFTY']['future']}")
-        # print(f"Total NIFTY keys to subscribe: {len(data['NIFTY']['all_keys'])}")
-
-        ALL_FNO = ALL_FNO+data['NIFTY']['all_keys']+data['BANKNIFTY']['all_keys']
-        print(ALL_FNO)
+        for symbol in data:
+            ALL_FNO = ALL_FNO + data[symbol]['all_keys']
         return ALL_FNO
     except ApiException as e:
         print("Exception when calling MarketQuoteV3Api->get_ltp: %s\n" % e)
