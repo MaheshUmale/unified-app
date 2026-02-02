@@ -274,18 +274,6 @@ def on_message(message: Union[Dict, bytes, str]):
         if len(raw_tick_buffer) >= TICK_BATCH_SIZE:
             threading.Thread(target=flush_raw_tick_buffer, daemon=True).start()
 
-    # Throttled SocketIO Emission (Global per feed message)
-    try:
-        if socketio_instance:
-            now = time.time()
-            # Only emit if 100ms has passed since last global 'raw_tick'
-            if now - last_emit_times.get('GLOBAL_RAW_TICK', 0) > 0.1:
-                jsonData = json.dumps(feeds_map)
-                emit_event('raw_tick', jsonData)
-                last_emit_times['GLOBAL_RAW_TICK'] = now
-    except Exception as e:
-        logging.error(f"SocketIO raw_tick Emit Error: {e}")
-
     if feeds_map:
         current_time = datetime.now()
         new_ticks = []
@@ -381,6 +369,18 @@ def on_message(message: Union[Dict, bytes, str]):
                         logging.error(f"Error in strategy {strategy.__class__.__name__} for {inst_key}: {e}")
 
             process_footprint_tick(hrn, feed_datum)
+
+        # Throttled SocketIO Emission (Global per feed message)
+        try:
+            if socketio_instance:
+                now = time.time()
+                # Only emit if 100ms has passed since last global 'raw_tick'
+                if now - last_emit_times.get('GLOBAL_RAW_TICK', 0) > 0.1:
+                    jsonData = json.dumps(hrn_feeds)
+                    emit_event('raw_tick', jsonData)
+                    last_emit_times['GLOBAL_RAW_TICK'] = now
+        except Exception as e:
+            logging.error(f"SocketIO raw_tick Emit Error: {e}")
 
         # Batching logic
         global tick_buffer

@@ -17,7 +17,8 @@ def get_instrument_df():
     global _INSTRUMENT_DF, _LAST_FETCH
     now = datetime.now()
     if _INSTRUMENT_DF is None or _LAST_FETCH is None or (now - _LAST_FETCH).total_seconds() > 86400:
-        url = "https://assets.upstox.com/market-quote/instruments/exchange/NSE.json.gz"
+        # Use complete.json.gz as it contains all segments including weekly FNO expiries
+        url = "https://assets.upstox.com/market-quote/instruments/exchange/complete.json.gz"
         response = requests.get(url)
         with gzip.GzipFile(fileobj=io.BytesIO(response.content)) as f:
             _INSTRUMENT_DF = pd.read_json(f)

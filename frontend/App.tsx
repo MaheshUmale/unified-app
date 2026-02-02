@@ -73,6 +73,14 @@ const App = () => {
         if (lastExpiryIndexRef.current === symbol) return;
 
         setLoading(true);
+        // Clear stale state when index changes
+        setAtmStrike(0);
+        setExpiryDate('');
+        setExpiryLabel('');
+        setCeData([]);
+        setPeData([]);
+        atmOptionKeysRef.current = { ce: '', pe: '' };
+
         const expiries = await Trendlyne.fetchExpiryDates(symbol);
         if (expiries && expiries.length > 0) {
             lastExpiryIndexRef.current = symbol;
@@ -148,7 +156,7 @@ const App = () => {
             }
         }
         if (msg.type === 'oi_update') {
-            const currentSymbol = (indexKeyRef.current || '').includes('Nifty 50') ? 'NIFTY' : 'BANKNIFTY';
+            const currentSymbol = indexKeyRef.current;
             if (msg.symbol !== currentSymbol) return;
 
             setLastSync(new Date());
@@ -194,11 +202,15 @@ const App = () => {
             const currentPrice = candles[candles.length - 1].close;
             const step = currentSymbol === 'NIFTY' ? 50 : currentSymbol === 'BANKNIFTY' ? 100 : 100;
             currentAtm = Math.round(currentPrice / step) * step;
-            setAtmStrike(currentAtm);
+
+            // If atmStrike was 0, it means index changed, update it
+            if (atmStrike === 0) {
+                setAtmStrike(currentAtm);
+            }
         }
 
-        // 2. Fetch Option Chain and Buildup if expiry is available
-        if (expiryDate) {
+        // 2. Fetch Option Chain and Buildup if expiry and valid ATM available
+        if (expiryDate && currentAtm > 0) {
             console.log(`[App] Loading Option Data for expiry: ${expiryDate}, ATM: ${currentAtm}`);
             let ceKey = atmOptionKeysRef.current.ce;
             let peKey = atmOptionKeysRef.current.pe;
@@ -241,7 +253,7 @@ const App = () => {
     loadData();
   }, [loadData]);
 
-  const symbolLabel = (indexKey || '').includes('Nifty 50') ? 'NIFTY' : 'BANKNIFTY';
+  const symbolLabel = indexKey;
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-300 flex flex-col antialiased w-full h-full">
