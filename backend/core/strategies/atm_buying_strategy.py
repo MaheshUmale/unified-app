@@ -39,8 +39,30 @@ class ATMOptionBuyingStrategy:
         from external import upstox_helper
         from core.symbol_mapper import symbol_mapper
 
-        ce_raw = upstox_helper.resolve_instrument_key(symbol, 'CE', strike=float(atm_strike), expiry=expiry)
-        pe_raw = upstox_helper.resolve_instrument_key(symbol, 'PE', strike=float(atm_strike), expiry=expiry)
+        # 1. Validate ATM strike for the symbol (Robustness Check)
+        # If strike is 0 or clearly mismatched (e.g. NIFTY strike for BANKNIFTY), re-estimate
+        current_spot = data_engine.latest_prices.get(index_key, 0)
+
+        effective_strike = atm_strike
+        is_mismatch = False
+        if symbol == 'NIFTY' and atm_strike > 40000: is_mismatch = True
+        if symbol == 'BANKNIFTY' and atm_strike < 30000: is_mismatch = True
+        if symbol == 'FINNIFTY' and atm_strike < 15000: is_mismatch = True
+
+        if effective_strike <= 0 or is_mismatch:
+            if current_spot > 0:
+                step = 50 if symbol == 'NIFTY' else 100
+                effective_strike = round(current_spot / step) * step
+                logger.info(f"Corrected ATM strike for {symbol}: {atm_strike} -> {effective_strike}")
+
+        ce_raw = upstox_helper.resolve_instrument_key(symbol, 'CE', strike=float(effective_strike), expiry=expiry)
+        pe_raw = upstox_helper.resolve_instrument_key(symbol, 'PE', strike=float(effective_strike), expiry=expiry)
+
+        # Fallback: if expiry mismatch, try to get absolute nearest
+        if not ce_raw or not pe_raw:
+            logger.warning(f"Could not resolve ATM for {symbol} {effective_strike} {expiry}. Trying nearest expiry.")
+            ce_raw = upstox_helper.resolve_instrument_key(symbol, 'CE', strike=float(effective_strike))
+            pe_raw = upstox_helper.resolve_instrument_key(symbol, 'PE', strike=float(effective_strike))
 
         if not ce_raw or not pe_raw:
             return {}
