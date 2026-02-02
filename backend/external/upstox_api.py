@@ -102,28 +102,24 @@ class UpstoxAPI:
         """Fetches historical candle data using Upstox History SDK."""
         api_instance = upstox_client.HistoryV3Api(self.api_client)
         try:
-            iv_name = "minutes"
-            iv_val = "1"
-        #    if interval == "15":
-        #         iv_name = "minutes"
-        #         iv_val = "15"
-        #     elif interval == "60":
-        #         iv_name = "hour"
-        #         iv_val = "1"
-        #     elif interval == "1D":
-        #         iv_name = "day"
-        #         iv_val = "1"
-        #     elif interval == "1W":
-        #         iv_name = "week"
-        #         iv_val = "1"
-        #     elif interval == "1M":
-        #         iv_name = "month"
-        #         iv_val = "1"
+            # Map interval to SDK units
+            unit = "day"
+            count = 1
+            if interval == "1":
+                unit = "minutes"
+                count = 1
+            elif interval == "30":
+                unit = "minutes"
+                count = 30
+            elif interval == "1D":
+                unit = "day"
+                count = 1
 
             if from_date:
-                print
-                response = api_instance.get_historical_candle_data1(instrument_key, iv_name, iv_val, to_date, from_date)
+                response = api_instance.get_historical_candle_data1(instrument_key, unit, count, to_date, from_date)
             else:
+                # For get_historical_candle_data, the signature might be (instrument_key, unit, count, to_date)
+                # but SDK might use different names.
                 response = api_instance.get_historical_candle_data(instrument_key, unit, count, to_date)
 
             return {"status": "success", "data": {"candles": response.data.candles if hasattr(response.data, 'candles') else []}}

@@ -47,7 +47,7 @@ class BackfillManager:
             indices = ["NSE_INDEX|Nifty 50", "NSE_INDEX|Nifty Bank", "NSE_INDEX|India VIX"]
             all_to_backfill = list(set(instrument_keys + indices))
 
-            logger.info(f"Backfilling {len(all_to_backfill)} instruments...")
+            logger.info(f"Backfilling {len(all_to_backfill)} instruments: {all_to_backfill}")
 
             tasks = []
             for key in all_to_backfill:
@@ -73,6 +73,10 @@ class BackfillManager:
 
     async def backfill_instrument(self, instrument_key: str):
         """Fetches intraday candles and persists them to the appropriate collection. instrument_key is raw."""
+        import pytz
+        ist = pytz.timezone('Asia/Kolkata')
+        today_ist = datetime.now(ist).date()
+
         try:
             # Resolve HRN
             hrn = symbol_mapper.get_hrn(instrument_key)
@@ -94,8 +98,8 @@ class BackfillManager:
                 ts_str = c[0]
                 dt = datetime.fromisoformat(ts_str)
 
-                # Check if it's today
-                if dt.date() != datetime.now().date():
+                # Check if it's today (IST)
+                if dt.astimezone(ist).date() != today_ist:
                     continue
 
                 if "NSE_INDEX" in instrument_key:
