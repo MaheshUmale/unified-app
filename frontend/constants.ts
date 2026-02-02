@@ -3,14 +3,19 @@ export const PROVIDED_TOKEN = import.meta.env.VITE_UPSTOX_TOKEN || "YOUR_TOKEN_H
 
 export const INDICES = {
   NIFTY: {
-    key: 'NSE_INDEX|Nifty 50',
+    key: 'NIFTY',
     symbol: 'NIFTY',
     step: 50
   },
   BANKNIFTY: {
-    key: 'NSE_INDEX|Nifty Bank',
+    key: 'BANKNIFTY',
     symbol: 'BANKNIFTY',
     step: 100
+  },
+  FINNIFTY: {
+    key: 'FINNIFTY',
+    symbol: 'FINNIFTY',
+    step: 40
   }
 };
 

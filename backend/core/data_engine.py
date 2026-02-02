@@ -32,6 +32,7 @@ from db.mongodb import (
 )
 from typing import Dict, Any, List, Optional, Set, Union
 from core.pcr_logic import calculate_total_pcr, analyze_oi_buildup
+from core.symbol_mapper import symbol_mapper
 
 # Configuration from centralized config (planned migration)
 try:
@@ -299,7 +300,12 @@ def on_message(message: Union[Dict, bytes, str]):
         feeds_map = normalized_feeds
 
         for inst_key, feed_datum in feeds_map.items():
-            feed_datum['instrumentKey'] = inst_key
+            # Resolve HRN
+            meta = instrument_metadata.get(inst_key)
+            hrn = symbol_mapper.get_hrn(inst_key, meta)
+
+            feed_datum['instrumentKey'] = hrn
+            feed_datum['raw_key'] = inst_key # Keep raw key for internal use
             feed_datum['_insertion_time'] = current_time
 
             # Extract common timestamp for easier replay/querying
@@ -314,35 +320,42 @@ def on_message(message: Union[Dict, bytes, str]):
                 if vix_ltpc and vix_ltpc.get('ltp'):
                     latest_vix['value'] = float(vix_ltpc['ltp'])
                     # Offload to queue instead of starting a new thread
-                    persistence_queue.put((save_vix_to_db, latest_vix['value']))
+                    persistence_queue.put((save_vix_to_db, latest_vix['value'], hrn))
 
             if 'oi' in market_ff:
                 new_oi = float(market_ff['oi'])
                 latest_oi[inst_key] = new_oi
+                latest_oi[hrn] = new_oi
                 update_pcr_for_instrument(inst_key)
 
             if 'iv' in market_ff:
                 latest_iv[inst_key] = float(market_ff['iv'])
+                latest_iv[hrn] = float(market_ff['iv'])
 
             if 'optionGreeks' in market_ff:
                 g = market_ff['optionGreeks']
-                latest_greeks[inst_key] = {
+                lg = {
                     'delta': float(g.get('delta', 0)),
                     'theta': float(g.get('theta', 0)),
                     'gamma': float(g.get('gamma', 0)),
                     'vega': float(g.get('vega', 0))
                 }
+                latest_greeks[inst_key] = lg
+                latest_greeks[hrn] = lg
 
             if 'vtt' in market_ff:
                 latest_vtt[inst_key] = float(market_ff['vtt'])
+                latest_vtt[hrn] = float(market_ff['vtt'])
 
             market_levels = market_ff.get('marketLevel', {}).get('bidAskQuote', [])
             if market_levels:
                 top = market_levels[0]
-                latest_bid_ask[inst_key] = {
+                ba = {
                     'bid': float(top.get('bidP', 0)),
                     'ask': float(top.get('askP', 0))
                 }
+                latest_bid_ask[inst_key] = ba
+                latest_bid_ask[hrn] = ba
 
             # Persist per-strike metrics for strategy analysis
             if inst_key in instrument_metadata:
@@ -350,18 +363,19 @@ def on_message(message: Union[Dict, bytes, str]):
                 if meta['type'] in ['CE', 'PE', 'FUT']:
                     ltpc = market_ff.get('ltpc')
                     price = float(ltpc['ltp']) if ltpc and ltpc.get('ltp') else 0
-                    oi = latest_oi.get(inst_key, 0)
-                    iv = latest_iv.get(inst_key, 0)
-                    greeks = latest_greeks.get(inst_key, {})
+                    oi = latest_oi.get(hrn, 0)
+                    iv = latest_iv.get(hrn, 0)
+                    greeks = latest_greeks.get(hrn, {})
 
                     # Offload to queue instead of starting a new thread
-                    persistence_queue.put((save_strike_metrics_to_db, inst_key, oi, price, iv, greeks))
+                    persistence_queue.put((save_strike_metrics_to_db, hrn, oi, price, iv, greeks))
 
             ltpc = market_ff.get('ltpc') or index_ff.get('ltpc')
             if ltpc and ltpc.get('ltt'):
                 feed_datum['ts_ms'] = int(ltpc['ltt'])
                 if ltpc.get('ltp'):
                     latest_prices[inst_key] = float(ltpc['ltp'])
+                    latest_prices[hrn] = float(ltpc['ltp'])
 
             new_ticks.append(feed_datum)
 
@@ -372,7 +386,7 @@ def on_message(message: Union[Dict, bytes, str]):
                     except Exception as e:
                         logging.error(f"Error in strategy {strategy.__class__.__name__} for {inst_key}: {e}")
 
-            process_footprint_tick(inst_key, feed_datum)
+            process_footprint_tick(hrn, feed_datum)
 
         # Batching logic
         global tick_buffer
@@ -387,7 +401,7 @@ def process_footprint_tick(instrument_key: str, data_datum: Dict[str, Any]):
     Maintains the 'active_bars' state and emits updates to the frontend.
 
     Args:
-        instrument_key (str): The key of the instrument.
+        instrument_key (str): The HRN of the instrument.
         data_datum (Dict[str, Any]): The tick data dictionary containing fullFeed details.
     """
     global active_bars, session_stats, socketio_instance
@@ -492,13 +506,15 @@ def process_footprint_tick(instrument_key: str, data_datum: Dict[str, Any]):
 upstox_feed: Optional[UpstoxFeed] = None
 
 def subscribe_instrument(instrument_key: str):
-    """Dynamic subscription to an instrument."""
+    """Dynamic subscription to an instrument. Handles HRN or raw key."""
+    raw_key = symbol_mapper.resolve_to_key(instrument_key) or instrument_key
+
     if upstox_feed:
-        upstox_feed.subscribe(instrument_key)
+        upstox_feed.subscribe(raw_key)
 
     # Try to resolve metadata if not present
-    if instrument_key not in instrument_metadata:
-        threading.Thread(target=resolve_metadata, args=(instrument_key,), daemon=True).start()
+    if raw_key not in instrument_metadata:
+        threading.Thread(target=resolve_metadata, args=(raw_key,), daemon=True).start()
 
 def resolve_metadata(instrument_key: str):
     """Resolves and caches instrument metadata (Symbol, Type, Strike, Expiry). Falls back to DB for historical."""
@@ -514,12 +530,16 @@ def resolve_metadata(instrument_key: str):
                 if not pd.isna(dt):
                     expiry_date = dt.strftime('%Y-%m-%d')
 
-            instrument_metadata[instrument_key] = {
+            meta = {
                 'symbol': row['name'],
                 'type': row['instrument_type'],
                 'strike': float(row.get('strike_price', 0)),
                 'expiry': expiry_date
             }
+            instrument_metadata[instrument_key] = meta
+
+            # Resolve HRN and ensure it's in symbol_mapper
+            symbol_mapper.get_hrn(instrument_key, meta)
 
             # Cache in MongoDB for future replay discovery
             db = get_db()
@@ -587,8 +607,8 @@ def update_pcr_for_instrument(instrument_key: str):
 
     target_expiry = current_expiries.get(meta['symbol'], '')
 
-    for key, oi in latest_oi.items():
-        m = instrument_metadata.get(key)
+    for r_key, oi in latest_oi.items():
+        m = instrument_metadata.get(r_key)
         if m and m['symbol'] == meta['symbol']:
             # Only include instruments for the nearest expiry
             if target_expiry and m.get('expiry') != target_expiry:
@@ -630,7 +650,7 @@ def update_pcr_for_instrument(instrument_key: str):
             threading.Thread(target=save_oi_to_db, args=(symbol, total_ce_oi, total_pe_oi, index_price), daemon=True).start()
             pcr_running_totals[symbol]['last_save'] = now_time
 
-def save_vix_to_db(vix_value):
+def save_vix_to_db(vix_value, hrn="INDIA VIX"):
     """Persists India VIX for strategy context. Gated by replay timestamps."""
     if replay_mode: return # Keep simulation in memory
     try:
@@ -638,6 +658,7 @@ def save_vix_to_db(vix_value):
         coll = db['vix_data']
         now = get_now()
         doc = {
+            'symbol': hrn,
             'value': vix_value,
             'date': now.strftime("%Y-%m-%d"),
             'timestamp': now.strftime("%H:%M:%S"),
@@ -650,15 +671,17 @@ def save_vix_to_db(vix_value):
     except Exception as e:
         logging.error(f"Error saving VIX: {e}")
 
-def save_strike_metrics_to_db(instrument_key, oi, price, iv=0, greeks=None):
+def save_strike_metrics_to_db(hrn, oi, price, iv=0, greeks=None):
     """Persists per-instrument metrics for buildup and strategy analysis. Gated by replay timestamps."""
     try:
         now = get_now()
-        ba = latest_bid_ask.get(instrument_key, {})
+        # We need the raw key for bid_ask lookups if we haven't mapped those to HRN yet
+        raw_key = symbol_mapper.resolve_to_key(hrn)
+        ba = latest_bid_ask.get(raw_key or hrn, {})
         spread = abs(ba.get('ask', 0) - ba.get('bid', 0)) if ba else 0
 
         doc = {
-            'instrument_key': instrument_key,
+            'instrument_key': hrn,
             'date': now.strftime("%Y-%m-%d"),
             'timestamp': now.strftime("%H:%M:%S"),
             'oi': oi,
@@ -699,6 +722,7 @@ def save_oi_to_db(symbol, call_oi, put_oi, price=0):
         oi_coll = get_oi_collection()
         now = get_now()
         doc = {
+            'stock_id': symbol, # Unified ID
             'symbol': symbol,
             'date': now.strftime("%Y-%m-%d"),
             'timestamp': now.strftime("%H:%M"),
@@ -708,7 +732,7 @@ def save_oi_to_db(symbol, call_oi, put_oi, price=0):
             'source': 'live_engine',
             'updated_at': now
         }
-        query = {'symbol': symbol, 'date': doc['date'], 'timestamp': doc['timestamp']}
+        query = {'stock_id': symbol, 'date': doc['date'], 'timestamp': doc['timestamp']}
         oi_coll.update_one(query, {'$set': doc}, upsert=True)
         logging.info(f"Saved real-time OI for {symbol}")
     except Exception as e:
@@ -900,8 +924,11 @@ def load_intraday_data(instrument_key, date_str=None):
     end_ms = int(end_time.timestamp() * 1000)
 
     # Query ticks within the date's market hours
+    # instrument_key can be HRN or raw key
+    hrn = symbol_mapper.get_hrn(instrument_key) if '|' in instrument_key or ':' in instrument_key else instrument_key
+
     query = {
-        'instrumentKey': instrument_key,
+        'instrumentKey': hrn,
         '$or': [
             {'ts_ms': {'$gte': start_ms, '$lte': end_ms}},
             {'fullFeed.marketFF.ltpc.ltt': {'$gte': str(start_ms), '$lte': str(end_ms)}},

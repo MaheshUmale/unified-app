@@ -24,6 +24,7 @@ from db.mongodb import (
     ensure_indexes
 )
 from core import data_engine
+from core.symbol_mapper import symbol_mapper
 from core.replay_engine import ReplayEngine
 from core.backfill_manager import BackfillManager
 from external import trendlyne_api as trendlyne_service
@@ -471,7 +472,7 @@ async def trigger_oi_cleanup(symbol: Optional[str] = None):
     Manually triggers cleanup of potentially incorrect OI data for today.
     """
     try:
-        from scripts.cleanup_db import cleanup_oi_data
+        from core.cleanup_db import cleanup_oi_data
         cleanup_oi_data(symbol=symbol)
         return {"status": "success", "message": "Cleanup completed successfully"}
     except Exception as e:
@@ -523,11 +524,12 @@ async def trigger_trendlyne_backfill(
 
 @fastapi_app.get("/api/upstox/intraday/{instrument_key}")
 async def get_upstox_intraday(instrument_key: str, date: Optional[str] = None):
-    """Fetch intraday candles from DB backfill or Upstox V3."""
+    """Fetch intraday candles from DB backfill or Upstox V3. instrument_key can be HRN."""
     try:
         clean_key = unquote(instrument_key)
+        raw_key = symbol_mapper.resolve_to_key(clean_key) or clean_key
 
-        # 1. Try backfill from MongoDB via data_engine
+        # 1. Try backfill from MongoDB via data_engine (uses HRN)
         # Use provided date or default to today
         db_history = data_engine.load_intraday_data(clean_key)
         if db_history and len(db_history) > 5: # If we have significant data in DB
@@ -542,8 +544,8 @@ async def get_upstox_intraday(instrument_key: str, date: Optional[str] = None):
             # Frontend upstoxService reverses it back to chronological ascending.
             return {"candles": candles[::-1]}
 
-        # 2. Fallback to Upstox API
-        data = upstox_api.get_intraday_candles(clean_key)
+        # 2. Fallback to Upstox API (needs raw key)
+        data = upstox_api.get_intraday_candles(raw_key)
         if data and data.get('status') == 'success':
             return data.get('data', {})
 
@@ -555,10 +557,11 @@ async def get_upstox_intraday(instrument_key: str, date: Optional[str] = None):
 
 @fastapi_app.get("/api/upstox/option_chain/{instrument_key}/{expiry_date}")
 async def get_upstox_option_chain(instrument_key: str, expiry_date: str):
-    """Fetch option chain from Upstox V2."""
+    """Fetch option chain from Upstox V2. instrument_key can be HRN."""
     try:
         clean_key = unquote(instrument_key)
-        data = upstox_api.get_option_chain(clean_key, expiry_date)
+        raw_key = symbol_mapper.resolve_to_key(clean_key) or clean_key
+        data = upstox_api.get_option_chain(raw_key, expiry_date)
         if data and data.get('status') == 'success':
             return data.get('data', [])
         raise HTTPException(status_code=500, detail="Failed to fetch option chain")
@@ -782,11 +785,27 @@ async def get_replay_session_info(date: str, index_key: str):
             # Simple match for ATM (assuming recorded keys follow standard naming)
             # A more robust way would be to check the instrument master's strike_price field
             if instr.get('instrument_type') == 'CE' and instr.get('strike_price') == atm:
-                suggested_ce = key
+                # Resolve to HRN
+                suggested_ce = symbol_mapper.get_hrn(key, {
+                    'symbol': instr.get('name'),
+                    'type': 'CE',
+                    'strike': atm,
+                    'expiry': instr.get('expiry_date') or instr.get('expiry')
+                })
                 expiry = instr.get('expiry_date') or instr.get('expiry')
             elif instr.get('instrument_type') == 'PE' and instr.get('strike_price') == atm:
-                suggested_pe = key
+                suggested_pe = symbol_mapper.get_hrn(key, {
+                    'symbol': instr.get('name'),
+                    'type': 'PE',
+                    'strike': atm,
+                    'expiry': instr.get('expiry_date') or instr.get('expiry')
+                })
                 if not expiry: expiry = instr.get('expiry_date') or instr.get('expiry')
+
+        # Convert all_keys to HRNs
+        hrn_keys = []
+        for k in all_keys:
+             hrn_keys.append(symbol_mapper.get_hrn(k))
 
         return {
             "date": date,
@@ -795,7 +814,7 @@ async def get_replay_session_info(date: str, index_key: str):
             "expiry": expiry,
             "suggested_ce": suggested_ce,
             "suggested_pe": suggested_pe,
-            "available_keys": all_keys
+            "available_keys": hrn_keys
         }
     except Exception as e:
         logger.error(f"Error in get_replay_session_info: {e}")

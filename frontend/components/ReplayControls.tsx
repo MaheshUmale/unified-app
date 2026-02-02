@@ -97,76 +97,73 @@ export const ReplayControls: React.FC<Props> = ({ currentIndexKey, onReplaySessi
     };
 
     return (
-        <div className="flex flex-wrap items-center gap-4 p-3 bg-slate-800 rounded-lg border border-slate-700 shadow-lg text-white">
+        <div className="flex items-center gap-3 px-3 py-1.5 glass-panel rounded-xl border border-white/5 shadow-2xl">
             <div className="flex items-center gap-2">
-                {loadingInfo ? (
-                    <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />
-                ) : (
-                    <Calendar className="w-4 h-4 text-blue-400" />
-                )}
+                <Calendar className={`w-3.5 h-3.5 ${status.active ? 'text-brand-blue' : 'text-gray-500'}`} />
                 <select
                     value={selectedDate}
                     onChange={(e) => handleDateChange(e.target.value)}
                     disabled={status.active || loadingInfo}
-                    className="bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm focus:outline-none focus:border-blue-500 disabled:opacity-50"
+                    className="bg-black/40 border-none rounded text-[10px] font-black uppercase tracking-wider text-gray-300 focus:ring-0 cursor-pointer disabled:opacity-50"
                 >
-                    <option value="">Select Date</option>
+                    <option value="">Live Mode</option>
                     {availableDates.map(date => (
                         <option key={date} value={date}>{date}</option>
                     ))}
                 </select>
             </div>
 
-            <div className="flex items-center gap-2 border-l border-slate-700 pl-4">
+            <div className="h-4 w-[1px] bg-gray-800"></div>
+
+            <div className="flex items-center gap-1.5">
                 {!status.active ? (
                     <button
                         onClick={handleStart}
                         disabled={!selectedDate}
-                        className="p-2 bg-green-600 hover:bg-green-700 rounded-full transition-colors disabled:opacity-50"
+                        className="p-1.5 hover:bg-green-500/20 text-green-500 rounded-lg transition-all disabled:opacity-20"
                         title="Start Replay"
                     >
-                        <Play className="w-5 h-5 fill-current" />
+                        <Play className="w-4 h-4 fill-current" />
                     </button>
                 ) : (
                     <>
                         <button
                             onClick={handleTogglePause}
-                            className="p-2 bg-blue-600 hover:bg-blue-700 rounded-full transition-colors"
+                            className="p-1.5 hover:bg-blue-500/20 text-blue-400 rounded-lg transition-all"
                             title={status.paused ? "Resume" : "Pause"}
                         >
-                            {status.paused ? <Play className="w-5 h-5 fill-current" /> : <Pause className="w-5 h-5 fill-current" />}
+                            {status.paused ? <Play className="w-4 h-4 fill-current" /> : <Pause className="w-4 h-4 fill-current" />}
                         </button>
                         <button
                             onClick={handleStop}
-                            className="p-2 bg-red-600 hover:bg-red-700 rounded-full transition-colors"
+                            className="p-1.5 hover:bg-red-500/20 text-red-500 rounded-lg transition-all"
                             title="Stop Replay"
                         >
-                            <Square className="w-5 h-5 fill-current" />
+                            <Square className="w-4 h-4 fill-current" />
                         </button>
                     </>
                 )}
             </div>
 
-            <div className="flex items-center gap-3 border-l border-slate-700 pl-4">
-                <div className="flex items-center gap-2">
-                    <FastForward className="w-4 h-4 text-amber-400" />
-                    <span className="text-xs font-mono w-8">{speed}x</span>
-                </div>
-                <input
-                    type="range"
-                    min="0.5"
-                    max="50"
-                    step="0.5"
-                    value={speed}
-                    onChange={(e) => handleSpeedChange(parseFloat(e.target.value))}
-                    className="w-24 h-1 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-amber-500"
-                />
-            </div>
-
             {status.active && (
-                <div className="ml-auto px-3 py-1 bg-blue-900/40 border border-blue-800 rounded text-xs animate-pulse">
-                    REPLAYING: {status.date}
-                </div>
+                <>
+                    <div className="h-4 w-[1px] bg-gray-800"></div>
+                    <div className="flex items-center gap-2">
+                        <span className="text-[9px] font-bold text-gray-500 font-mono">{speed}x</span>
+                        <input
+                            type="range"
+                            min="0.5"
+                            max="50"
+                            step="0.5"
+                            value={speed}
+                            onChange={(e) => handleSpeedChange(parseFloat(e.target.value))}
+                            className="w-16 h-1 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-brand-blue"
+                        />
+                    </div>
+                    <div className="ml-2 px-2 py-0.5 bg-brand-blue/10 border border-brand-blue/20 rounded text-[9px] font-black text-brand-blue animate-pulse tracking-widest uppercase">
+                        Replay Active
+                    </div>
+                </>
             )}
         </div>
     );

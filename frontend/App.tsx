@@ -5,14 +5,11 @@ import * as Trendlyne from './services/trendlyneService';
 import { socket } from './services/socketService';
 import { OhlcData, MarketSentiment } from './types';
 import MarketChart from './components/MarketChart';
-import BuildupPanel from './components/BuildupPanel';
-import SentimentAnalysis from './components/SentimentAnalysis';
-import PCRVsSpotChart from './components/AnalyticsCharts';
 import { ReplayControls } from './components/ReplayControls';
 import StrategyDashboard from './components/StrategyDashboard';
 
 const App = () => {
-  const [indexKey, setIndexKey] = useState(INDICES.NIFTY.key);
+  const [indexKey, setIndexKey] = useState('NIFTY'); // Use HRN
   const [expiryLabel, setExpiryLabel] = useState('');
   const [expiryDate, setExpiryDate] = useState('');
 
@@ -21,11 +18,6 @@ const App = () => {
   const [peData, setPeData] = useState<OhlcData[]>([]);
   const [sentiment, setSentiment] = useState<MarketSentiment | null>(null);
   const [atmStrike, setAtmStrike] = useState(0);
-
-  const [futuresBuildup, setFuturesBuildup] = useState<Trendlyne.BuildupData[]>([]);
-  const [ceBuildup, setCeBuildup] = useState<Trendlyne.BuildupData[]>([]);
-  const [peBuildup, setPeBuildup] = useState<Trendlyne.BuildupData[]>([]);
-  const [historicalPcr, setHistoricalPcr] = useState<any[]>([]);
 
   const [loading, setLoading] = useState(false);
   const [lastSync, setLastSync] = useState<Date>(new Date());
@@ -77,7 +69,7 @@ const App = () => {
   useEffect(() => {
     const updateExpiry = async () => {
         if (isReplayMode) return; // Skip external expiry fetch in replay mode
-        const symbol = (indexKey || '').includes('Nifty 50') ? 'NIFTY' : 'BANKNIFTY';
+        const symbol = indexKey;
         if (lastExpiryIndexRef.current === symbol) return;
 
         setLoading(true);
@@ -153,10 +145,6 @@ const App = () => {
                 setIndexData([]);
                 setCeData([]);
                 setPeData([]);
-                setHistoricalPcr([]);
-                setFuturesBuildup([]);
-                setCeBuildup([]);
-                setPeBuildup([]);
             }
         }
         if (msg.type === 'oi_update') {
@@ -176,17 +164,6 @@ const App = () => {
                 };
             });
 
-            setHistoricalPcr(prev => {
-                const currentPrice = indexData.length > 0 ? indexData[indexData.length - 1].close : 0;
-                const newPoint = { timestamp: msg.timestamp, pcr: msg.pcr, price: currentPrice };
-                // Avoid duplicate timestamps
-                if (prev.length > 0 && prev[prev.length - 1].timestamp === msg.timestamp) {
-                    const updated = [...prev];
-                    updated[updated.length - 1] = newPoint;
-                    return updated;
-                }
-                return [...prev, newPoint].slice(-1000); // Increased buffer for high-res data
-            });
         }
         handleUpdate(msg);
     });
@@ -201,7 +178,7 @@ const App = () => {
     // In replay mode, we only load data if we have a replay date
     if (isReplayMode && !replayDate) return;
 
-    const currentSymbol = (indexKey || '').includes('Nifty 50') ? 'NIFTY' : 'BANKNIFTY';
+    const currentSymbol = indexKey;
 
     setLoading(true);
     try {
@@ -215,7 +192,7 @@ const App = () => {
         if (candles && candles.length > 0) {
             setIndexData(candles);
             const currentPrice = candles[candles.length - 1].close;
-            const step = currentSymbol === 'NIFTY' ? 50 : 100;
+            const step = currentSymbol === 'NIFTY' ? 50 : currentSymbol === 'BANKNIFTY' ? 100 : 100;
             currentAtm = Math.round(currentPrice / step) * step;
             setAtmStrike(currentAtm);
         }
@@ -232,6 +209,7 @@ const App = () => {
                     setSentiment(API.calculateSentiment(chainData));
                     const atmItem = chainData.find(i => i.strike_price === currentAtm);
                     if (atmItem) {
+                        // These will now be HRNs from the backend
                         ceKey = atmItem.call_options.instrument_key;
                         peKey = atmItem.put_options.instrument_key;
                         atmOptionKeysRef.current = { ce: ceKey, pe: peKey };
@@ -240,32 +218,15 @@ const App = () => {
             }
 
             if (ceKey && peKey) {
-                const [ceHist, peHist, fBuildup, cBuildup, pBuildup] = await Promise.all([
+                const [ceHist, peHist] = await Promise.all([
                     API.getIntradayCandles(ceKey, isReplayMode ? replayDate! : undefined).catch(() => []),
-                    API.getIntradayCandles(peKey, isReplayMode ? replayDate! : undefined).catch(() => []),
-                    Trendlyne.fetchFuturesBuildup(currentSymbol, expiryDate).catch(() => []),
-                    Trendlyne.fetchOptionBuildup(currentSymbol, expiryDate, currentAtm, 'call').catch(() => []),
-                    Trendlyne.fetchOptionBuildup(currentSymbol, expiryDate, currentAtm, 'put').catch(() => [])
+                    API.getIntradayCandles(peKey, isReplayMode ? replayDate! : undefined).catch(() => [])
                 ]);
 
                 setCeData(ceHist);
                 setPeData(peHist);
-                setFuturesBuildup(fBuildup);
-                setCeBuildup(cBuildup);
-                setPeBuildup(pBuildup);
                 socket.setSubscriptions([indexKey, ceKey, peKey]);
                 setTrendlyneReady(Trendlyne.isSessionInitialized);
-            }
-
-            const pcrHist = await fetch(`/api/analytics/pcr/${currentSymbol}${isReplayMode ? `?date=${replayDate}` : ''}`).then(r => r.json()).catch(() => []);
-            if (pcrHist && pcrHist.length > 0) {
-                setHistoricalPcr(prev => {
-                    // Only use historical if we don't have many live points yet
-                    // or merge them properly. For simplicity, if we have live points,
-                    // we just keep them if they are newer.
-                    if (prev.length > 5) return prev;
-                    return pcrHist;
-                });
             }
         }
         setLastSync(new Date());
@@ -299,6 +260,21 @@ const App = () => {
         </div>
 
         <div className="flex items-center gap-6">
+          <ReplayControls
+            currentIndexKey={indexKey}
+            onReplaySessionInfo={(info) => {
+                setAtmStrike(info.atm);
+                if (info.expiry) {
+                    setExpiryDate(info.expiry);
+                    setExpiryLabel(info.expiry);
+                }
+                atmOptionKeysRef.current = {
+                    ce: info.suggested_ce || '',
+                    pe: info.suggested_pe || ''
+                };
+            }}
+          />
+          <div className="h-8 w-[1px] bg-gray-800 mx-1"></div>
           <div className="flex gap-3">
             <select
               value={indexKey}
@@ -306,8 +282,9 @@ const App = () => {
               disabled={isReplayMode}
               className="bg-gray-900 border border-gray-800 rounded-lg px-3 py-1.5 text-[11px] font-black text-brand-blue outline-none focus:ring-1 focus:ring-brand-blue transition-all disabled:opacity-50"
             >
-              <option value={INDICES.NIFTY.key}>NIFTY 50</option>
-              <option value={INDICES.BANKNIFTY.key}>BANK NIFTY</option>
+              <option value="NIFTY">NIFTY 50</option>
+              <option value="BANKNIFTY">BANK NIFTY</option>
+              <option value="FINNIFTY">FIN NIFTY</option>
             </select>
             <div className="bg-gray-900 border border-gray-800 rounded-lg px-3 py-1.5 text-[10px] flex items-center gap-2">
               <span className="text-gray-600 font-bold uppercase text-[8px]">Expiry</span>
@@ -340,22 +317,6 @@ const App = () => {
         </div>
       </header>
 
-      <div className="px-4 pt-4">
-          <ReplayControls
-            currentIndexKey={indexKey}
-            onReplaySessionInfo={(info) => {
-                setAtmStrike(info.atm);
-                if (info.expiry) {
-                    setExpiryDate(info.expiry);
-                    setExpiryLabel(info.expiry);
-                }
-                atmOptionKeysRef.current = {
-                    ce: info.suggested_ce || '',
-                    pe: info.suggested_pe || ''
-                };
-            }}
-          />
-      </div>
 
       <main className="p-4 flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-6">
         {/* Strategy Section */}
@@ -409,45 +370,6 @@ const App = () => {
             </div>
         </section>
 
-        {/* Analytics Section */}
-        <section className="grid grid-cols-12 gap-6 animate-fadeIn pb-8">
-            <div className="col-span-12 lg:col-span-3">
-                <div className="flex flex-col gap-4 h-full">
-                    <div className="flex items-center gap-2 mb-1">
-                        <div className="h-4 w-1 bg-brand-orange rounded-full"></div>
-                        <h2 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Market DNA</h2>
-                    </div>
-                    {sentiment ? (
-                        <SentimentAnalysis sentiment={sentiment} />
-                    ) : (
-                        <div className="glass-panel rounded-xl p-8 flex items-center justify-center text-[9px] text-gray-600 font-mono uppercase tracking-widest h-full min-h-[300px]">Crunching Sentiment...</div>
-                    )}
-                </div>
-            </div>
-
-            <div className="col-span-12 lg:col-span-5">
-                <div className="flex flex-col gap-4 h-full">
-                    <div className="flex items-center gap-2 mb-1">
-                        <div className="h-4 w-1 bg-brand-blue rounded-full"></div>
-                        <h2 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Sentiment Convergence</h2>
-                    </div>
-                    <div className="flex-1 glass-panel rounded-xl p-4 min-h-[350px]">
-                      <PCRVsSpotChart pcrData={historicalPcr} spotData={indexData} title="PCR vs SPOT" />
-                    </div>
-                </div>
-            </div>
-
-            <div className="col-span-12 lg:col-span-4">
-                <div className="flex flex-col gap-4">
-                    <div className="flex items-center gap-2 mb-1">
-                        <div className="h-4 w-1 bg-brand-green rounded-full"></div>
-                        <h2 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Live OI Flow</h2>
-                    </div>
-                    <BuildupPanel title={`ATM CE FLOW`} data={ceBuildup} />
-                    <BuildupPanel title={`ATM PE FLOW`} data={peBuildup} />
-                </div>
-            </div>
-        </section>
       </main>
 
       <footer className="h-8 glass-panel border-t border-white/5 flex items-center justify-between px-6 text-[8px] font-mono text-gray-600 uppercase tracking-[0.2em]">

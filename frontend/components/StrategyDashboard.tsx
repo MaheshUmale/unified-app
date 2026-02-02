@@ -12,8 +12,6 @@ interface StrategyDashboardProps {
 const StrategyDashboard: React.FC<StrategyDashboardProps> = ({ indexKey, atmStrike, expiryDate, symbol }) => {
     const [analysis, setAnalysis] = useState<any>(null);
     const [loading, setLoading] = useState(false);
-    const [syncing, setSyncing] = useState(false);
-    const [cues, setCues] = useState({ global_cues: '', major_events: '' });
     const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
     const fetchAnalysis = async () => {
@@ -23,36 +21,8 @@ const StrategyDashboard: React.FC<StrategyDashboardProps> = ({ indexKey, atmStri
         if (data) {
             setAnalysis(data);
             setLastUpdated(new Date());
-            if (data.context) {
-                setCues({
-                    global_cues: data.context.global_cues || '',
-                    major_events: data.context.major_events || ''
-                });
-            }
         }
         setLoading(false);
-    };
-
-    const handleContextUpdate = async () => {
-        await StrategyService.updateStrategyContext(symbol, cues.global_cues, cues.major_events);
-        fetchAnalysis();
-    };
-
-    const handleSyncSession = async () => {
-        setSyncing(true);
-        const result = await StrategyService.syncSessionData();
-        if (result && result.status === 'success') {
-            console.log('Session synced:', result);
-            fetchAnalysis();
-        }
-        setSyncing(false);
-    };
-
-    const handleFetchCues = async () => {
-        const data = await StrategyService.searchMarketCues();
-        if (data) {
-            setCues(data);
-        }
     };
 
     useEffect(() => {
@@ -241,40 +211,13 @@ const StrategyDashboard: React.FC<StrategyDashboardProps> = ({ indexKey, atmStri
                     <div className="glass-panel rounded-2xl p-6 flex flex-col gap-4">
                         <div className="flex justify-between items-center">
                             <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Context & Global Cues</h3>
-                            <button
-                                onClick={handleFetchCues}
-                                className="text-[9px] font-black text-blue-500 hover:text-white transition-colors uppercase"
-                            >
-                                AUTO-FETCH
-                            </button>
                         </div>
                         <div className="space-y-4">
-                            <textarea
-                                value={cues.global_cues}
-                                onChange={e => setCues({...cues, global_cues: e.target.value})}
-                                placeholder="Global Cues..."
-                                className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-[11px] text-gray-300 h-24 outline-none focus:border-blue-500 transition-all font-mono"
-                            />
-                            <textarea
-                                value={cues.major_events}
-                                onChange={e => setCues({...cues, major_events: e.target.value})}
-                                placeholder="Scheduled Events..."
-                                className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-[11px] text-gray-300 h-24 outline-none focus:border-blue-500 transition-all font-mono"
-                            />
-                            <div className="grid grid-cols-2 gap-2">
-                                <button
-                                    onClick={handleSyncSession}
-                                    disabled={syncing}
-                                    className={`bg-gray-800 hover:bg-gray-700 text-white font-black uppercase text-[9px] py-3 rounded-xl transition-all border border-white/5 ${syncing ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                >
-                                    {syncing ? 'Syncing...' : 'Sync Session'}
-                                </button>
-                                <button
-                                    onClick={handleContextUpdate}
-                                    className="bg-blue-600 hover:bg-blue-500 text-white font-black uppercase text-[9px] py-3 rounded-xl transition-all shadow-lg shadow-blue-500/20"
-                                >
-                                    Update Context
-                                </button>
+                            <div className="w-full bg-black/40 border border-white/5 rounded-xl p-3 text-[10px] text-gray-400 min-h-[60px] italic">
+                                {analysis.context?.global_cues || 'Loading global cues...'}
+                            </div>
+                            <div className="w-full bg-black/40 border border-white/5 rounded-xl p-3 text-[10px] text-gray-400 min-h-[60px] italic">
+                                {analysis.context?.major_events || 'Monitoring scheduled events...'}
                             </div>
                         </div>
                     </div>

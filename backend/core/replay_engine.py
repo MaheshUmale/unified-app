@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional, Set
 from db.mongodb import get_tick_data_collection, get_oi_collection, get_instruments_collection
 from core import data_engine
+from core.symbol_mapper import symbol_mapper
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +136,9 @@ class ReplayEngine:
             logger.error(f"Error in replay footprint: {e}")
 
     def _replay_loop(self, date_str: str, instrument_keys: List[str]):
+        """
+        Replay loop. instrument_keys can be HRNs or raw keys.
+        """
         try:
             # 1. Load data
             # Convert date_str (YYYY-MM-DD) to timestamp range (IST)
@@ -147,11 +151,14 @@ class ReplayEngine:
 
             logger.info(f"Replay Query: Range {start_ms} to {end_ms} for {instrument_keys}")
 
-            # Normalize and expand keys to handle both | and : formats in DB
-            search_keys = set()
+            # Search keys: include HRNs and their raw key counterparts if known
+            search_keys = set(instrument_keys)
             for k in instrument_keys:
-                search_keys.add(k.replace(':', '|'))
-                search_keys.add(k.replace('|', ':'))
+                raw = symbol_mapper.resolve_to_key(k)
+                if raw:
+                    search_keys.add(raw)
+                    search_keys.add(raw.replace('|', ':'))
+                    search_keys.add(raw.replace(':', '|'))
 
             # Query for ticks within range.
             # Broaden to include all data for the day if exact range fails,
@@ -199,7 +206,12 @@ class ReplayEngine:
             # We need the underlying symbol for these instruments
             symbols = set()
             for key in instrument_keys:
-                instr = self.instr_collection.find_one({'instrument_key': key})
+                # Try HRN first
+                if "NIFTY" in key.upper(): symbols.add("NIFTY")
+                if "BANKNIFTY" in key.upper(): symbols.add("BANKNIFTY")
+
+                raw_key = symbol_mapper.resolve_to_key(key) or key
+                instr = self.instr_collection.find_one({'instrument_key': raw_key})
                 if instr:
                     sym = instr.get('underlying_symbol') or instr.get('trading_symbol')
                     if sym: symbols.add(sym)
@@ -235,37 +247,38 @@ class ReplayEngine:
                 data_engine.sim_time = datetime.fromtimestamp(ltt / 1000)
 
                 # Sync with data_engine for strategy analysis
-                inst_key = tick['instrumentKey']
+                inst_key = tick['instrumentKey'] # This is likely HRN in new DB
+                raw_key = tick.get('raw_key', inst_key)
                 ff = tick.get('fullFeed', {})
                 market_ff = ff.get('marketFF', {})
                 index_ff = ff.get('indexFF', {})
                 ltpc = market_ff.get('ltpc') or index_ff.get('ltpc')
 
                 if ltpc and ltpc.get('ltp'):
-                    data_engine.latest_prices[inst_key] = float(ltpc['ltp'])
-                    if inst_key == "NSE_INDEX|India VIX":
+                    data_engine.latest_prices[raw_key] = float(ltpc['ltp'])
+                    if "INDIA VIX" in inst_key.upper() or "India VIX" in raw_key:
                         data_engine.latest_vix['value'] = float(ltpc['ltp'])
 
                 if 'oi' in market_ff:
-                    data_engine.latest_oi[inst_key] = float(market_ff['oi'])
+                    data_engine.latest_oi[raw_key] = float(market_ff['oi'])
 
                 if 'vtt' in market_ff:
-                    data_engine.latest_vtt[inst_key] = float(market_ff['vtt'])
+                    data_engine.latest_vtt[raw_key] = float(market_ff['vtt'])
 
                 market_levels = market_ff.get('marketLevel', {}).get('bidAskQuote', [])
                 if market_levels:
                     top = market_levels[0]
-                    data_engine.latest_bid_ask[inst_key] = {
+                    data_engine.latest_bid_ask[raw_key] = {
                         'bid': float(top.get('bidP', 0)),
                         'ask': float(top.get('askP', 0))
                     }
 
                 if 'iv' in market_ff:
-                    data_engine.latest_iv[inst_key] = float(market_ff['iv'])
+                    data_engine.latest_iv[raw_key] = float(market_ff['iv'])
 
                 if 'optionGreeks' in market_ff:
                     g = market_ff['optionGreeks']
-                    data_engine.latest_greeks[inst_key] = {
+                    data_engine.latest_greeks[raw_key] = {
                         'delta': float(g.get('delta', 0)),
                         'theta': float(g.get('theta', 0)),
                         'gamma': float(g.get('gamma', 0)),
@@ -275,9 +288,9 @@ class ReplayEngine:
                 # Populate sim_strike_data for strategy lookbacks during replay
                 price = float(ltpc.get('ltp', 0))
                 if price > 0:
-                    oi = data_engine.latest_oi.get(inst_key, 0)
-                    iv = data_engine.latest_iv.get(inst_key, 0)
-                    greeks = data_engine.latest_greeks.get(inst_key, {})
+                    oi = data_engine.latest_oi.get(raw_key, 0)
+                    iv = data_engine.latest_iv.get(raw_key, 0)
+                    greeks = data_engine.latest_greeks.get(raw_key, {})
                     data_engine.save_strike_metrics_to_db(inst_key, oi, price, iv, greeks)
 
                 # Emit any OI updates that occurred before or at this tick time
@@ -304,8 +317,7 @@ class ReplayEngine:
 
                 # Emit the tick
                 # Wrap it in the same structure as live WSS
-                # Normalize key before emitting to ensure UI consistency
-                inst_key = data_engine.normalize_key(tick['instrumentKey'])
+                # Use HRN for emission to frontend
                 feeds_map = {inst_key: tick}
                 self.emit_fn('raw_tick', json.dumps(feeds_map, cls=MongoJSONEncoder))
 

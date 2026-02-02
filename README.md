@@ -31,7 +31,7 @@ The core engine evaluates market conditions across five quantitative dimensions:
 Set environment variables in a `.env` file in `backend/`:
 - `UPSTOX_ACCESS_TOKEN`: Valid Upstox API V3 token.
 - `MONGO_URI`: MongoDB connection string (default: `mongodb://localhost:27017/`).
-- `DB_NAME`: Database name (default: `upstox_strategy_db_new`).
+- `DB_NAME`: Database name (default: `PRO_TRADE_DATABASE`).
 
 ```bash
 cd backend
@@ -55,22 +55,26 @@ Access at **`http://localhost:5051`**.
 
 ## 🏃 Architecture & Data Flow
 
+### Unified Data Layer & Human Readable Names (HRN)
+The platform utilizes a unified data layer where all instrument identifiers are converted into Human Readable Names (HRN) before storage and transmission.
+- **Format**: `NIFTY 03 OCT 2024 CALL 25000`
+- **Abstraction**: The UI is completely decoupled from technical data source identifiers (Upstox keys or Trendlyne IDs). It only operates on HRNs.
+- **Database**: All data from Upstox (Ticks, OI) and Trendlyne (Buildup) is stored in the `PRO_TRADE_DATABASE` using these uniform names.
+
 ### Temporal Replay System
 The platform features a high-fidelity **Replay Mode** for strategy validation:
+- **Seamless Integration**: Switching to Replay mode is transparent to the UI. The user selects a date, and the backend handles data discovery and synchronization.
 - **Simulation Clock**: Synchronizes the system time with historical tick timestamps.
-- **Metric Buffering**: Maintains an in-memory rolling buffer of historical Greeks, IV, and OI during playback to enable strategy lookbacks (e.g., "15 mins ago" state) without polluting the production database.
-- **Date-Aware Charts**: Automatically fetches and renders historical OHLCV data for the replayed date.
+- **Metric Buffering**: Maintains an in-memory rolling buffer of historical Greeks, IV, and OI during playback to enable strategy lookbacks without polluting the production database.
 
 ### Data Integration
 - **Upstox API V3**: Primary source for real-time WebSocket feeds and historical intraday candles.
-- **Trendlyne SmartOptions**: Backend service for expiry discovery and snapshot-based PCR history calculation.
-- **Symbol Standardization**: Trade suggestions use the specific format: `NIFTY 50 DD MMM YYYY CALL/PUT STRIKE` (e.g., `NIFTY 50 03 FEB 2026 CALL 25300`).
+- **Trendlyne SmartOptions**: Backend service for expiry discovery and snapshot-based buildup analysis.
 
 ## 📊 Key UI Components
 
-- **Strategy Dashboard**: Real-time edge scores (0-100), detailed 'Trade Execution Blueprints' (Suggested Strike, Entry, SL/TP), and predictive regime shift probabilities (30-90m window).
-- **Terminal View**: Synced OHLCV and Footprint charts for the Index and ATM Option premiums.
-- **Flow & Data**: Consolidated sentiment analysis, PCR trends, and institutional buildup panels.
+- **Strategy Dashboard**: Real-time edge scores (0-100), detailed 'Trade Execution Blueprints', and predictive regime shift probabilities.
+- **Terminal View**: High-density synchronized charts for Spot Price, ATM CALL, and ATM PUT.
 
 ## 🔒 Security
 - Sensitive credentials managed via environment variables.
