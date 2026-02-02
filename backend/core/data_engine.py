@@ -376,8 +376,7 @@ def on_message(message: Union[Dict, bytes, str]):
                 now = time.time()
                 # Only emit if 100ms has passed since last global 'raw_tick'
                 if now - last_emit_times.get('GLOBAL_RAW_TICK', 0) > 0.1:
-                    jsonData = json.dumps(hrn_feeds)
-                    emit_event('raw_tick', jsonData)
+                    emit_event('raw_tick', hrn_feeds)
                     last_emit_times['GLOBAL_RAW_TICK'] = now
         except Exception as e:
             logging.error(f"SocketIO raw_tick Emit Error: {e}")
