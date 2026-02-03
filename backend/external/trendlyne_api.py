@@ -8,6 +8,7 @@ import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta, date
 from db.mongodb import get_oi_collection, get_stocks_collection, get_trendlyne_buildup_collection
+from core.symbol_mapper import symbol_mapper
 
 logger = logging.getLogger(__name__)
 
