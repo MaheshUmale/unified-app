@@ -914,7 +914,7 @@ def start_websocket_thread(access_token: str, instrument_keys: List[str]):
     threading.Thread(target=market_hour_monitor, daemon=True).start()
     threading.Thread(target=subscription_keep_alive, daemon=True).start()
 
-def load_intraday_data(instrument_key, date_str=None, timeframe_min=1):
+def load_intraday_data(instrument_key, date_str=None, timeframe_min=1, lookback_days=0):
     """
     Fetches and aggregates data for a specific date (defaults to today) from 9:15 AM to 3:30 PM.
 
@@ -922,6 +922,7 @@ def load_intraday_data(instrument_key, date_str=None, timeframe_min=1):
         instrument_key (str): The instrument key.
         date_str (str): Optional date in YYYY-MM-DD format.
         timeframe_min (int): Aggregation timeframe in minutes.
+        lookback_days (int): Number of previous days to include for indicator warm-up.
 
     Returns:
         list: A list of aggregated OHLC/Footprint bars.
@@ -933,7 +934,10 @@ def load_intraday_data(instrument_key, date_str=None, timeframe_min=1):
         now = datetime.now(ist)
         date_str = now.strftime("%Y-%m-%d")
 
-    start_time = ist.localize(datetime.strptime(f"{date_str} 09:15:00", "%Y-%m-%d %H:%M:%S"))
+    base_date = datetime.strptime(date_str, "%Y-%m-%d")
+    start_date = base_date - timedelta(days=lookback_days)
+
+    start_time = ist.localize(datetime.strptime(f"{start_date.strftime('%Y-%m-%d')} 09:15:00", "%Y-%m-%d %H:%M:%S"))
     end_time = ist.localize(datetime.strptime(f"{date_str} 15:30:00", "%Y-%m-%d %H:%M:%S"))
 
     start_ms = int(start_time.timestamp() * 1000)

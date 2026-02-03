@@ -535,9 +535,11 @@ async def get_upstox_intraday(instrument_key: str, date: Optional[str] = None, i
         raw_key = symbol_mapper.resolve_to_key(clean_key) or clean_key
 
         # 1. Try backfill from MongoDB via data_engine (uses HRN)
-        # Use provided date or default to today
-        db_history = data_engine.load_intraday_data(clean_key, date_str=date, timeframe_min=int(interval))
-        if db_history and len(db_history) > 5: # If we have significant data in DB
+        # In live mode (date is None), fetch 2 extra days for indicator warm-up
+        lookback = 3 if not date else 0 # 3 calendar days to safely cover 2 trading days
+        db_history = data_engine.load_intraday_data(clean_key, date_str=date, timeframe_min=int(interval), lookback_days=lookback)
+
+        if db_history and len(db_history) > (10 if not date else 5): # If we have significant data in DB
             # Convert footprint bars to OHLC format expected by UI
             candles = []
             for bar in db_history:
@@ -546,11 +548,17 @@ async def get_upstox_intraday(instrument_key: str, date: Optional[str] = None, i
                     bar['open'], bar['high'], bar['low'], bar['close'], bar['volume'], bar.get('oi', 0)
                 ])
             # Reverse to match Upstox V3 descending order (newest first)
-            # Frontend upstoxService reverses it back to chronological ascending.
             return {"candles": candles[::-1]}
 
         # 2. Fallback to Upstox API (needs raw key)
-        data = upstox_api.get_intraday_candles(raw_key, interval=interval)
+        if not date:
+            # Live mode: Fetch today + previous days using historical API for warm-up
+            to_date = datetime.now().strftime("%Y-%m-%d")
+            from_date = (datetime.now() - timedelta(days=5)).strftime("%Y-%m-%d")
+            data = upstox_api.get_historical_candles(raw_key, interval=interval, to_date=to_date, from_date=from_date)
+        else:
+            data = upstox_api.get_intraday_candles(raw_key, interval=interval)
+
         if data and data.get('status') == 'success':
             return data.get('data', {})
 
