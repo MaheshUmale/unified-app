@@ -24,7 +24,6 @@ The core engine evaluates market conditions across five quantitative dimensions:
 
 ### Prerequisites
 - **Python**: 3.12+
-- **Node.js**: v20+
 - **MongoDB**: Active on `localhost:27017`
 
 ### 1. Backend Configuration
@@ -36,17 +35,11 @@ Set environment variables in a `.env` file in `backend/`:
 ```bash
 cd backend
 pip install -r requirements.txt
+pip install jinja2
 ```
 
-### 2. Frontend Setup
-```bash
-cd frontend
-npm install
-npm run build
-```
-
-### 3. Execution
-The FastAPI server serves the React build from `frontend/dist`.
+### 2. Execution
+The FastAPI server serves the UI directly via Jinja2 templates. No Node build required.
 ```bash
 # Start the integrated server
 python -m uvicorn api_server:app --app-dir backend --port 5051
@@ -55,26 +48,23 @@ Access at **`http://localhost:5051`**.
 
 ## 🏃 Architecture & Data Flow
 
-### Unified Data Layer & Human Readable Names (HRN)
-The platform utilizes a unified data layer where all instrument identifiers are converted into Human Readable Names (HRN) before storage and transmission.
-- **Format**: `NIFTY 03 OCT 2024 CALL 25000`
-- **Abstraction**: The UI is completely decoupled from technical data source identifiers (Upstox keys or Trendlyne IDs). It only operates on HRNs.
-- **Database**: All data from Upstox (Ticks, OI) and Trendlyne (Buildup) is stored in the `PRO_TRADE_DATABASE` using these uniform names.
+### Direct Template UI
+The platform uses a radically simplified single-page UI served directly by FastAPI. It leverages **ECharts** for high-density visualization and **Socket.IO** for real-time data flow.
 
-### Temporal Replay System
-The platform features a high-fidelity **Replay Mode** for strategy validation:
-- **Seamless Integration**: Switching to Replay mode is transparent to the UI. The user selects a date, and the backend handles data discovery and synchronization.
-- **Simulation Clock**: Synchronizes the system time with historical tick timestamps.
-- **Metric Buffering**: Maintains an in-memory rolling buffer of historical Greeks, IV, and OI during playback to enable strategy lookbacks without polluting the production database.
+### Pine Script Implementation
+A sophisticated Pine Script strategy has been translated to native Javascript, featuring:
+- **MTF S/R Dots**: Multi-timeframe support (1m, 5m, 15m) for dynamic support and resistance identification.
+- **Volume Bubbles**: Scaling visualization of relative volume spikes.
+- **Colored Candles**: Price bars color-coded by volume momentum.
+- **Dynamic Indicators**: Implementation of EVWMA and Dynamic Pivot lines.
+- **Swing Detection**: Confirmation-lag based swing break background coloring.
+
+### Unified Data Layer & Human Readable Names (HRN)
+All data (Ticks, OI, Buildup) uses a uniform Human Readable Name convention (e.g., `NIFTY 03 OCT 2024 CALL 25000`), ensuring full decoupling from source-specific technical IDs.
 
 ### Data Integration
-- **Upstox API V3**: Primary source for real-time WebSocket feeds and historical intraday candles.
-- **Trendlyne SmartOptions**: Backend service for expiry discovery and snapshot-based buildup analysis.
-
-## 📊 Key UI Components
-
-- **Strategy Dashboard**: Real-time edge scores (0-100), detailed 'Trade Execution Blueprints', and predictive regime shift probabilities.
-- **Terminal View**: High-density synchronized charts for Spot Price, ATM CALL, and ATM PUT.
+- **Upstox API V3**: Official SDK integration for real-time WebSocket feeds and historical intraday candles.
+- **Trendlyne Proxy**: Backend service for automated expiry discovery and PCR analysis.
 
 ## 🔒 Security
 - Sensitive credentials managed via environment variables.

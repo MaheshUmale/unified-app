@@ -9,9 +9,10 @@ from logging.config import dictConfig
 from typing import List, Dict, Any, Optional
 import socketio # python-socketio
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from config import LOGGING_CONFIG, ACCESS_TOKEN, INITIAL_INSTRUMENTS
 from db.mongodb import (
@@ -525,7 +526,7 @@ async def trigger_trendlyne_backfill(
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @fastapi_app.get("/api/upstox/intraday/{instrument_key}")
-async def get_upstox_intraday(instrument_key: str, date: Optional[str] = None):
+async def get_upstox_intraday(instrument_key: str, date: Optional[str] = None, interval: str = '1'):
     """Fetch intraday candles from DB backfill or Upstox V3. instrument_key can be HRN."""
     try:
         clean_key = unquote(instrument_key)
@@ -533,7 +534,7 @@ async def get_upstox_intraday(instrument_key: str, date: Optional[str] = None):
 
         # 1. Try backfill from MongoDB via data_engine (uses HRN)
         # Use provided date or default to today
-        db_history = data_engine.load_intraday_data(clean_key)
+        db_history = data_engine.load_intraday_data(clean_key, date_str=date, timeframe_min=int(interval))
         if db_history and len(db_history) > 5: # If we have significant data in DB
             # Convert footprint bars to OHLC format expected by UI
             candles = []
@@ -547,7 +548,7 @@ async def get_upstox_intraday(instrument_key: str, date: Optional[str] = None):
             return {"candles": candles[::-1]}
 
         # 2. Fallback to Upstox API (needs raw key)
-        data = upstox_api.get_intraday_candles(raw_key)
+        data = upstox_api.get_intraday_candles(raw_key, interval=interval)
         if data and data.get('status') == 'success':
             return data.get('data', {})
 
@@ -848,32 +849,13 @@ async def get_instruments():
         logger.error(f"Error fetching instruments: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch instruments")
 
-# Static Files (Serving Frontend Build)
-frontend_dist = os.path.abspath(os.path.join(os.path.dirname(__file__), "../frontend/dist"))
+# Template and Static Files Setup
+templates = Jinja2Templates(directory="backend/templates")
+fastapi_app.mount("/static", StaticFiles(directory="backend/static"), name="static")
 
-if os.path.exists(frontend_dist):
-    fastapi_app.mount("/static", StaticFiles(directory=frontend_dist), name="static")
-    logger.info(f"Mounted static files from {frontend_dist}")
-
-    @fastapi_app.get("/")
-    async def serve_index():
-        return FileResponse(os.path.join(frontend_dist, "index.html"))
-
-    @fastapi_app.get("/{full_path:path}")
-    async def serve_frontend(full_path: str):
-        # Explicitly ignore API and Socket.IO paths to avoid intercepting them
-        if full_path.startswith("api/") or full_path.startswith("socket.io") or full_path.startswith("docs") or full_path.startswith("openapi.json"):
-            raise HTTPException(status_code=404)
-
-        # Check if the file exists in the static directory
-        file_path = os.path.join(frontend_dist, full_path)
-        if os.path.isfile(file_path):
-            return FileResponse(file_path)
-
-        # Otherwise serve index.html for SPA routing
-        return FileResponse(os.path.join(frontend_dist, "index.html"))
-else:
-    logger.warning(f"Frontend dist directory not found at {frontend_dist}")
+@fastapi_app.get("/")
+async def serve_index(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
 
 # Final Wrap with Socket.io
 app = socketio.ASGIApp(sio, fastapi_app)
