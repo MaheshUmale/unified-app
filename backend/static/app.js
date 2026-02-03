@@ -439,22 +439,22 @@ function renderChart(chart, title, data, mtf = {}) {
                     silent: true,
                     data: areas.map(a => [{ xAxis: a.xAxis }, { xAxis: a.xAxis + 1, itemStyle: a.itemStyle }])
                 },
-                data: data.map(d => [d.open, d.close, d.low, d.high]),
-                itemStyle: {
-                    // Apply RVOL-based colors to candles (Requirement #2)
-                    color: (p) => colors[p.dataIndex],
-                    color0: (p) => colors[p.dataIndex],
-                    borderColor: (p) => colors[p.dataIndex],
-                    borderColor0: (p) => colors[p.dataIndex]
-                }
+                data: data.map((d, i) => ({
+                    value: [d.open, d.close, d.low, d.high],
+                    itemStyle: {
+                        color: colors[i],
+                        color0: colors[i],
+                        borderColor: colors[i],
+                        borderColor0: colors[i]
+                    }
+                }))
             },
             {
                 name: 'Volume', type: 'bar', xAxisIndex: 1, yAxisIndex: 1,
-                data: volumes,
-                itemStyle: {
-                    color: (p) => colors[p.dataIndex],
-                    opacity: 0.8
-                }
+                data: volumes.map((v, i) => ({
+                    value: v,
+                    itemStyle: { color: colors[i], opacity: 0.8 }
+                }))
             },
             {
                 name: 'EVWMA', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: evwma, showSymbol: false,
