@@ -104,8 +104,10 @@ class UpstoxAPI:
         """Fetches historical candle data using Upstox History SDK."""
         api_instance = upstox_client.HistoryV3Api(self.api_client)
         try:
-            # Map interval to SDK units (plural "days"/"minutes")
-            unit = "days"
+ 
+            # Map interval to SDK units
+            unit = "minutes"
+
             count = 1
             if interval == "1":
                 unit = "minutes"
