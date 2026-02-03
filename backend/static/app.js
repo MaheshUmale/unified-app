@@ -394,12 +394,13 @@ function renderChart(chart, title, data, mtf = {}) {
         },
         axisPointer: { link: { xAxisIndex: 'all' } },
         dataZoom: [
-            { type: 'inside', xAxisIndex: [0, 1] },
+            { type: 'inside', xAxisIndex: [0, 1], start: 70, end: 100 },
             {
                 type: 'slider', xAxisIndex: [0, 1],
                 top: '92%', height: 16, borderColor: 'transparent',
                 textStyle: { color: '#4b5563', fontSize: 8 },
-                handleSize: '80%'
+                handleSize: '80%',
+                start: 70, end: 100
             }
         ],
         grid: [

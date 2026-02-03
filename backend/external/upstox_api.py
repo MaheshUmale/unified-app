@@ -108,16 +108,12 @@ class UpstoxAPI:
             # Map interval to SDK units
             unit = "minutes"
 
-            count = 1
-            if interval == "1":
-                unit = "minutes"
-                count = 1
-            elif interval == "30":
-                unit = "minutes"
-                count = 30
-            elif interval == "1D":
+            count = int(interval) if interval.isdigit() else 1
+            if interval == "1D":
                 unit = "days"
                 count = 1
+            else:
+                unit = "minutes"
 
             if from_date:
                 response = api_instance.get_historical_candle_data1(instrument_key, unit, count, to_date, from_date)

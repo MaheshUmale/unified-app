@@ -100,13 +100,17 @@ const Indicators = {
 
         // mB = highest(absPC, forceLen)
         const mB = new Array(data.length).fill(0);
-        for(let i=forceLen-1; i<data.length; i++) {
+        for(let i=0; i<data.length; i++) {
             let max = 0;
-            for(let j=0; j<forceLen; j++) max = Math.max(max, absPC[i-j]);
+            const start = Math.max(0, i - forceLen + 1);
+            for(let j=start; j<=i; j++) max = Math.max(max, absPC[j]);
             mB[i] = max;
         }
 
-        const sc = data.map((d, i) => Math.abs(d.close - d.open) / (mB[i] === 0 ? 1 : mB[i]));
+        const sc = data.map((d, i) => {
+            if (mB[i] === 0) return 0;
+            return Math.abs(d.close - d.open) / mB[i];
+        });
         const uF = data.map((d, i) => (d.close - d.open) > 0 ? d.volume * sc[i] * (d.close > d.vwap ? 1.5 : 1.0) : 0);
         const dF = data.map((d, i) => (d.close - d.open) < 0 ? d.volume * sc[i] * (d.close < d.vwap ? 1.5 : 1.0) : 0);
 
@@ -121,13 +125,14 @@ const Indicators = {
         const fS = Indicators.sma(diffClose.map((v, i) => v / (data[i].close || 1)), pivotLen);
 
         const hN = new Array(data.length).fill(0);
-        for(let i=pivotLen-1; i<data.length; i++) {
+        for(let i=0; i<data.length; i++) {
             let max = 0;
-            for(let j=0; j<pivotLen; j++) max = Math.max(max, Math.abs(netF[i-j]));
+            const start = Math.max(0, i - pivotLen + 1);
+            for(let j=start; j<=i; j++) max = Math.max(max, Math.abs(netF[j]));
             hN[i] = max;
         }
 
-        const fA = netF.map((nf, i) => nf / (hN[i] === 0 ? 1 : hN[i]));
+        const fA = netF.map((nf, i) => (hN[i] === 0 ? 0 : nf / hN[i]));
 
         for(let i=0; i<data.length; i++) {
             if (baseP[i] !== null) {
