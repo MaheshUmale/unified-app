@@ -78,7 +78,11 @@ async function loadInitialData() {
         }
         renderPcrChart();
 
-        if (expiryDate && currentAtm > 0) await loadOptionsData();
+        if (expiryDate && currentAtm > 0) {
+            await loadOptionsData();
+            syncIndexVolume();
+            renderChart(charts.index, 'INDEX', indexData, { mtf5: mtf5Data, mtf15: mtf15Data });
+        }
     } catch (e) {
         console.error("Init Data Fail:", e);
     } finally {
@@ -187,20 +191,39 @@ function handleTickUpdate(quotes) {
         peUpdated = true;
     }
 
+    // Sync Index Volume as sum of ATM CE + PE
+    if (ceUpdated || peUpdated) {
+        syncIndexVolume();
+        indexUpdated = true; // Force re-render of index chart to show new volume
+    }
+
     if (indexUpdated) renderChart(charts.index, 'INDEX', indexData, { mtf5: mtf5Data, mtf15: mtf15Data });
     if (ceUpdated) renderChart(charts.ce, 'ATM CE', ceData);
     if (peUpdated) renderChart(charts.pe, 'ATM PE', peData);
+}
+
+function syncIndexVolume() {
+    if (!indexData.length) return;
+    const ceMap = new Map(ceData.map(d => [d.timestamp, d.volume]));
+    const peMap = new Map(peData.map(d => [d.timestamp, d.volume]));
+
+    indexData.forEach(d => {
+        const cv = ceMap.get(d.timestamp) || 0;
+        const pv = peMap.get(d.timestamp) || 0;
+        d.volume = cv + pv;
+    });
 }
 
 function updateCandleMTF(prev, quote, minutes) {
     const tickTime = new Date(quote.ts_ms);
     const intervalMs = minutes * 60 * 1000;
     const tickInterval = new Date(Math.floor(tickTime.getTime() / intervalMs) * intervalMs);
+    const ltq = quote.ltq || 0;
 
     if (!prev.length) {
         return [{
             timestamp: tickInterval.toISOString(),
-            open: quote.last_price, high: quote.last_price, low: quote.last_price, close: quote.last_price, volume: 0
+            open: quote.last_price, high: quote.last_price, low: quote.last_price, close: quote.last_price, volume: ltq
         }];
     }
 
@@ -210,12 +233,13 @@ function updateCandleMTF(prev, quote, minutes) {
     if (tickInterval.getTime() > lastTime.getTime()) {
         return [...prev.slice(-100), {
             timestamp: tickInterval.toISOString(),
-            open: quote.last_price, high: quote.last_price, low: quote.last_price, close: quote.last_price, volume: 0
+            open: quote.last_price, high: quote.last_price, low: quote.last_price, close: quote.last_price, volume: ltq
         }];
     } else {
         last.close = quote.last_price;
         last.high = Math.max(last.high, quote.last_price);
         last.low = Math.min(last.low, quote.last_price);
+        last.volume += ltq;
         return [...prev.slice(0, -1), last];
     }
 }
@@ -223,11 +247,12 @@ function updateCandleMTF(prev, quote, minutes) {
 function updateCandle(prev, quote) {
     const tickTime = new Date(quote.ts_ms);
     const tickMinute = new Date(tickTime.setSeconds(0, 0, 0));
+    const ltq = quote.ltq || 0;
 
     if (!prev.length) {
         return [{
             timestamp: tickMinute.toISOString(),
-            open: quote.last_price, high: quote.last_price, low: quote.last_price, close: quote.last_price, volume: 0
+            open: quote.last_price, high: quote.last_price, low: quote.last_price, close: quote.last_price, volume: ltq
         }];
     }
 
@@ -237,12 +262,13 @@ function updateCandle(prev, quote) {
     if (tickMinute.getTime() > lastMinute.getTime()) {
         return [...prev.slice(-499), {
             timestamp: tickMinute.toISOString(),
-            open: quote.last_price, high: quote.last_price, low: quote.last_price, close: quote.last_price, volume: 0
+            open: quote.last_price, high: quote.last_price, low: quote.last_price, close: quote.last_price, volume: ltq
         }];
     } else {
         last.close = quote.last_price;
         last.high = Math.max(last.high, quote.last_price);
         last.low = Math.min(last.low, quote.last_price);
+        last.volume += ltq;
         return [...prev.slice(0, -1), last];
     }
 }
@@ -298,6 +324,8 @@ function renderChart(chart, title, data, mtf = {}) {
         mtf3Dots = mapMTFTo1M(data, mtf.mtf15, d15);
     }
 
+    const timeLabels = data.map(d => new Date(d.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+
     const options = {
         backgroundColor: 'transparent',
         animation: false,
@@ -306,21 +334,38 @@ function renderChart(chart, title, data, mtf = {}) {
             backgroundColor: '#111827', borderColor: '#374151',
             textStyle: { color: '#e5e7eb', fontSize: 10 }
         },
-        grid: { top: 10, left: 5, right: 45, bottom: 5, containLabel: true },
-        xAxis: {
-            type: 'category',
-            data: data.map(d => new Date(d.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })),
-            axisLine: { lineStyle: { color: '#1f2937' } },
-            axisLabel: { color: '#4b5563', fontSize: 8 }
-        },
-        yAxis: {
-            scale: true, position: 'right',
-            splitLine: { lineStyle: { color: '#111827' } },
-            axisLabel: { color: '#6b7280', fontSize: 9 }
-        },
+        axisPointer: { link: { xAxisIndex: 'all' } },
+        grid: [
+            { top: 10, left: 5, right: 45, height: '65%', containLabel: true },
+            { top: '75%', left: 5, right: 45, height: '20%', containLabel: true }
+        ],
+        xAxis: [
+            {
+                type: 'category', gridIndex: 0, data: timeLabels,
+                axisLine: { lineStyle: { color: '#1f2937' } },
+                axisLabel: { show: false }
+            },
+            {
+                type: 'category', gridIndex: 1, data: timeLabels,
+                axisLine: { lineStyle: { color: '#1f2937' } },
+                axisLabel: { color: '#4b5563', fontSize: 8 }
+            }
+        ],
+        yAxis: [
+            {
+                scale: true, position: 'right', gridIndex: 0,
+                splitLine: { lineStyle: { color: '#111827' } },
+                axisLabel: { color: '#6b7280', fontSize: 9 }
+            },
+            {
+                scale: true, position: 'right', gridIndex: 1,
+                splitLine: { show: false },
+                axisLabel: { show: false }
+            }
+        ],
         series: [
             {
-                type: 'candlestick',
+                type: 'candlestick', xAxisIndex: 0, yAxisIndex: 0,
                 markArea: {
                     silent: true,
                     data: areas.map(a => [{ xAxis: a.xAxis }, { xAxis: a.xAxis + 1, itemStyle: a.itemStyle }])
@@ -332,39 +377,47 @@ function renderChart(chart, title, data, mtf = {}) {
                 }
             },
             {
-                name: 'EVWMA', type: 'line', data: evwma, showSymbol: false,
+                name: 'Volume', type: 'bar', xAxisIndex: 1, yAxisIndex: 1,
+                data: volumes,
+                itemStyle: {
+                    color: (p) => colors[p.dataIndex],
+                    opacity: 0.8
+                }
+            },
+            {
+                name: 'EVWMA', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: evwma, showSymbol: false,
                 lineStyle: { width: 1, color: '#3b82f6', opacity: 0.8 }
             },
             {
-                name: 'DynPivot', type: 'line', data: dynPivot, showSymbol: false,
+                name: 'DynPivot', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: dynPivot, showSymbol: false,
                 lineStyle: { width: 1, color: '#ef4444', opacity: 0.8 }
             },
             {
-                name: 'SwingHigh', type: 'line', data: swings.lastSH, showSymbol: false,
+                name: 'SwingHigh', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: swings.lastSH, showSymbol: false,
                 lineStyle: { width: 1, type: 'dotted', color: '#f87171', opacity: 0.5 }
             },
             {
-                name: 'SwingLow', type: 'line', data: swings.lastSL, showSymbol: false,
+                name: 'SwingLow', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: swings.lastSL, showSymbol: false,
                 lineStyle: { width: 1, type: 'dotted', color: '#4ade80', opacity: 0.5 }
             },
             {
-                type: 'scatter', data: mtf2Dots.supp, symbol: 'circle', symbolSize: 4,
+                type: 'scatter', xAxisIndex: 0, yAxisIndex: 0, data: mtf2Dots.supp, symbol: 'circle', symbolSize: 4,
                 itemStyle: { color: 'rgba(59, 130, 246, 0.6)' }
             },
             {
-                type: 'scatter', data: mtf2Dots.rest, symbol: 'circle', symbolSize: 4,
+                type: 'scatter', xAxisIndex: 0, yAxisIndex: 0, data: mtf2Dots.rest, symbol: 'circle', symbolSize: 4,
                 itemStyle: { color: 'rgba(249, 115, 22, 0.6)' }
             },
             {
-                type: 'scatter', data: mtf3Dots.supp, symbol: 'diamond', symbolSize: 6,
+                type: 'scatter', xAxisIndex: 0, yAxisIndex: 0, data: mtf3Dots.supp, symbol: 'diamond', symbolSize: 6,
                 itemStyle: { color: 'rgba(59, 130, 246, 0.9)' }
             },
             {
-                type: 'scatter', data: mtf3Dots.rest, symbol: 'diamond', symbolSize: 6,
+                type: 'scatter', xAxisIndex: 0, yAxisIndex: 0, data: mtf3Dots.rest, symbol: 'diamond', symbolSize: 6,
                 itemStyle: { color: 'rgba(249, 115, 22, 0.9)' }
             },
             {
-                type: 'scatter',
+                type: 'scatter', xAxisIndex: 0, yAxisIndex: 0,
                 data: bubbles.map(b => [b.index, b.isUp ? data[b.index].low : data[b.index].high]),
                 symbolSize: (v, p) => {
                     const b = bubbles.find(x => x.index === p.dataIndex);
