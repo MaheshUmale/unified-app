@@ -49,6 +49,48 @@ function init() {
     initSocket();
     fetchReplayDates();
     initFullscreen();
+    initTabs();
+}
+
+function initTabs() {
+    const tabIndexBtn = document.getElementById('tabIndexBtn');
+    const tabOptionsBtn = document.getElementById('tabOptionsBtn');
+    const tabIndexContent = document.getElementById('tabIndexContent');
+    const tabOptionsContent = document.getElementById('tabOptionsContent');
+
+    tabIndexBtn.addEventListener('click', () => {
+        tabIndexContent.classList.remove('hidden');
+        tabOptionsContent.classList.add('hidden');
+
+        tabIndexBtn.classList.add('bg-blue-600', 'text-white');
+        tabIndexBtn.classList.remove('bg-gray-900', 'text-gray-400');
+
+        tabOptionsBtn.classList.add('bg-gray-900', 'text-gray-400');
+        tabOptionsBtn.classList.remove('bg-blue-600', 'text-white');
+
+        // Resize charts when they become visible
+        setTimeout(() => {
+            charts.index && charts.index.resize();
+            charts.pcr && charts.pcr.resize();
+        }, 50);
+    });
+
+    tabOptionsBtn.addEventListener('click', () => {
+        tabOptionsContent.classList.remove('hidden');
+        tabIndexContent.classList.add('hidden');
+
+        tabOptionsBtn.classList.add('bg-blue-600', 'text-white');
+        tabOptionsBtn.classList.remove('bg-gray-900', 'text-gray-400');
+
+        tabIndexBtn.classList.add('bg-gray-900', 'text-gray-400');
+        tabIndexBtn.classList.remove('bg-blue-600', 'text-white');
+
+        // Resize charts when they become visible
+        setTimeout(() => {
+            charts.ce && charts.ce.resize();
+            charts.pe && charts.pe.resize();
+        }, 50);
+    });
 }
 
 function initFullscreen() {
@@ -387,8 +429,11 @@ function renderChart(chart, title, data, mtf = {}) {
                 },
                 data: data.map(d => [d.open, d.close, d.low, d.high]),
                 itemStyle: {
-                    color: (p) => colors[p.dataIndex], color0: (p) => colors[p.dataIndex],
-                    borderColor: (p) => colors[p.dataIndex], borderColor0: (p) => colors[p.dataIndex]
+                    // Apply RVOL-based colors to candles (Requirement #2)
+                    color: (p) => colors[p.dataIndex],
+                    color0: (p) => colors[p.dataIndex],
+                    borderColor: (p) => colors[p.dataIndex],
+                    borderColor0: (p) => colors[p.dataIndex]
                 }
             },
             {

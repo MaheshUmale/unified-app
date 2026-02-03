@@ -6,12 +6,15 @@
 const Indicators = {
     sma: (data, period) => {
         const res = new Array(data.length).fill(null);
-        for (let i = period - 1; i < data.length; i++) {
-            let sum = 0;
-            for (let j = 0; j < period; j++) {
-                sum += data[i - j];
+        let sum = 0;
+        for (let i = 0; i < data.length; i++) {
+            sum += data[i];
+            if (i >= period) {
+                sum -= data[i - period];
+                res[i] = sum / period;
+            } else {
+                res[i] = sum / (i + 1);
             }
-            res[i] = sum / period;
         }
         return res;
     },
@@ -159,6 +162,9 @@ const Indicators = {
         return { lastSH, lastSL };
     },
 
+    /**
+     * Requirement #2: Candle coloring based on RVOL
+     */
     getBarColor: (open, close, volume, avgVol) => {
         const rvol = volume / (avgVol || 1);
         const isUp = close >= open;
