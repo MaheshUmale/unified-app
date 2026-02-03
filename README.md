@@ -18,7 +18,7 @@ The core engine evaluates market conditions across five quantitative dimensions:
 
 - **`backend/`**: FastAPI application containing the API server, data engine, and strategy implementations.
 - **`backend/core/strategies/`**: Quantitative logic for the ATM Buying strategy.
-- **`frontend/`**: Unified React + Vite frontend optimized for high-density data visualization.
+- **`backend/templates/`**: Native HTML/JS integrated terminal UI.
 
 ## 🛠️ Setup & Installation
 

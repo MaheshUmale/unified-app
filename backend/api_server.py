@@ -75,13 +75,14 @@ async def lifespan(app: FastAPI):
         dummy_writer = DummyWriter()
 
         for key in all_instruments:
-            logger.info(f"Initializing Combined Strategy for {key}...")
+            hrn = symbol_mapper.get_hrn(key)
+            logger.info(f"Initializing Combined Strategy for {hrn} ({key})...")
             strategy = CombinedSignalEngine(
-                instrument_key=key,
+                instrument_key=hrn,
                 csv_writer=dummy_writer,
                 obi_throttle_sec=1.0
             )
-            data_engine.register_strategy(key, strategy)
+            data_engine.register_strategy(hrn, strategy)
         logger.info("CombinedSignalEngine initialized")
 
     if CandleCrossStrategy:
@@ -89,14 +90,15 @@ async def lifespan(app: FastAPI):
         try:
             persistor_instance = DataPersistor()
             for key in all_instruments:
-                logger.info(f"Initializing Candle Cross Strategy for {key}...")
+                hrn = symbol_mapper.get_hrn(key)
+                logger.info(f"Initializing Candle Cross Strategy for {hrn} ({key})...")
                 strategy = CandleCrossStrategy(
-                    instrument_key=key,
+                    instrument_key=hrn,
                     csv_writer=None,
                     persistor=persistor_instance,
                     is_backtesting=False
                 )
-                data_engine.register_strategy(key, strategy)
+                data_engine.register_strategy(hrn, strategy)
             logger.info("CandleCrossStrategy initialized")
         except Exception as e:
             logger.error(f"Failed to initialize CandleCrossStrategy: {e}")
@@ -670,8 +672,7 @@ async def get_historical_pcr(symbol: str, date: Optional[str] = None):
                     'timestamp': ts,
                     'pcr': pcr,
                     'call_oi': call_oi,
-                    'put_oi': put_oi,
-                    'source': source
+                    'put_oi': put_oi
                 }
 
         results = sorted(results_map.values(), key=lambda x: x['timestamp'])

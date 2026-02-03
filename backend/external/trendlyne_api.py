@@ -138,9 +138,13 @@ def fetch_and_save_oi_snapshot(symbol: str, stock_id: int, expiry_date_str: str,
             total_call_change += int(strike_data.get('callOiChange', 0))
             total_put_change += int(strike_data.get('putOiChange', 0))
 
+        # Normalize symbol to HRN (e.g., NIFTY 50 -> NIFTY)
+        hrn = symbol_mapper.get_symbol(symbol)
+        if hrn == "UNKNOWN": hrn = symbol.upper()
+
         doc = {
-            'stock_id': symbol, # Unified ID
-            'symbol': symbol,
+            'stock_id': hrn, # Unified HRN identifier
+            'symbol': hrn,
             'date': current_date_str,
             'timestamp': timestamp_snapshot,
             'expiry_date': expiry_str,
@@ -152,7 +156,7 @@ def fetch_and_save_oi_snapshot(symbol: str, stock_id: int, expiry_date_str: str,
             'updated_at': datetime.now()
         }
 
-        query = {'symbol': symbol, 'date': current_date_str, 'timestamp': timestamp_snapshot}
+        query = {'stock_id': hrn, 'date': current_date_str, 'timestamp': timestamp_snapshot}
         oi_collection.update_one(query, {'$set': doc}, upsert=True)
         return True
 
@@ -206,13 +210,16 @@ def fetch_futures_buildup(symbol: str, expiry: str) -> List[Dict[str, Any]]:
 
     # Cache in MongoDB if we got results
     if results:
+        hrn = symbol_mapper.get_symbol(symbol)
+        if hrn == "UNKNOWN": hrn = symbol.upper()
+
         coll = get_trendlyne_buildup_collection()
         for item in results:
-            item['symbol'] = symbol
+            item['symbol'] = hrn
             item['expiry'] = expiry
             item['mtype'] = 'futures'
             item['updated_at'] = datetime.now()
-            query = {'symbol': symbol, 'expiry': expiry, 'timestamp': item.get('timestamp'), 'mtype': 'futures'}
+            query = {'symbol': hrn, 'expiry': expiry, 'timestamp': item.get('timestamp'), 'mtype': 'futures'}
             coll.update_one(query, {'$set': item}, upsert=True)
         return results
 
@@ -235,8 +242,20 @@ def fetch_option_buildup(symbol: str, expiry: str, strike: int, option_type: str
 
     # Cache in MongoDB
     if results:
+        # Generate HRN for the option
+        opt_type = 'CALL' if option_type.upper() in ['CALL', 'CE'] else 'PUT'
+        meta = {
+            'symbol': symbol,
+            'type': opt_type,
+            'strike': strike,
+            'expiry': expiry
+        }
+        # Use dummy key to generate HRN if not in master
+        hrn = symbol_mapper.get_hrn(f"TL_OPT|{symbol}|{expiry}|{strike}|{opt_type}", meta)
+
         coll = get_trendlyne_buildup_collection()
         for item in results:
+            item['hrn'] = hrn
             item['symbol'] = symbol
             item['expiry'] = expiry
             item['strike'] = strike
@@ -244,10 +263,7 @@ def fetch_option_buildup(symbol: str, expiry: str, strike: int, option_type: str
             item['mtype'] = 'options'
             item['updated_at'] = datetime.now()
             query = {
-                'symbol': symbol,
-                'expiry': expiry,
-                'strike': strike,
-                'option_type': option_type,
+                'hrn': hrn,
                 'timestamp': item.get('timestamp'),
                 'mtype': 'options'
             }
