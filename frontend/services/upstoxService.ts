@@ -41,6 +41,13 @@ export const getIntradayCandles = async (key: string, date?: string): Promise<Oh
     return [];
 };
 
+export const getHistoricalPcr = async (symbol: string, date?: string) => {
+    let url = `/api/analytics/pcr/${symbol}`;
+    if (date) url += `?date=${date}`;
+    const data = await safeFetch(url);
+    return data || [];
+};
+
 export const getOptionChain = async (key: string, expiry: string): Promise<OptionChainItem[]> => {
     const url = `${API_BASE}/option_chain/${encodeURIComponent(key)}/${expiry}`;
     const data = await safeFetch(url);
