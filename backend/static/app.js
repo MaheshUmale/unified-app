@@ -171,18 +171,18 @@ function initSocket() {
 function handleTickUpdate(quotes) {
     let indexUpdated = false, ceUpdated = false, peUpdated = false;
 
-    if (quotes[currentIndex]) {
+    if (quotes[currentIndex] && quotes[currentIndex].last_price) {
         indexData = updateCandle(indexData, quotes[currentIndex]);
         mtf5Data = updateCandleMTF(mtf5Data, quotes[currentIndex], 5);
         mtf15Data = updateCandleMTF(mtf15Data, quotes[currentIndex], 15);
         indexUpdated = true;
         document.getElementById('spotPrice').innerText = quotes[currentIndex].last_price.toFixed(2);
     }
-    if (atmKeys.ce && quotes[atmKeys.ce]) {
+    if (atmKeys.ce && quotes[atmKeys.ce] && quotes[atmKeys.ce].last_price) {
         ceData = updateCandle(ceData, quotes[atmKeys.ce]);
         ceUpdated = true;
     }
-    if (atmKeys.pe && quotes[atmKeys.pe]) {
+    if (atmKeys.pe && quotes[atmKeys.pe] && quotes[atmKeys.pe].last_price) {
         peData = updateCandle(peData, quotes[atmKeys.pe]);
         peUpdated = true;
     }
@@ -193,7 +193,7 @@ function handleTickUpdate(quotes) {
 }
 
 function updateCandleMTF(prev, quote, minutes) {
-    const tickTime = new Date(quote.timestamp);
+    const tickTime = new Date(quote.ts_ms);
     const intervalMs = minutes * 60 * 1000;
     const tickInterval = new Date(Math.floor(tickTime.getTime() / intervalMs) * intervalMs);
 
@@ -221,7 +221,7 @@ function updateCandleMTF(prev, quote, minutes) {
 }
 
 function updateCandle(prev, quote) {
-    const tickTime = new Date(quote.timestamp);
+    const tickTime = new Date(quote.ts_ms);
     const tickMinute = new Date(tickTime.setSeconds(0, 0, 0));
 
     if (!prev.length) {

@@ -267,19 +267,12 @@ def on_message(message: Union[Dict, bytes, str]):
         # logging.info(f"WSS: Received ticks for {list(feeds_map.keys())}")
         pass
 
-    # Batch raw tick persistence
-    global raw_tick_buffer
-    with raw_buffer_lock:
-        raw_tick_buffer.append(data)
-        if len(raw_tick_buffer) >= TICK_BATCH_SIZE:
-            threading.Thread(target=flush_raw_tick_buffer, daemon=True).start()
-
     if feeds_map:
         current_time = datetime.now()
         new_ticks = []
         hrn_feeds = {}
 
-        for inst_key, feed_datum in feeds_map.items():
+        for inst_key, feed_datum in list(feeds_map.items()):
             # Resolve HRN
             inst_key = normalize_key(inst_key)
             meta = instrument_metadata.get(inst_key)
@@ -289,6 +282,10 @@ def on_message(message: Union[Dict, bytes, str]):
             feed_datum['raw_key'] = inst_key # Keep raw key for internal use
             feed_datum['_insertion_time'] = current_time
             hrn_feeds[hrn] = feed_datum
+
+            # Replace raw key with HRN in the main data object for uniform storage
+            del feeds_map[inst_key]
+            feeds_map[hrn] = feed_datum
 
             # Extract common timestamp for easier replay/querying
             ff = feed_datum.get('fullFeed', {})
@@ -361,19 +358,29 @@ def on_message(message: Union[Dict, bytes, str]):
 
                 feed_datum['ts_ms'] = ts_val
                 if ltpc.get('ltp'):
-                    latest_prices[inst_key] = float(ltpc['ltp'])
-                    latest_prices[hrn] = float(ltpc['ltp'])
+                    price = float(ltpc['ltp'])
+                    feed_datum['last_price'] = price
+                    latest_prices[inst_key] = price
+                    latest_prices[hrn] = price
 
             new_ticks.append(feed_datum)
 
-            if inst_key in active_strategies:
-                for strategy in active_strategies[inst_key]:
+            # Strategy dispatch using HRN
+            if hrn in active_strategies:
+                for strategy in active_strategies[hrn]:
                     try:
                         strategy.process_tick(feed_datum)
                     except Exception as e:
-                        logging.error(f"Error in strategy {strategy.__class__.__name__} for {inst_key}: {e}")
+                        logging.error(f"Error in strategy {strategy.__class__.__name__} for {hrn}: {e}")
 
             process_footprint_tick(hrn, feed_datum)
+
+        # Batch raw tick persistence (Standardized with HRNs)
+        global raw_tick_buffer
+        with raw_buffer_lock:
+            raw_tick_buffer.append(data)
+            if len(raw_tick_buffer) >= TICK_BATCH_SIZE:
+                threading.Thread(target=flush_raw_tick_buffer, daemon=True).start()
 
         # Throttled SocketIO Emission (Global per feed message)
         try:

@@ -90,9 +90,9 @@ class UpstoxAPI:
         """Fetches intraday candle data using Upstox History SDK."""
         api_instance = upstox_client.HistoryV3Api(self.api_client)
         try:
-            # Using singular "minute" or "day" as per standard V3 SDK units
+            # Using plural "minutes" as per latest SDK requirement for intraday
             count = int(interval)
-            response = api_instance.get_intra_day_candle_data(instrument_key, "minute", count)
+            response = api_instance.get_intra_day_candle_data(instrument_key, "minutes", count)
             # Map SDK response to expected dict format
             candles = response.data.candles if hasattr(response.data, 'candles') else []
             return {"status": "success", "data": {"candles": candles}}
@@ -104,17 +104,17 @@ class UpstoxAPI:
         """Fetches historical candle data using Upstox History SDK."""
         api_instance = upstox_client.HistoryV3Api(self.api_client)
         try:
-            # Map interval to SDK units
-            unit = "day"
+            # Map interval to SDK units (plural "days"/"minutes")
+            unit = "days"
             count = 1
             if interval == "1":
-                unit = "minute"
+                unit = "minutes"
                 count = 1
             elif interval == "30":
-                unit = "minute"
+                unit = "minutes"
                 count = 30
             elif interval == "1D":
-                unit = "day"
+                unit = "days"
                 count = 1
 
             if from_date:

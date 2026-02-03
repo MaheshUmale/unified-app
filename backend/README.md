@@ -11,13 +11,11 @@ Handles all communication with third-party APIs and data providers.
 - **`upstox_feed.py`**: Manages the persistent WebSocket connection to Upstox Market Data Feed V3.
 - **`upstox_api.py`**: REST client for Upstox V3 (historical/intraday candles) and V2 (option chain).
 - **`upstox_helper.py`**: Utilities for instrument key resolution and NSE master data caching.
-- **`trendlyne_api.py`**: Service for fetching expiry dates, buildup data, and backfilling OI. Implements `TrendlyneSession` for CSRF/cookie management.
-- **`data_fetcher.py`**: General purpose HTTP data fetching with retries.
-- **`order_manager.py`**: Interface for order placement and status tracking.
+- **`trendlyne_api.py`**: Service for fetching expiry dates, buildup data, and backfilling OI. Implements `TrendlyneSession` for CSRF/cookie management. Now uses uniform HRN naming for all stored data.
 
 ### 2. DB Access Module (`db/`)
 Centralized database interaction layer using MongoDB.
-- **`mongodb.py`**: Handles connection pooling, collection access, and indexing for `upstox_strategy_db_new`.
+- **`mongodb.py`**: Handles connection pooling, collection access, and indexing for `PRO_TRADE_DATABASE`.
 
 ### 3. Brain/Logic Module (`core/`)
 The decision-making heart of the platform.
@@ -28,9 +26,9 @@ The decision-making heart of the platform.
 - **`position_manager.py`**: Tracks live P&L and active positions.
 
 ### 4. UI/API Layer (`api_server.py`)
-Serves as the entry point for the frontend and external clients.
-- **FastAPI**: Provides REST endpoints for instruments, P&L, data triggers, and proxies for Upstox/Trendlyne data.
-- **Socket.io**: Streams real-time ticks and signals to the Angular frontend.
+Serves as the entry point for the integrated terminal.
+- **FastAPI**: Provides REST endpoints for instruments, P&L, data triggers, and proxies for Upstox/Trendlyne data. Serves the integrated terminal via Jinja2 templates.
+- **Socket.io**: Streams real-time ticks and analytics updates to the terminal UI.
 
 ## Setup & Installation
 
@@ -52,4 +50,5 @@ Serves as the entry point for the frontend and external clients.
 
 ## Development
 - **Tests**: Run unit tests using `pytest tests/`.
-- **Database**: The system defaults to using the `upstox_strategy_db_new` database.
+- **Database**: The system defaults to using the `PRO_TRADE_DATABASE` database.
+- **Conventions**: All market data is stored using Human Readable Names (HRN) to ensure consistency across providers (Upstox, Trendlyne).
