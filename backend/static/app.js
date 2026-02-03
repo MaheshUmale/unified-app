@@ -48,6 +48,21 @@ function init() {
     loadInitialData();
     initSocket();
     fetchReplayDates();
+    initFullscreen();
+}
+
+function initFullscreen() {
+    document.querySelectorAll('.maximize-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const container = btn.closest('.chart-container');
+            const chartKey = container.dataset.chart;
+            container.classList.toggle('fullscreen-chart');
+            // Small delay to allow CSS transition if any, though fixed position is instant
+            setTimeout(() => {
+                if (charts[chartKey]) charts[chartKey].resize();
+            }, 50);
+        });
+    });
 }
 
 async function loadInitialData() {

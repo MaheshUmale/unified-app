@@ -160,17 +160,21 @@ const Indicators = {
     },
 
     getBarColor: (open, close, volume, avgVol) => {
-        const volumePercent = volume / (avgVol || 1);
+        const rvol = volume / (avgVol || 1);
         const isUp = close >= open;
-        const bCol = isUp ? '#03b309' : '#d30101';
 
-        if (volumePercent >= 3) return isUp ? '#007504' : '#890101';
-        if (volumePercent >= 2) return isUp ? '#03b309' : '#d30101';
-        if (volumePercent >= 1.6) return bCol + 'e6'; // approx 10% opacity decrease
-        if (volumePercent >= 1.2) return bCol + 'b3'; // 30%
-        if (volumePercent >= 0.8) return bCol + '66'; // 60%
-        if (volumePercent >= 0.5) return bCol + '33'; // 80%
-        return bCol + '1a'; // 90%
+        // RVOL Breakout Color (Yellow)
+        if (rvol >= 2.5) return '#fbbf24';
+
+        if (isUp) {
+            if (rvol >= 1.5) return '#22c55e'; // Vibrant Up
+            if (rvol >= 0.8) return '#16a34a'; // Normal Up
+            return '#14532d'; // Low Vol Up
+        } else {
+            if (rvol >= 1.5) return '#ef4444'; // Vibrant Down
+            if (rvol >= 0.8) return '#dc2626'; // Normal Down
+            return '#7f1d1d'; // Low Vol Down
+        }
     },
 
     getBubbleData: (data, period, size, delta) => {
