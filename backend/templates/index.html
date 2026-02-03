@@ -17,6 +17,7 @@
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #374151; border-radius: 10px; }
         .loading-bar { height: 2px; background: linear-gradient(to right, #3b82f6, #60a5fa); animation: loading 2s infinite; }
         @keyframes loading { 0% { width: 0; } 50% { width: 100%; } 100% { width: 0; } }
+        .fullscreen-chart { position: fixed !important; top: 0 !important; left: 0 !important; width: 100vw !important; height: 100vh !important; z-index: 1000 !important; background: #000 !important; padding: 1rem !important; }
     </style>
 </head>
 <body class="h-full flex flex-col">
@@ -62,27 +63,39 @@
     <main class="flex-1 p-1 grid grid-cols-12 gap-1 overflow-hidden bg-black">
         <!-- Index & PCR Section (Main) -->
         <div class="col-span-12 lg:col-span-9 flex flex-col gap-1 h-full">
-            <div class="flex-[3] glass-panel rounded-lg p-0 relative overflow-hidden border-blue-900/30">
+            <div class="flex-[3] glass-panel rounded-lg p-0 relative overflow-hidden border-blue-900/30 chart-container" data-chart="index">
                 <div class="absolute top-2 left-2 z-10 flex gap-2">
                     <div class="bg-blue-600/40 px-2 py-0.5 rounded text-[9px] font-black text-white uppercase tracking-tighter">INDEX SPOT</div>
                     <div id="indexTfLabel" class="bg-gray-800/80 px-2 py-0.5 rounded text-[9px] font-bold text-gray-400">1M + MTF</div>
                 </div>
+                <button class="maximize-btn absolute top-2 right-2 z-10 text-gray-600 hover:text-white transition-colors">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
+                </button>
                 <div id="indexChart" class="w-full h-full"></div>
             </div>
-            <div class="flex-1 glass-panel rounded-lg p-0 relative overflow-hidden border-purple-900/20">
+            <div class="flex-1 glass-panel rounded-lg p-0 relative overflow-hidden border-purple-900/20 chart-container" data-chart="pcr">
                 <div class="absolute top-2 left-2 z-10 bg-purple-600/30 px-2 py-0.5 rounded text-[8px] font-black text-purple-300 uppercase tracking-widest">PCR FLOW</div>
+                <button class="maximize-btn absolute top-2 right-2 z-10 text-gray-600 hover:text-white transition-colors">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
+                </button>
                 <div id="pcrChart" class="w-full h-full"></div>
             </div>
         </div>
 
         <!-- Options Section (Side) -->
         <div class="col-span-12 lg:col-span-3 flex flex-col gap-1 h-full">
-            <div class="flex-1 glass-panel rounded-lg p-0 relative overflow-hidden border-green-900/30">
-                <div class="absolute top-2 right-2 z-10 bg-green-600/40 px-2 py-0.5 rounded text-[9px] font-black text-white uppercase tracking-tighter">ATM CE</div>
+            <div class="flex-1 glass-panel rounded-lg p-0 relative overflow-hidden border-green-900/30 chart-container" data-chart="ce">
+                <div class="absolute top-2 left-2 z-10 bg-green-600/40 px-2 py-0.5 rounded text-[9px] font-black text-white uppercase tracking-tighter">ATM CE</div>
+                <button class="maximize-btn absolute top-2 right-2 z-10 text-gray-600 hover:text-white transition-colors">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
+                </button>
                 <div id="ceChart" class="w-full h-full"></div>
             </div>
-            <div class="flex-1 glass-panel rounded-lg p-0 relative overflow-hidden border-red-900/30">
-                <div class="absolute top-2 right-2 z-10 bg-red-600/40 px-2 py-0.5 rounded text-[9px] font-black text-white uppercase tracking-tighter">ATM PE</div>
+            <div class="flex-1 glass-panel rounded-lg p-0 relative overflow-hidden border-red-900/30 chart-container" data-chart="pe">
+                <div class="absolute top-2 left-2 z-10 bg-red-600/40 px-2 py-0.5 rounded text-[9px] font-black text-white uppercase tracking-tighter">ATM PE</div>
+                <button class="maximize-btn absolute top-2 right-2 z-10 text-gray-600 hover:text-white transition-colors">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
+                </button>
                 <div id="peChart" class="w-full h-full"></div>
             </div>
         </div>
