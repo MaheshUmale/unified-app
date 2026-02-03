@@ -344,9 +344,10 @@ function renderChart(chart, title, data, mtf = {}) {
 
     let cumPV = 0, cumV = 0;
     const vwap = data.map(d => {
-        cumPV += ((d.high + d.low + d.close) / 3) * d.volume;
-        cumV += d.volume;
-        return cumPV / (cumV || 1);
+        const typical = (d.high + d.low + d.close) / 3;
+        cumPV += typical * (d.volume || 0);
+        cumV += (d.volume || 0);
+        return cumV > 0 ? cumPV / cumV : typical;
     });
 
     const dataWithVwap = data.map((d, i) => ({ ...d, vwap: vwap[i] }));
@@ -392,9 +393,18 @@ function renderChart(chart, title, data, mtf = {}) {
             textStyle: { color: '#e5e7eb', fontSize: 10 }
         },
         axisPointer: { link: { xAxisIndex: 'all' } },
+        dataZoom: [
+            { type: 'inside', xAxisIndex: [0, 1] },
+            {
+                type: 'slider', xAxisIndex: [0, 1],
+                top: '92%', height: 16, borderColor: 'transparent',
+                textStyle: { color: '#4b5563', fontSize: 8 },
+                handleSize: '80%'
+            }
+        ],
         grid: [
-            { top: 10, left: 5, right: 45, height: '65%', containLabel: true },
-            { top: '75%', left: 5, right: 45, height: '20%', containLabel: true }
+            { top: 10, left: 5, right: 45, height: '60%', containLabel: true },
+            { top: '72%', left: 5, right: 45, height: '18%', containLabel: true }
         ],
         xAxis: [
             {
@@ -412,10 +422,11 @@ function renderChart(chart, title, data, mtf = {}) {
             {
                 scale: true, position: 'right', gridIndex: 0,
                 splitLine: { lineStyle: { color: '#111827' } },
-                axisLabel: { color: '#6b7280', fontSize: 9 }
+                axisLabel: { color: '#6b7280', fontSize: 9 },
+                boundaryGap: ['5%', '5%']
             },
             {
-                scale: true, position: 'right', gridIndex: 1,
+                scale: false, min: 0, position: 'right', gridIndex: 1,
                 splitLine: { show: false },
                 axisLabel: { show: false }
             }
@@ -526,7 +537,11 @@ function renderPcrChart() {
     const options = {
         backgroundColor: 'transparent',
         animation: false,
-        grid: { top: 10, left: 10, right: 50, bottom: 20, containLabel: true },
+        dataZoom: [
+            { type: 'inside' },
+            { type: 'slider', bottom: 0, height: 16 }
+        ],
+        grid: { top: 10, left: 10, right: 50, bottom: 30, containLabel: true },
         xAxis: {
             type: 'category',
             data: pcrData.map(d => new Date(d.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })),

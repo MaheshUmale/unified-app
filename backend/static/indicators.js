@@ -7,13 +7,22 @@ const Indicators = {
     sma: (data, period) => {
         const res = new Array(data.length).fill(null);
         let sum = 0;
+        let count = 0;
         for (let i = 0; i < data.length; i++) {
-            sum += data[i];
+            const val = data[i];
+            if (val !== null && val !== undefined && !isNaN(val)) {
+                sum += val;
+                count++;
+            }
             if (i >= period) {
-                sum -= data[i - period];
-                res[i] = sum / period;
+                const oldVal = data[i - period];
+                if (oldVal !== null && oldVal !== undefined && !isNaN(oldVal)) {
+                    sum -= oldVal;
+                    count--;
+                }
+                res[i] = count > 0 ? sum / count : null;
             } else {
-                res[i] = sum / (i + 1);
+                res[i] = count > 0 ? sum / count : null;
             }
         }
         return res;
