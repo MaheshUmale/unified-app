@@ -901,13 +901,14 @@ def start_websocket_thread(access_token: str, instrument_keys: List[str]):
     threading.Thread(target=market_hour_monitor, daemon=True).start()
     threading.Thread(target=subscription_keep_alive, daemon=True).start()
 
-def load_intraday_data(instrument_key, date_str=None):
+def load_intraday_data(instrument_key, date_str=None, timeframe_min=1):
     """
     Fetches and aggregates data for a specific date (defaults to today) from 9:15 AM to 3:30 PM.
 
     Args:
         instrument_key (str): The instrument key.
         date_str (str): Optional date in YYYY-MM-DD format.
+        timeframe_min (int): Aggregation timeframe in minutes.
 
     Returns:
         list: A list of aggregated OHLC/Footprint bars.
@@ -926,14 +927,10 @@ def load_intraday_data(instrument_key, date_str=None):
     end_ms = int(end_time.timestamp() * 1000)
 
     # Query ticks within the date's market hours
-    # instrument_key can be HRN or raw key
     keys_to_search = [instrument_key]
-
-    # Resolve technical key if input is HRN
     raw_key = symbol_mapper.resolve_to_key(instrument_key)
     if raw_key and raw_key not in keys_to_search:
         keys_to_search.append(raw_key)
-        # Also support colon version just in case
         if '|' in raw_key:
             keys_to_search.append(raw_key.replace('|', ':'))
 
@@ -952,13 +949,12 @@ def load_intraday_data(instrument_key, date_str=None):
     bars = []
 
     try:
-        # Create a collector for replay data
         def collect_bar(event, data, room=None):
             if event == 'footprint_data':
                 bars.append(data)
 
         replay = ReplayManager(emit_fn=collect_bar)
-        replay.timeframe_sec = 60
+        replay.timeframe_sec = timeframe_min * 60
         for doc in cursor:
             replay.process_replay_tick(doc)
 
