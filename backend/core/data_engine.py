@@ -363,6 +363,12 @@ def on_message(message: Union[Dict, bytes, str]):
                     latest_prices[inst_key] = price
                     latest_prices[hrn] = price
 
+                # Explicitly capture last traded quantity for volume aggregation
+                if ltpc.get('ltq'):
+                    feed_datum['ltq'] = int(ltpc['ltq'])
+                else:
+                    feed_datum['ltq'] = 0
+
             new_ticks.append(feed_datum)
 
             # Strategy dispatch using HRN
