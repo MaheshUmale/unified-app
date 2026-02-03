@@ -68,18 +68,22 @@ const App = () => {
 
   useEffect(() => {
     const updateExpiry = async () => {
-        if (isReplayMode) return; // Skip external expiry fetch in replay mode
         const symbol = indexKey;
+
+        // Immediate cleanup of charts and strikes when index changes
+        setIndexData([]);
+        setCeData([]);
+        setPeData([]);
+        setAtmStrike(0);
+        atmOptionKeysRef.current = { ce: '', pe: '' };
+
+        if (isReplayMode) return; // Skip external expiry fetch in replay mode
+
         if (lastExpiryIndexRef.current === symbol) return;
 
         setLoading(true);
-        // Clear stale state when index changes
-        setAtmStrike(0);
         setExpiryDate('');
         setExpiryLabel('');
-        setCeData([]);
-        setPeData([]);
-        atmOptionKeysRef.current = { ce: '', pe: '' };
 
         const expiries = await Trendlyne.fetchExpiryDates(symbol);
         if (expiries && expiries.length > 0) {
@@ -157,12 +161,28 @@ const App = () => {
         }
         if (msg.type === 'oi_update') {
             const currentSymbol = indexKeyRef.current;
-            if (msg.symbol !== currentSymbol) return;
+            // Robust symbol matching
+            const msgSymbol = msg.symbol?.toUpperCase();
+            const targetSymbol = currentSymbol?.toUpperCase();
+
+            if (msgSymbol && targetSymbol && !msgSymbol.includes(targetSymbol) && !targetSymbol.includes(msgSymbol)) {
+                return;
+            }
 
             setLastSync(new Date());
 
             setSentiment(prev => {
-                if (!prev) return null;
+                const defaultSentiment: MarketSentiment = {
+                    pcr: msg.pcr,
+                    trend: msg.pcr > 1.2 ? 'BULLISH' : msg.pcr < 0.8 ? 'BEARISH' : 'NEUTRAL',
+                    maxCallStrike: 0,
+                    maxPutStrike: 0,
+                    maxCallOI: msg.call_oi || 0,
+                    maxPutOI: msg.put_oi || 0
+                };
+
+                if (!prev) return defaultSentiment;
+
                 return {
                     ...prev,
                     pcr: msg.pcr,

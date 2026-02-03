@@ -90,10 +90,12 @@ class UpstoxAPI:
         """Fetches intraday candle data using Upstox History SDK."""
         api_instance = upstox_client.HistoryV3Api(self.api_client)
         try:
+            # Using singular "minute" or "day" as per standard V3 SDK units
             count = int(interval)
-            response = api_instance.get_intra_day_candle_data(instrument_key, "minutes", count)
+            response = api_instance.get_intra_day_candle_data(instrument_key, "minute", count)
             # Map SDK response to expected dict format
-            return {"status": "success", "data": {"candles": response.data.candles if hasattr(response.data, 'candles') else []}}
+            candles = response.data.candles if hasattr(response.data, 'candles') else []
+            return {"status": "success", "data": {"candles": candles}}
         except Exception as e:
             logger.error(f"Exception when calling HistoryV3Api->get_intra_day_candle_data: {e}")
             return None
@@ -106,10 +108,10 @@ class UpstoxAPI:
             unit = "minutes"
             count = 1
             if interval == "1":
-                unit = "minutes"
+                unit = "minute"
                 count = 1
             elif interval == "30":
-                unit = "minutes"
+                unit = "minute"
                 count = 30
             elif interval == "1D":
                 unit = "day"
@@ -118,11 +120,10 @@ class UpstoxAPI:
             if from_date:
                 response = api_instance.get_historical_candle_data1(instrument_key, unit, count, to_date, from_date)
             else:
-                # For get_historical_candle_data, the signature might be (instrument_key, unit, count, to_date)
-                # but SDK might use different names.
                 response = api_instance.get_historical_candle_data(instrument_key, unit, count, to_date)
 
-            return {"status": "success", "data": {"candles": response.data.candles if hasattr(response.data, 'candles') else []}}
+            candles = response.data.candles if hasattr(response.data, 'candles') else []
+            return {"status": "success", "data": {"candles": candles}}
         except Exception as e:
             logger.error(f"Exception when calling HistoryV3Api->get_historical_candle: {e}")
             return None

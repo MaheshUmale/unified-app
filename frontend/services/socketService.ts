@@ -31,9 +31,10 @@ class SocketService {
             }
         });
 
-        this.socket.on('raw_tick', (dataString: string) => {
+        this.socket.on('raw_tick', (data: any) => {
             try {
-                const rawData = JSON.parse(dataString);
+                // Support both string (legacy) and object (modern) data
+                const rawData = typeof data === 'string' ? JSON.parse(data) : data;
                 const flattenedQuotes: Record<string, { last_price: number, timestamp: number }> = {};
 
                 Object.keys(rawData).forEach(key => {
@@ -46,9 +47,16 @@ class SocketService {
                     const ltpc = fullFeed?.indexFF?.ltpc || fullFeed?.marketFF?.ltpc;
 
                     if (ltpc && typeof ltpc.ltp === 'number') {
+                        let ts = ltpc.ltt ? parseInt(ltpc.ltt) : Date.now();
+
+                        // Robustness: Detect 10-digit (seconds) timestamps and convert to milliseconds
+                        if (ts > 0 && ts < 10000000000) {
+                            ts *= 1000;
+                        }
+
                         flattenedQuotes[normalizedKey] = {
                             last_price: ltpc.ltp,
-                            timestamp: ltpc.ltt ? parseInt(ltpc.ltt) : Date.now()
+                            timestamp: ts
                         };
                     }
                 });

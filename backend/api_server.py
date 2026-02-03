@@ -559,7 +559,7 @@ async def get_upstox_intraday(instrument_key: str, date: Optional[str] = None):
 
 @fastapi_app.get("/api/upstox/option_chain/{instrument_key}/{expiry_date}")
 async def get_upstox_option_chain(instrument_key: str, expiry_date: str):
-    """Fetch option chain from Upstox V2. instrument_key can be HRN."""
+    """Fetch option chain from Upstox V3. instrument_key can be HRN."""
     try:
         clean_key = unquote(instrument_key)
         raw_key = symbol_mapper.resolve_to_key(clean_key) or clean_key
