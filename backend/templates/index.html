@@ -23,47 +23,57 @@
 <body class="h-full flex flex-col">
     <div id="loading" class="hidden absolute top-0 left-0 w-full z-[100] loading-bar"></div>
 
-    <header class="h-14 glass-panel border-b border-white/5 sticky top-0 z-50 px-6 flex items-center justify-between">
-        <div class="flex items-center gap-8">
+    <header class="min-h-14 py-2 glass-panel border-b border-white/5 sticky top-0 z-50 px-4 md:px-6 flex flex-wrap items-center justify-between gap-4">
+        <div class="flex items-center gap-4 md:gap-8">
             <div class="flex flex-col">
-                <span class="text-xl font-black text-white tracking-tighter italic leading-none uppercase">PRO<span class="text-blue-500">DESK</span></span>
-                <span class="text-[8px] text-gray-600 font-bold tracking-[0.4em] uppercase">Integrated Terminal</span>
+                <span class="text-lg md:text-xl font-black text-white tracking-tighter italic leading-none uppercase">PRO<span class="text-blue-500">DESK</span></span>
+                <span class="text-[7px] md:text-[8px] text-gray-600 font-bold tracking-[0.4em] uppercase">Integrated Terminal</span>
             </div>
             <div class="h-8 w-[1px] bg-gray-800 mx-1"></div>
-            <select id="indexSelect" class="bg-gray-900 border border-gray-800 rounded px-3 py-1 text-xs font-bold text-blue-400 outline-none focus:ring-1 focus:ring-blue-500 transition-all">
+            <select id="indexSelect" class="bg-gray-900 border border-gray-800 rounded px-2 md:px-3 py-1 text-[10px] md:text-xs font-bold text-blue-400 outline-none focus:ring-1 focus:ring-blue-500 transition-all">
                 <option value="NIFTY">NIFTY 50</option>
                 <option value="BANKNIFTY">BANK NIFTY</option>
                 <option value="FINNIFTY">FIN NIFTY</option>
             </select>
         </div>
 
-        <div class="flex items-center gap-6">
-            <div id="replayControls" class="flex items-center gap-3 bg-gray-900/50 p-1 rounded-lg border border-white/5">
-                <select id="replayDateSelect" class="bg-transparent text-[10px] font-bold text-gray-400 outline-none cursor-pointer px-2">
+        <div class="flex flex-wrap items-center gap-4 md:gap-6">
+            <div id="replayControls" class="flex items-center gap-2 md:gap-3 bg-gray-900/50 p-1 rounded-lg border border-white/5">
+                <select id="replayDateSelect" class="bg-transparent text-[9px] md:text-[10px] font-bold text-gray-400 outline-none cursor-pointer px-1 md:px-2">
                     <option value="">Current Session</option>
                 </select>
-                <button id="replayBtn" class="bg-blue-600 hover:bg-blue-700 p-1.5 rounded transition-colors disabled:opacity-50">
+                <button id="replayBtn" class="bg-blue-600 hover:bg-blue-700 p-1 md:p-1.5 rounded transition-colors disabled:opacity-50">
                     <svg class="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20"><path d="M4.5 3.5v13L16.5 10l-12-6.5z"/></svg>
                 </button>
             </div>
-            <div class="h-8 w-[1px] bg-gray-800 mx-1"></div>
-            <div class="flex items-center gap-6">
+            <div class="hidden md:block h-8 w-[1px] bg-gray-800 mx-1"></div>
+            <div class="flex items-center gap-4 md:gap-6">
                 <div class="flex flex-col items-end">
-                    <span class="text-[8px] text-gray-600 font-bold uppercase tracking-widest">SPOT</span>
-                    <span id="spotPrice" class="text-white font-black font-mono-data text-sm">---</span>
+                    <span class="text-[7px] md:text-[8px] text-gray-600 font-bold uppercase tracking-widest">SPOT</span>
+                    <span id="spotPrice" class="text-white font-black font-mono-data text-xs md:text-sm">---</span>
                 </div>
                 <div class="flex flex-col items-end">
-                    <span class="text-[8px] text-gray-600 font-bold uppercase tracking-widest">ATM</span>
-                    <span id="atmStrike" class="text-blue-500 font-black font-mono-data text-sm">---</span>
+                    <span class="text-[7px] md:text-[8px] text-gray-600 font-bold uppercase tracking-widest">ATM</span>
+                    <span id="atmStrike" class="text-blue-500 font-black font-mono-data text-xs md:text-sm">---</span>
                 </div>
             </div>
         </div>
     </header>
 
-    <main class="flex-1 p-1 grid grid-cols-12 gap-1 overflow-hidden bg-black">
-        <!-- Index & PCR Section (Main) -->
-        <div class="col-span-12 lg:col-span-9 flex flex-col gap-1 h-full">
-            <div class="flex-[3] glass-panel rounded-lg p-0 relative overflow-hidden border-blue-900/30 chart-container" data-chart="index">
+    <main class="flex-1 p-1 flex flex-col overflow-hidden bg-black">
+        <!-- Tab Navigation -->
+        <div class="flex gap-1 mb-1 px-1">
+            <button id="tabIndexBtn" class="flex-1 py-2 rounded-t-lg bg-blue-600 text-white text-[9px] md:text-[10px] font-black uppercase tracking-tighter transition-all">
+                INDEX + PCR FLOW
+            </button>
+            <button id="tabOptionsBtn" class="flex-1 py-2 rounded-t-lg bg-gray-900 text-gray-400 text-[9px] md:text-[10px] font-black uppercase tracking-tighter transition-all">
+                ATM CE & PE CHARTS
+            </button>
+        </div>
+
+        <!-- Tab Content -->
+        <div id="tabIndexContent" class="flex-1 flex flex-col gap-1 overflow-hidden">
+            <div class="flex-[2] glass-panel rounded-lg p-0 relative overflow-hidden border-blue-900/30 chart-container" data-chart="index">
                 <div class="absolute top-2 left-2 z-10 flex gap-2">
                     <div class="bg-blue-600/40 px-2 py-0.5 rounded text-[9px] font-black text-white uppercase tracking-tighter">INDEX SPOT</div>
                     <div id="indexTfLabel" class="bg-gray-800/80 px-2 py-0.5 rounded text-[9px] font-bold text-gray-400">1M + MTF</div>
@@ -82,8 +92,7 @@
             </div>
         </div>
 
-        <!-- Options Section (Side) -->
-        <div class="col-span-12 lg:col-span-3 flex flex-col gap-1 h-full">
+        <div id="tabOptionsContent" class="hidden flex-1 flex flex-col gap-1 overflow-hidden">
             <div class="flex-1 glass-panel rounded-lg p-0 relative overflow-hidden border-green-900/30 chart-container" data-chart="ce">
                 <div class="absolute top-2 left-2 z-10 bg-green-600/40 px-2 py-0.5 rounded text-[9px] font-black text-white uppercase tracking-tighter">ATM CE</div>
                 <button class="maximize-btn absolute top-2 right-2 z-10 text-gray-600 hover:text-white transition-colors">
