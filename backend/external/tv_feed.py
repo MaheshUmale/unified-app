@@ -17,7 +17,7 @@ class TradingViewFeed:
         else:
             self.tv = TvDatafeed()
 
-        self.symbols = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'INDIAVIX']
+        self.symbols = ['NIFTY', 'BANKNIFTY', 'CNXFINANCE', 'INDIAVIX']
         self.stop_event = threading.Event()
         self.thread = None
 
@@ -41,6 +41,7 @@ class TradingViewFeed:
             # For now just run
             for symbol in self.symbols:
                 try:
+                    print(symbol)
                     df = self.tv.get_hist(symbol=symbol, exchange='NSE', interval=Interval.in_1_minute, n_bars=1)
                     if df is not None and not df.empty:
                         last_row = df.iloc[-1]

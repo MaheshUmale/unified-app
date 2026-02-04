@@ -19,7 +19,7 @@ class TradingViewAPI:
         self.symbol_map = {
             'NIFTY': {'symbol': 'NIFTY', 'exchange': 'NSE'},
             'BANKNIFTY': {'symbol': 'BANKNIFTY', 'exchange': 'NSE'},
-            'FINNIFTY': {'symbol': 'FINNIFTY', 'exchange': 'NSE'},
+            'FINNIFTY': {'symbol': 'CNXFINANCE', 'exchange': 'NSE'},
             'INDIA VIX': {'symbol': 'INDIAVIX', 'exchange': 'NSE'}
         }
 
@@ -58,7 +58,7 @@ class TradingViewAPI:
                 tv_interval = Interval.in_5_minute
             elif interval_min == '15':
                 tv_interval = Interval.in_15_minute
-
+            print()
             df = self.tv.get_hist(
                 symbol=tv_symbol,
                 exchange=tv_exchange,
