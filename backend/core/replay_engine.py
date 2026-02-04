@@ -173,7 +173,7 @@ class ReplayEngine:
                 if sym != "UNKNOWN": symbols.add(sym)
 
             syms_str = ", ".join([f"'{s}'" for s in symbols])
-            oi_sql = f"SELECT * FROM oi_data WHERE symbol IN ({syms_str}) AND date = '{date_str}' ORDER BY timestamp ASC"
+            oi_sql = f"SELECT CAST(date AS VARCHAR) as date_str, * FROM oi_data WHERE symbol IN ({syms_str}) AND date = '{date_str}' ORDER BY timestamp ASC"
             oi_records = db.query(oi_sql)
             oi_idx = 0
 
@@ -251,7 +251,7 @@ class ReplayEngine:
                 # OI timestamp in DB is "HH:MM", we need to convert to ms
                 while oi_idx < len(oi_records):
                     oi_rec = oi_records[oi_idx]
-                    oi_ts_str = f"{oi_rec['date']} {oi_rec['timestamp']}"
+                    oi_ts_str = f"{oi_rec['date_str']} {oi_rec['timestamp']}"
                     oi_dt = datetime.strptime(oi_ts_str, "%Y-%m-%d %H:%M")
                     oi_ms = int(oi_dt.timestamp() * 1000)
 

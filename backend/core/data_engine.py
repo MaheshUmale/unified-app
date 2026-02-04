@@ -543,7 +543,13 @@ def update_pcr_for_instrument(instrument_key: str):
         symbol = raw_symbol
 
     if symbol not in pcr_running_totals:
-        pcr_running_totals[symbol] = {'CE': 0, 'PE': 0, 'last_save': 0, 'last_emit': 0}
+        pcr_running_totals[symbol] = {'CE': 0, 'PE': 0, 'last_save': 0, 'last_emit': 0, 'last_calc': 0}
+
+    now_time = time.time()
+    # Global Throttle for calculation: 5 seconds
+    if now_time - pcr_running_totals[symbol].get('last_calc', 0) < 5:
+        return
+    pcr_running_totals[symbol]['last_calc'] = now_time
 
     # Re-calculate totals for the symbol (only for the nearest expiry)
     total_ce_oi = 0
@@ -565,8 +571,6 @@ def update_pcr_for_instrument(instrument_key: str):
 
     if total_ce_oi > 0:
         pcr = round(total_pe_oi / total_ce_oi, 2)
-
-        now_time = time.time()
 
         # 1. Emit to UI (Throttled to 30 seconds)
         last_emit = pcr_running_totals[symbol].get('last_emit', 0)
