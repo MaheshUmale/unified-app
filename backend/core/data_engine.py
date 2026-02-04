@@ -276,7 +276,12 @@ def on_message(message: Union[Dict, bytes, str]):
             # Resolve HRN
             inst_key = normalize_key(inst_key)
             meta = instrument_metadata.get(inst_key)
-            hrn = symbol_mapper.get_hrn(inst_key, meta)
+
+            # If it's already an HRN (from TV feed), use it
+            if inst_key in ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'INDIA VIX']:
+                hrn = inst_key
+            else:
+                hrn = symbol_mapper.get_hrn(inst_key, meta)
 
             feed_datum['instrumentKey'] = hrn
             feed_datum['raw_key'] = inst_key # Keep raw key for internal use
@@ -349,7 +354,17 @@ def on_message(message: Union[Dict, bytes, str]):
                     # Offload to queue instead of starting a new thread
                     persistence_queue.put((save_strike_metrics_to_db, hrn, oi, price, iv, greeks))
 
-            ltpc = market_ff.get('ltpc') or index_ff.get('ltpc')
+            # Determine if this is an index tick or a market instrument tick
+            # Explicitly avoid mixing index prices into option charts
+            is_index = False
+            if meta:
+                is_index = meta.get('type') == 'INDEX'
+            else:
+                # Fallback: identify by field presence if metadata missing
+                is_index = 'indexFF' in ff and 'marketFF' not in ff
+
+            ltpc = index_ff.get('ltpc') if is_index else market_ff.get('ltpc')
+
             if ltpc and ltpc.get('ltt'):
                 ts_val = int(ltpc['ltt'])
                 # Robustness: Detect 10-digit (seconds) timestamps and convert to milliseconds
@@ -473,7 +488,14 @@ def process_footprint_tick(instrument_key: str, data_datum: Dict[str, Any]):
         aggregated_bar['high'] = max(aggregated_bar['high'], trade_price)
         aggregated_bar['low'] = min(aggregated_bar['low'], trade_price)
         aggregated_bar['close'] = trade_price
-        aggregated_bar['volume'] += trade_qty
+
+        # Handle index volume from TradingView
+        tv_vol = data_datum.get('tv_volume')
+        if tv_vol is not None:
+            aggregated_bar['volume'] = float(tv_vol)
+        else:
+            aggregated_bar['volume'] += trade_qty
+
         aggregated_bar['oi'] = latest_oi.get(instrument_key, aggregated_bar.get('oi', 0))
 
         bid_ask_quotes = ff.get('marketLevel', {}).get('bidAskQuote', [])
@@ -870,9 +892,12 @@ def is_market_hours() -> bool:
 def start_websocket_thread(access_token: str, instrument_keys: List[str]):
     """
     Starts the Upstox SDK MarketDataStreamerV3 via UpstoxFeed with market hour awareness.
+    Also starts the TradingView live feed for indices.
     """
     global upstox_feed
     start_pcr_calculation_thread()
+    from external.tv_feed import start_tv_feed
+    start_tv_feed(on_message)
 
     def market_hour_monitor():
         global upstox_feed

@@ -238,6 +238,7 @@ function handleTickUpdate(quotes) {
         mtf15Data = updateCandleMTF(mtf15Data, quotes[currentIndex], 15);
         indexUpdated = true;
         document.getElementById('spotPrice').innerText = quotes[currentIndex].last_price.toFixed(2);
+        updateAtmStrike(quotes[currentIndex].last_price);
     }
     if (atmKeys.ce && quotes[atmKeys.ce] && quotes[atmKeys.ce].last_price) {
         ceData = updateCandle(ceData, quotes[atmKeys.ce]);
@@ -650,7 +651,7 @@ function setLoading(show) {
 }
 
 function updateAtmStrike(price) {
-    const step = currentIndex === 'NIFTY' ? 50 : 100;
+    const step = (currentIndex === 'NIFTY' || currentIndex.includes('NIFTY 50')) ? 50 : 100;
     currentAtm = Math.round(price / step) * step;
     document.getElementById('atmStrike').innerText = currentAtm;
 }

@@ -23,21 +23,35 @@ class TradingViewAPI:
             'INDIA VIX': {'symbol': 'INDIAVIX', 'exchange': 'NSE'}
         }
 
-    def get_hist_candles(self, symbol, interval_min='1', n_bars=1000):
+    def get_hist_candles(self, symbol_or_hrn, interval_min='1', n_bars=1000):
         """
         Fetch historical candles from TradingView.
         interval_min: '1', '5', '15'
         """
         try:
-            tv_meta = self.symbol_map.get(symbol)
-            if not tv_meta:
-                # Try to extract base symbol if it's like 'NIFTY 50'
-                if 'BANK' in symbol:
-                    tv_meta = self.symbol_map['BANKNIFTY']
-                elif 'NIFTY' in symbol:
-                    tv_meta = self.symbol_map['NIFTY']
+            tv_symbol = symbol_or_hrn
+            tv_exchange = 'NSE'
+
+            # 1. Handle explicit mapping
+            if symbol_or_hrn in self.symbol_map:
+                meta = self.symbol_map[symbol_or_hrn]
+                tv_symbol = meta['symbol']
+                tv_exchange = meta['exchange']
+
+            # 2. Handle HRNs for options: "NIFTY 03 FEB 2026 CALL 25300"
+            # TradingView wants: "NIFTY 50 03 FEB 2026 CALL 25300"
+            elif any(x in symbol_or_hrn.upper() for x in ['CALL', 'PUT']):
+                if 'NIFTY' in symbol_or_hrn.upper() and '50' not in symbol_or_hrn:
+                    tv_symbol = symbol_or_hrn.upper().replace('NIFTY', 'NIFTY 50')
+
                 else:
-                    return None
+                    tv_symbol = symbol_or_hrn.upper()
+
+            # 3. Handle mixed cases like "NIFTY 50" (Index)
+            elif 'NIFTY' in symbol_or_hrn.upper():
+                tv_symbol = 'NIFTY' # TradingView uses 'NIFTY' for the main index
+            elif 'BANK' in symbol_or_hrn.upper():
+                tv_symbol = 'BANKNIFTY'
 
             tv_interval = Interval.in_1_minute
             if interval_min == '5':
@@ -46,8 +60,8 @@ class TradingViewAPI:
                 tv_interval = Interval.in_15_minute
 
             df = self.tv.get_hist(
-                symbol=tv_meta['symbol'],
-                exchange=tv_meta['exchange'],
+                symbol=tv_symbol,
+                exchange=tv_exchange,
                 interval=tv_interval,
                 n_bars=n_bars
             )
@@ -69,7 +83,7 @@ class TradingViewAPI:
                 return candles[::-1]
             return None
         except Exception as e:
-            logger.error(f"Error fetching TradingView data for {symbol}: {e}")
+            logger.error(f"Error fetching TradingView data for {symbol_or_hrn}: {e}")
             return None
 
 tv_api = TradingViewAPI()
