@@ -349,7 +349,17 @@ def on_message(message: Union[Dict, bytes, str]):
                     # Offload to queue instead of starting a new thread
                     persistence_queue.put((save_strike_metrics_to_db, hrn, oi, price, iv, greeks))
 
-            ltpc = market_ff.get('ltpc') or index_ff.get('ltpc')
+            # Determine if this is an index tick or a market instrument tick
+            # Explicitly avoid mixing index prices into option charts
+            is_index = False
+            if meta:
+                is_index = meta.get('type') == 'INDEX'
+            else:
+                # Fallback: identify by field presence if metadata missing
+                is_index = 'indexFF' in ff and 'marketFF' not in ff
+
+            ltpc = index_ff.get('ltpc') if is_index else market_ff.get('ltpc')
+
             if ltpc and ltpc.get('ltt'):
                 ts_val = int(ltpc['ltt'])
                 # Robustness: Detect 10-digit (seconds) timestamps and convert to milliseconds

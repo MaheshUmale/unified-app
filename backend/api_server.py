@@ -535,16 +535,12 @@ async def get_upstox_intraday(instrument_key: str, date: Optional[str] = None, i
         clean_key = unquote(instrument_key)
         raw_key = symbol_mapper.resolve_to_key(clean_key) or clean_key
 
-        # 0. Priority: TradingView for Index Symbols (Better Volume)
-        # ONLY apply to pure index symbols, not options or futures
-        index_hrns = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'INDIA VIX']
-        is_pure_index = clean_key.upper() in index_hrns or clean_key in INITIAL_INSTRUMENTS
-
-        if not date and is_pure_index:
-            symbol = symbol_mapper.get_symbol(clean_key)
-            tv_candles = await asyncio.to_thread(tv_api.get_hist_candles, symbol, interval, 1000)
+        # 0. Priority: TradingView for Index and Option Symbols
+        if not date:
+            # We pass the HRN to TV API which handles mapping
+            tv_candles = await asyncio.to_thread(tv_api.get_hist_candles, clean_key, interval, 1000)
             if tv_candles:
-                logger.info(f"Using TradingView history for {symbol} (Index)")
+                logger.info(f"Using TradingView history for {clean_key}")
                 return {"candles": tv_candles}
 
         # 1. Try backfill from MongoDB via data_engine (uses HRN)
