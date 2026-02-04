@@ -25,10 +25,6 @@ from external import trendlyne_api as trendlyne_service
 from external.tv_api import tv_api
 from core.strategies.candle_cross import CandleCrossStrategy, DataPersistor
 from core.strategies.atm_buying_strategy import ATMOptionBuyingStrategy
-try:
-    from core.strategies.combined_signal import CombinedSignalEngine
-except ImportError:
-    CombinedSignalEngine = None
 from collections import defaultdict
 from datetime import datetime, timedelta
 from urllib.parse import unquote
@@ -54,23 +50,6 @@ async def lifespan(app: FastAPI):
 
     # 1. Initialize Strategies
     all_instruments = INITIAL_INSTRUMENTS
-
-    if CombinedSignalEngine:
-        logger.info("Initializing CombinedSignalEngine...")
-        class DummyWriter:
-            def write(self, s): pass
-        dummy_writer = DummyWriter()
-
-        for key in all_instruments:
-            hrn = symbol_mapper.get_hrn(key)
-            logger.info(f"Initializing Combined Strategy for {hrn} ({key})...")
-            strategy = CombinedSignalEngine(
-                instrument_key=hrn,
-                csv_writer=dummy_writer,
-                obi_throttle_sec=1.0
-            )
-            data_engine.register_strategy(hrn, strategy)
-        logger.info("CombinedSignalEngine initialized")
 
     if CandleCrossStrategy:
         logger.info("Initializing CandleCrossStrategy...")
