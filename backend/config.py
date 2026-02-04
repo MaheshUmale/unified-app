@@ -2,18 +2,13 @@ import os
 
 # --- Global Configuration ---
 # It is recommended to set these in environment variables for security
-#ACCESS_TOKEN = os.getenv('UPSTOX_ACCESS_TOKEN', 'eyJ0eXAiOiJKV1QiLCJrZXlfaWQiOiJza192MS4wIiwiYWxnIjoiSFMyNTYifQ.eyJzdWIiOiI3NkFGMzUiLCJqdGkiOiI2OTgxODQ2ZDk4MzEzMzUzZjVkM2RhNGQiLCJpc011bHRpQ2xpZW50IjpmYWxzZSwiaXNQbHVzUGxhbiI6ZmFsc2UsImlhdCI6MTc3MDA5NTcyNSwiaXNzIjoidWRhcGktZ2F0ZXdheS1zZXJ2aWNlIiwiZXhwIjoxNzcwMTU2MDAwfQ._SeRRtbo5y5wrBcXOmRJoW7VG6pFTdehy-8Y3sSvt0A')
+# TradingView Config
+TV_USERNAME = os.getenv('TV_USERNAME', '')
+TV_PASSWORD = os.getenv('TV_PASSWORD', '')
+TV_COOKIE = os.getenv('TV_COOKIE', '')
 
-
-ACCESS_TOKEN = 'eyJ0eXAiOiJKV1QiLCJrZXlfaWQiOiJza192MS4wIiwiYWxnIjoiSFMyNTYifQ.eyJzdWIiOiI3NkFGMzUiLCJqdGkiOiI2OTgyZGUyYTIyOTcxMTc1ZDM3ZjcwMTAiLCJpc011bHRpQ2xpZW50IjpmYWxzZSwiaXNQbHVzUGxhbiI6ZmFsc2UsImlhdCI6MTc3MDE4NDIzNCwiaXNzIjoidWRhcGktZ2F0ZXdheS1zZXJ2aWNlIiwiZXhwIjoxNzcwMjQyNDAwfQ.OH86w7qwz2Zf8GbisMBDixv28ykCtmbcIgO3tMjR728'
-SANDBOX_ACCESS_TOKEN = os.getenv('UPSTOX_SANDBOX_ACCESS_TOKEN', 'YOUR_SANDBOX_ACCESS_TOKEN_HERE')
-
-# MongoDB Config
-MONGO_URI = os.getenv('MONGO_URI', "mongodb://localhost:27017/")
-DB_NAME = os.getenv('DB_NAME', "PRO_TRADE_DATABASE")
-
-# API Config
-UPSTOX_API_VERSION = "2.0"
+# LocalDB Config
+DUCKDB_PATH = os.getenv('DUCKDB_PATH', 'pro_trade.db')
 
 # --- Strategy Configuration ---
 INITIAL_INSTRUMENTS = ["NSE_INDEX|Nifty 50", "NSE_INDEX|Nifty Bank", "NSE_INDEX|India VIX"]

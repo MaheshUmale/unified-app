@@ -3,6 +3,7 @@ ProTrade Integrated API Server
 Handles REST endpoints, Socket.IO real-time streaming, and background strategy orchestration.
 """
 import os
+import json
 import asyncio
 import logging
 from logging.config import dictConfig
@@ -14,22 +15,13 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
-from config import LOGGING_CONFIG, ACCESS_TOKEN, INITIAL_INSTRUMENTS
-from db.mongodb import (
-    get_db,
-    get_tick_data_collection,
-    get_instruments_collection,
-    get_oi_collection,
-    get_trade_signals_collection,
-    SIGNAL_COLLECTION_NAME,
-    ensure_indexes
-)
+from config import LOGGING_CONFIG, INITIAL_INSTRUMENTS
+from db.local_db import db
 from core import data_engine
 from core.symbol_mapper import symbol_mapper
 from core.replay_engine import ReplayEngine
 from core.backfill_manager import BackfillManager
 from external import trendlyne_api as trendlyne_service
-from external.upstox_api import UpstoxAPI
 from external.tv_api import tv_api
 from core.strategies.candle_cross import CandleCrossStrategy, DataPersistor
 from core.strategies.atm_buying_strategy import ATMOptionBuyingStrategy
@@ -47,14 +39,8 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initializes strategies and starts the Upstox WebSocket thread."""
+    """Initializes strategies and starts the TradingView WebSocket thread."""
     logger.info("Initializing ProTrade Platform...")
-
-    # 0. Ensure Indexes
-    try:
-        ensure_indexes()
-    except Exception as e:
-        logger.error(f"Failed to ensure indexes: {e}")
 
     # Capture main loop and inject into data_engine
     global main_loop
@@ -105,27 +91,20 @@ async def lifespan(app: FastAPI):
             logger.error(f"Failed to initialize CandleCrossStrategy: {e}")
 
     # 2. Start WebSocket Feed
-    if ACCESS_TOKEN and ACCESS_TOKEN != 'YOUR_ACCESS_TOKEN_HERE':
-        logger.info("Starting Upstox WebSocket thread...")
-        data_engine.start_websocket_thread(ACCESS_TOKEN, all_instruments)
-    else:
-        logger.warning("ACCESS_TOKEN not set. WebSocket feed will not start.")
+    logger.info("Starting TradingView WebSocket thread...")
+    data_engine.start_websocket_thread(None, all_instruments)
 
     yield
     logger.info("Shutting down ProTrade Platform...")
     # Ensure remaining ticks are flushed to DB
     try:
         data_engine.flush_tick_buffer()
-        data_engine.flush_raw_tick_buffer()
-        logger.info("Tick buffers flushed to MongoDB.")
+        logger.info("Tick buffers flushed to LocalDB.")
     except Exception as e:
         logger.error(f"Error flushing tick buffers during shutdown: {e}")
 
 fastapi_app = FastAPI(title="ProTrade Integrated API", lifespan=lifespan)
 sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
-
-# Initialize Upstox API
-upstox_api = UpstoxAPI(ACCESS_TOKEN)
 
 # Initialize Strategy Engines
 atm_strategy = ATMOptionBuyingStrategy()
@@ -251,19 +230,16 @@ async def health_check():
 
 def get_live_report_data() -> Dict[str, Any]:
     """
-    Queries MongoDB for all trade signals generated today and aggregates them into a report.
+    Queries LocalDB for all trade signals generated today and aggregates them into a report.
 
     Returns:
         Dict[str, Any]: A dictionary containing total P&L, open positions, completed trades, and summary.
     """
-    db = get_db()
-    if db is None:
-        return {"error": "Database not connected."}
-
     today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    signals = list(db[SIGNAL_COLLECTION_NAME].find({
-        "timestamp": {"$gte": today.timestamp()}
-    }).sort("timestamp", 1))
+    today_ts = int(today.timestamp() * 1000)
+
+    sql = "SELECT * FROM trade_signals WHERE timestamp >= ? ORDER BY timestamp ASC"
+    signals = db.query(sql, (today_ts,))
 
     trades = defaultdict(lambda: {
         'status': 'OPEN',
@@ -290,9 +266,9 @@ def get_live_report_data() -> Dict[str, Any]:
 
         instrument_name = instrument
         if instrument:
-            doc = instr_coll.find_one({'instrument_key': instrument})
-            if doc:
-                instrument_name = doc.get('trading_symbol') or doc.get('underlying_symbol') or instrument
+            res = db.get_metadata(instrument)
+            if res:
+                instrument_name = res.get('hrn') or instrument
 
         if signal['type'] == 'ENTRY':
             position = signal.get('position_after', signal.get('signal', 'UNKNOWN'))
@@ -406,24 +382,20 @@ async def search_market_cues():
 
 @fastapi_app.get("/api/trade_signals/{instrument_key}")
 async def get_trade_signals(instrument_key: str):
-    """Queries MongoDB for trade signals for a specific instrument."""
+    """Queries LocalDB for trade signals for a specific instrument."""
     try:
         clean_key = unquote(instrument_key)
-        db = get_db()
         today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         prior_date = today - timedelta(days=1)
-        timestamp = int(prior_date.timestamp())
+        timestamp = int(prior_date.timestamp() * 1000)
 
-        query = {
-            "instrumentKey": clean_key,
-            "timestamp": {"$gte": timestamp}
-        }
+        sql = "SELECT * FROM trade_signals WHERE instrumentKey = ? AND timestamp >= ? ORDER BY timestamp ASC"
+        rows = db.query(sql, (clean_key, timestamp))
 
-        cursor = db[SIGNAL_COLLECTION_NAME].find(query).sort("timestamp", 1)
         signals_data = []
         ist_offset_seconds = 19800 # 5h 30m
 
-        for doc in cursor:
+        for doc in rows:
             ts = doc.get('timestamp', 0)
             unix_time = int(ts / 1000) + ist_offset_seconds if ts else 0
 
@@ -448,23 +420,21 @@ async def get_trade_signals(instrument_key: str):
 async def get_oi_data_route(instrument_key: str):
     """Return latest OI data for the given instrument."""
     try:
-        instruments_coll = get_instruments_collection()
-        oi_coll = get_oi_collection()
-        instrument = instruments_coll.find_one({'instrument_key': instrument_key})
-        if not instrument:
+        res = db.get_metadata(instrument_key)
+        if not res:
             raise HTTPException(status_code=404, detail="Instrument not found")
 
-        symbol = instrument.get('trading_symbol') or instrument.get('underlying_symbol')
-        if not symbol:
-            raise HTTPException(status_code=404, detail="Symbol not found for instrument")
+        symbol = symbol_mapper.get_symbol(instrument_key)
 
-        oi_doc = oi_coll.find_one({'symbol': symbol}, sort=[('date', -1), ('timestamp', -1)])
-        if not oi_doc:
+        sql = "SELECT * FROM oi_data WHERE symbol = ? ORDER BY date DESC, timestamp DESC LIMIT 1"
+        rows = db.query(sql, (symbol,))
+        if not rows:
             raise HTTPException(status_code=404, detail="OI data not found")
 
+        oi_doc = rows[0]
         return {
             'open_interest': oi_doc.get('call_oi', 0),
-            'oi_change': oi_doc.get('change_in_call_oi', 0)
+            'oi_change': 0 # Needs historical comparison for change
         }
     except HTTPException:
         raise
@@ -492,7 +462,7 @@ async def trigger_session_backfill():
     """
     try:
         logger.info("Manual session backfill triggered")
-        manager = BackfillManager(ACCESS_TOKEN)
+        manager = BackfillManager()
         result = await manager.backfill_today_session()
         if result.get("status") == "success":
             return result
@@ -530,7 +500,7 @@ async def trigger_trendlyne_backfill(
 
 @fastapi_app.get("/api/upstox/intraday/{instrument_key}")
 async def get_upstox_intraday(instrument_key: str, date: Optional[str] = None, interval: str = '1'):
-    """Fetch intraday candles from DB backfill, Upstox V3 or TradingView. instrument_key can be HRN."""
+    """Fetch intraday candles from DB backfill or TradingView. instrument_key can be HRN."""
     try:
         clean_key = unquote(instrument_key)
         raw_key = symbol_mapper.resolve_to_key(clean_key) or clean_key
@@ -543,7 +513,7 @@ async def get_upstox_intraday(instrument_key: str, date: Optional[str] = None, i
                 logger.info(f"Using TradingView history for {clean_key}")
                 return {"candles": tv_candles}
 
-        # 1. Try backfill from MongoDB via data_engine (uses HRN)
+        # 1. Try backfill from LocalDB via data_engine (uses HRN)
         # In live mode (date is None), fetch 2 extra days for indicator warm-up
         lookback = 3 if not date else 0 # 3 calendar days to safely cover 2 trading days
         db_history = data_engine.load_intraday_data(clean_key, date_str=date, timeframe_min=int(interval), lookback_days=lookback)
@@ -559,19 +529,7 @@ async def get_upstox_intraday(instrument_key: str, date: Optional[str] = None, i
             # Reverse to match Upstox V3 descending order (newest first)
             return {"candles": candles[::-1]}
 
-        # 2. Fallback to Upstox API (needs raw key)
-        if not date:
-            # Live mode: Fetch today + previous days using historical API for warm-up
-            to_date = datetime.now().strftime("%Y-%m-%d")
-            from_date = (datetime.now() - timedelta(days=5)).strftime("%Y-%m-%d")
-            data = upstox_api.get_historical_candles(raw_key, interval=interval, to_date=to_date, from_date=from_date)
-        else:
-            data = upstox_api.get_intraday_candles(raw_key, interval=interval)
-
-        if data and data.get('status') == 'success':
-            return data.get('data', {})
-
-        # 3. Last effort: return empty if everything fails
+        # 2. Last effort: return empty if everything fails
         return {"candles": []}
     except Exception as e:
         logger.error(f"Error in get_upstox_intraday for {instrument_key}: {e}")
@@ -579,14 +537,47 @@ async def get_upstox_intraday(instrument_key: str, date: Optional[str] = None, i
 
 @fastapi_app.get("/api/upstox/option_chain/{instrument_key}/{expiry_date}")
 async def get_upstox_option_chain(instrument_key: str, expiry_date: str):
-    """Fetch option chain from Upstox V3. instrument_key can be HRN."""
+    """Fetch option chain from TradingView. instrument_key can be HRN."""
     try:
+        from external.tv_mcp import process_option_chain_with_analysis
         clean_key = unquote(instrument_key)
-        raw_key = symbol_mapper.resolve_to_key(clean_key) or clean_key
-        data = upstox_api.get_option_chain(raw_key, expiry_date)
-        if data and data.get('status') == 'success':
-            return data.get('data', [])
-        raise HTTPException(status_code=500, detail="Failed to fetch option chain")
+        symbol = symbol_mapper.get_symbol(clean_key)
+        if symbol == "UNKNOWN": symbol = clean_key
+
+        # expiry_date might be in YYYY-MM-DD format from UI, TradingView wants YYYYMMDD
+        tv_expiry = expiry_date.replace('-', '')
+
+        res = process_option_chain_with_analysis(symbol, 'NSE', expiry_date=tv_expiry)
+        if res['success']:
+            chain_data = []
+            # Group by strike for UI compatibility
+            strikes = defaultdict(lambda: {'strike_price': 0, 'call_options': None, 'put_options': None})
+            for opt in res['data']:
+                strike = opt['strike']
+                strikes[strike]['strike_price'] = strike
+
+                # Construct HRN
+                expiry_dt = datetime.strptime(str(res['target_expiry']), '%Y%m%d')
+                expiry_str = expiry_dt.strftime('%d %b %Y').upper()
+                hrn = f"{symbol} {expiry_str} {opt['type'].upper()} {int(strike)}"
+
+                side = 'call_options' if opt['type'] == 'call' else 'put_options'
+                strikes[strike][side] = {
+                    'instrument_key': hrn,
+                    'market_data': {
+                        'oi': opt['oi'],
+                        'ltp': opt['close'],
+                        'iv': opt['iv'],
+                        'greeks': {
+                            'delta': opt['delta'],
+                            'gamma': opt['gamma'],
+                            'theta': opt['theta'],
+                            'vega': opt['vega']
+                        }
+                    }
+                }
+            return sorted(list(strikes.values()), key=lambda x: x['strike_price'])
+        raise HTTPException(status_code=500, detail="Failed to fetch option chain from TradingView")
     except Exception as e:
         logger.error(f"Error in get_upstox_option_chain: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -606,9 +597,14 @@ async def get_trendlyne_expiry(symbol: str):
         # User Requirement: BANKNIFTY should prioritize Monthly
         if symbol == 'BANKNIFTY':
             try:
-                from external.upstox_helper import is_monthly_expiry
+                # Basic monthly heuristic: last 7 days of the month
+                def is_monthly(d):
+                    next_month = d.replace(day=28) + timedelta(days=4)
+                    last_day = next_month - timedelta(days=next_month.day)
+                    return (last_day - d).days < 7
+
                 dt_dates = sorted([datetime.strptime(d, "%Y-%m-%d") for d in dates])
-                monthly_dates = [d.strftime("%Y-%m-%d") for d in dt_dates if is_monthly_expiry(d, dt_dates)]
+                monthly_dates = [d.strftime("%Y-%m-%d") for d in dt_dates if is_monthly(d)]
                 # Move monthly dates to the front
                 other_dates = [d for d in dates if d not in monthly_dates]
                 dates = monthly_dates + other_dates
@@ -659,32 +655,21 @@ async def get_trendlyne_option_buildup(symbol: str, expiry: str, strike: int, op
 async def get_historical_pcr(symbol: str, date: Optional[str] = None):
     """Fetch historical PCR and Spot data for analytics."""
     try:
-        oi_coll = get_oi_collection()
         # Fetch today's OI data
         today_str = date or datetime.now().strftime("%Y-%m-%d")
 
-        # Support both BANKNIFTY and NIFTY BANK for historical compatibility
-        symbol_query = [symbol]
-        if symbol == 'BANKNIFTY':
-            symbol_query.append('NIFTY BANK')
-        elif symbol == 'NIFTY BANK':
-            symbol_query.append('BANKNIFTY')
-
-        cursor = oi_coll.find({
-            'symbol': {'$in': symbol_query},
-            'date': today_str
-        }).sort('timestamp', 1)
+        sql = "SELECT * FROM oi_data WHERE symbol = ? AND date = ? ORDER BY timestamp ASC"
+        rows = db.query(sql, (symbol, today_str))
 
         results_map = {}
-        for doc in cursor:
+        for doc in rows:
             ts = f"{doc['date']}T{doc['timestamp']}:00"
             call_oi = doc.get('call_oi', 0)
             put_oi = doc.get('put_oi', 0)
             pcr = round(put_oi / call_oi, 2) if call_oi > 0 else 0
             source = doc.get('source', 'unknown')
 
-            # Prefer Trendlyne or Upstox Full over Live Partial
-            if ts not in results_map or source in ['trendlyne', 'upstox_full', 'trendlyne_pcr_history']:
+            if ts not in results_map or source in ['trendlyne', 'trendlyne_backfill']:
                 results_map[ts] = {
                     'timestamp': ts,
                     'pcr': pcr,
@@ -701,8 +686,9 @@ async def get_historical_pcr(symbol: str, date: Optional[str] = None):
             import threading
             threading.Thread(target=trendlyne_service.perform_backfill, args=(symbol,), kwargs={'interval_minutes': 5}, daemon=True).start()
 
-            cursor = oi_coll.find({'symbol': {'$in': symbol_query}}).sort([('date', -1), ('timestamp', -1)]).limit(10)
-            for doc in list(cursor)[::-1]:
+            fallback_sql = "SELECT * FROM oi_data WHERE symbol = ? ORDER BY date DESC, timestamp DESC LIMIT 10"
+            fallback_rows = db.query(fallback_sql, (symbol,))
+            for doc in fallback_rows[::-1]:
                 call_oi = doc.get('call_oi', 0)
                 put_oi = doc.get('put_oi', 0)
                 pcr = round(put_oi / call_oi, 2) if call_oi > 0 else 0
@@ -722,26 +708,8 @@ async def get_historical_pcr(symbol: str, date: Optional[str] = None):
 async def get_replay_dates():
     """Returns a list of dates that have tick data available for replay."""
     try:
-        tick_coll = get_tick_data_collection()
-        # This might be slow if we have many ticks.
-        # In a real app we'd have a 'sessions' collection.
-        # Let's try to get distinct dates from the Insertion time or similar.
-        # For now, let's look at OI data which is grouped by date.
-        # Check both collections
-        db = get_db()
-        dates = set()
-        for doc in db['oi_data'].find({}, {"date": 1}):
-            if "date" in doc: dates.add(doc["date"])
-        for doc in db['strike_oi_data'].find({}, {"date": 1}):
-            if "date" in doc: dates.add(doc["date"])
-
-        # If still empty, check ticks and extract dates from _insertion_time
-        if not dates:
-             for doc in db['ticks'].find({}, {"_insertion_time": 1}):
-                 if "_insertion_time" in doc:
-                     dates.add(doc["_insertion_time"].strftime("%Y-%m-%d"))
-
-        return sorted(list(dates), reverse=True)
+        rows = db.query("SELECT DISTINCT CAST(date AS VARCHAR) as d FROM ticks ORDER BY d DESC")
+        return [r['d'] for r in rows]
     except Exception as e:
         logger.error(f"Error fetching replay dates: {e}")
         return []
@@ -750,46 +718,26 @@ async def get_replay_dates():
 async def get_replay_session_info(date: str, index_key: str):
     """Discovers the initial state and available instruments for a historical date."""
     try:
-        tick_coll = get_tick_data_collection()
-        instr_coll = get_instruments_collection()
-
         clean_key = unquote(index_key)
 
         # 1. Find the first index tick for this date to get starting price
-        # Approximation: first tick after 09:15 IST
-        import pytz
-        ist = pytz.timezone('Asia/Kolkata')
-        start_dt = ist.localize(datetime.strptime(f"{date} 09:15:00", "%Y-%m-%d %H:%M:%S"))
-        start_ms = int(start_dt.timestamp() * 1000)
+        sql = "SELECT full_feed FROM ticks WHERE instrumentKey = ? AND CAST(date AS VARCHAR) = ? ORDER BY ts_ms ASC LIMIT 1"
+        rows = db.query(sql, (clean_key, date))
 
-        first_tick = tick_coll.find_one({
-            'instrumentKey': clean_key,
-            '$or': [
-                {'ts_ms': {'$gte': start_ms}},
-                {'fullFeed.indexFF.ltpc.ltt': {'$gte': str(start_ms)}}
-            ]
-        }, sort=[('ts_ms', 1), ('_id', 1)])
-
-        if not first_tick:
+        if not rows:
             return {"error": "No index data found for this date"}
 
+        first_tick = json.loads(rows[0]['full_feed'])
         ff = first_tick.get('fullFeed', {}).get('indexFF', {})
         start_price = float(ff.get('ltpc', {}).get('ltp', 0))
 
         # 2. Get all recorded keys for this date
-        # This is expensive but necessary for discovery
-        query = {
-            '$or': [
-                {'ts_ms': {'$gte': start_ms, '$lte': start_ms + 86400000}},
-                {'fullFeed.marketFF.ltpc.ltt': {'$gte': str(start_ms)}},
-                {'fullFeed.indexFF.ltpc.ltt': {'$gte': str(start_ms)}}
-            ]
-        }
-        all_keys = tick_coll.distinct('instrumentKey', query)
+        all_keys_rows = db.query("SELECT DISTINCT instrumentKey FROM ticks WHERE CAST(date AS VARCHAR) = ?", (date,))
+        all_keys = [r['instrumentKey'] for r in all_keys_rows]
         logger.info(f"Discovered {len(all_keys)} keys for date {date}: {all_keys}")
 
         # 3. Identify closest CE and PE recorded on that day
-        step = 50 if "Nifty 50" in clean_key else 100
+        step = 50 if "NIFTY" in clean_key.upper() else 100
         atm = round(start_price / step) * step
 
         # Find matching keys from the recorded list
@@ -798,30 +746,18 @@ async def get_replay_session_info(date: str, index_key: str):
         expiry = None
 
         for key in all_keys:
-            if clean_key in key: continue # skip index
-            # Look up trading symbol
-            instr = instr_coll.find_one({'instrument_key': key})
-            if not instr: continue
+            if clean_key == key: continue
 
-            # Simple match for ATM (assuming recorded keys follow standard naming)
-            # A more robust way would be to check the instrument master's strike_price field
-            if instr.get('instrument_type') == 'CE' and instr.get('strike_price') == atm:
-                # Resolve to HRN
-                suggested_ce = symbol_mapper.get_hrn(key, {
-                    'symbol': instr.get('name'),
-                    'type': 'CE',
-                    'strike': atm,
-                    'expiry': instr.get('expiry_date') or instr.get('expiry')
-                })
-                expiry = instr.get('expiry_date') or instr.get('expiry')
-            elif instr.get('instrument_type') == 'PE' and instr.get('strike_price') == atm:
-                suggested_pe = symbol_mapper.get_hrn(key, {
-                    'symbol': instr.get('name'),
-                    'type': 'PE',
-                    'strike': atm,
-                    'expiry': instr.get('expiry_date') or instr.get('expiry')
-                })
-                if not expiry: expiry = instr.get('expiry_date') or instr.get('expiry')
+            res = db.get_metadata(key)
+            if not res: continue
+            meta = res['metadata']
+
+            if meta.get('type') == 'CE' and meta.get('strike') == atm:
+                suggested_ce = res['hrn']
+                expiry = meta.get('expiry')
+            elif meta.get('type') == 'PE' and meta.get('strike') == atm:
+                suggested_pe = res['hrn']
+                if not expiry: expiry = meta.get('expiry')
 
         # Convert all_keys to HRNs
         hrn_keys = []
@@ -845,23 +781,12 @@ async def get_replay_session_info(date: str, index_key: str):
 async def get_instruments():
     """Return list of instrument keys with human readable names."""
     try:
-        from external.upstox_helper import get_instrument_df
-        df = get_instrument_df()
-
-        collection = get_tick_data_collection()
-        instrument_keys = collection.distinct('instrumentKey')
+        rows = db.query("SELECT DISTINCT instrumentKey FROM ticks")
         instruments = []
 
-        for key in instrument_keys:
-            name = key
-            # Try to find in Upstox Master Dataframe
-            if df is not None and not df.empty:
-                matches = df[df['instrument_key'] == key]
-                if not matches.empty:
-                    row = matches.iloc[0]
-                    name = row.get('trading_symbol') or row.get('name') or key
-
-            instruments.append({'key': key, 'name': name})
+        for r in rows:
+            key = r['instrumentKey']
+            instruments.append({'key': key, 'name': key})
         return instruments
     except Exception as e:
         logger.error(f"Error fetching instruments: {e}")

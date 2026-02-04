@@ -3,7 +3,7 @@ import logging
 import pandas as pd
 from datetime import datetime
 from typing import Dict, Optional, Any
-from db.mongodb import get_db
+from db.local_db import db
 
 logger = logging.getLogger(__name__)
 
@@ -40,12 +40,11 @@ class SymbolMapper:
         if key in self._mapping_cache:
             return self._mapping_cache[key]
 
-        # Try to find in metadata collection
+        # Try to find in Local DB
         try:
-            db = get_db()
-            doc = db['metadata'].find_one({'instrument_key': key})
-            if doc:
-                hrn = doc['hrn']
+            res = db.get_metadata(key)
+            if res:
+                hrn = res['hrn']
                 self._mapping_cache[key] = hrn
                 self._reverse_cache[hrn] = key
                 return hrn
@@ -97,17 +96,7 @@ class SymbolMapper:
 
     def _store_mapping(self, instrument_key: str, hrn: str, metadata: Dict[str, Any]):
         try:
-            db = get_db()
-            db['metadata'].update_one(
-                {'instrument_key': instrument_key},
-                {'$set': {
-                    'hrn': hrn,
-                    'instrument_key': instrument_key,
-                    'metadata': metadata,
-                    'updated_at': datetime.now()
-                }},
-                upsert=True
-            )
+            db.update_metadata(instrument_key, hrn, metadata)
         except:
             pass
         self._mapping_cache[instrument_key] = hrn
@@ -122,10 +111,9 @@ class SymbolMapper:
             return self._reverse_cache[target]
 
         try:
-            db = get_db()
-            doc = db['metadata'].find_one({'hrn': target})
-            if doc:
-                key = doc['instrument_key']
+            rows = db.query("SELECT instrument_key FROM metadata WHERE hrn = ?", (target,))
+            if rows:
+                key = rows[0]['instrument_key']
                 self._mapping_cache[key] = target
                 self._reverse_cache[target] = key
                 return key

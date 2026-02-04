@@ -8,17 +8,12 @@ import logging
 sys.path.append(os.path.join(os.getcwd(), 'backend'))
 
 from core.backfill_manager import BackfillManager
-from config import ACCESS_TOKEN
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
 
 async def main():
-    if not ACCESS_TOKEN or ACCESS_TOKEN == 'YOUR_ACCESS_TOKEN_HERE':
-        print("Error: UPSTOX_ACCESS_TOKEN not found in config/env.")
-        return
-
-    manager = BackfillManager(ACCESS_TOKEN)
-    print("Starting manual backfill for today's session...")
+    manager = BackfillManager()
+    print("Starting manual backfill for today's session (TradingView + Trendlyne)...")
     result = await manager.backfill_today_session()
 
     print("\nBackfill Result:")

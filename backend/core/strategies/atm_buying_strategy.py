@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 from collections import defaultdict
 from core.strategy_utils import get_5day_median_gamma, get_nifty_adv
-from db.mongodb import get_db
+from db.local_db import db
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,6 @@ class ATMOptionBuyingStrategy:
 
     def fetch_market_data(self, symbol: str, index_key: str, atm_strike: int, expiry: str) -> Dict[str, Any]:
         """Fetches required data for analysis from memory and DB."""
-        from external import upstox_helper
         from core.symbol_mapper import symbol_mapper
 
         # 1. Validate ATM strike for the symbol (Robustness Check)
@@ -55,23 +54,15 @@ class ATMOptionBuyingStrategy:
                 effective_strike = round(current_spot / step) * step
                 logger.info(f"Corrected ATM strike for {symbol}: {atm_strike} -> {effective_strike}")
 
-        ce_raw = upstox_helper.resolve_instrument_key(symbol, 'CE', strike=float(effective_strike), expiry=expiry)
-        pe_raw = upstox_helper.resolve_instrument_key(symbol, 'PE', strike=float(effective_strike), expiry=expiry)
-
-        # Fallback: if expiry mismatch, try to get absolute nearest
-        if not ce_raw or not pe_raw:
-            logger.warning(f"Could not resolve ATM for {symbol} {effective_strike} {expiry}. Trying nearest expiry.")
-            ce_raw = upstox_helper.resolve_instrument_key(symbol, 'CE', strike=float(effective_strike))
-            pe_raw = upstox_helper.resolve_instrument_key(symbol, 'PE', strike=float(effective_strike))
-
-        if not ce_raw or not pe_raw:
+        # For TradingView mode, we construct the HRN directly.
+        # Format: SYMBOL DD MMM YYYY CALL/PUT STRIKE
+        try:
+            dt = datetime.strptime(expiry, "%Y-%m-%d")
+            expiry_str = dt.strftime("%d %b %Y").upper()
+            ce_key = f"{symbol} {expiry_str} CALL {int(effective_strike)}"
+            pe_key = f"{symbol} {expiry_str} PUT {int(effective_strike)}"
+        except:
             return {}
-
-        ce_key = symbol_mapper.get_hrn(ce_raw)
-        pe_key = symbol_mapper.get_hrn(pe_raw)
-
-        db = get_db()
-        coll = db['strike_oi_data']
         now = data_engine.get_now()
 
         # 15 mins ago data
@@ -86,19 +77,15 @@ class ATMOptionBuyingStrategy:
                         return doc
                 return {}
 
-            doc = coll.find_one({
-                'instrument_key': key,
-                'updated_at': {'$lte': time_15m_ago}
-            }, sort=[('updated_at', -1)])
-            return doc or {}
+            sql = "SELECT * FROM strike_oi_data WHERE instrument_key = ? AND updated_at <= ? ORDER BY updated_at DESC LIMIT 1"
+            rows = db.query(sql, (key, time_15m_ago))
+            return rows[0] if rows else {}
 
         def get_opening_metrics(key):
             today = now.strftime("%Y-%m-%d")
-            doc = coll.find_one({
-                'instrument_key': key,
-                'date': today
-            }, sort=[('updated_at', 1)])
-            return doc or {}
+            sql = "SELECT * FROM strike_oi_data WHERE instrument_key = ? AND date = ? ORDER BY updated_at ASC LIMIT 1"
+            rows = db.query(sql, (key, today))
+            return rows[0] if rows else {}
 
         ce_hist = get_historical_metrics(ce_key)
         pe_hist = get_historical_metrics(pe_key)

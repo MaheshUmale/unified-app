@@ -10,25 +10,16 @@ import json
 import traceback
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional, Set
-from db.mongodb import get_tick_data_collection, get_oi_collection, get_instruments_collection
+from db.local_db import db, LocalDBJSONEncoder
 from core import data_engine
 from core.symbol_mapper import symbol_mapper
 
 logger = logging.getLogger(__name__)
 
-class MongoJSONEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, datetime):
-            return obj.isoformat()
-        return super().default(obj)
 
 class ReplayEngine:
     def __init__(self, emit_fn, db_dependencies: Dict[str, Any]):
         self.emit_fn = emit_fn
-        self.tick_collection = db_dependencies.get('tick_collection') or get_tick_data_collection()
-        self.oi_collection = db_dependencies.get('oi_collection') or get_oi_collection()
-        self.instr_collection = db_dependencies.get('instr_collection') or get_instruments_collection()
-
         self.is_running = False
         self.is_paused = False
         self.playback_speed = 1.0
@@ -141,7 +132,6 @@ class ReplayEngine:
         """
         try:
             # 1. Load data
-            # Convert date_str (YYYY-MM-DD) to timestamp range (IST)
             import pytz
             ist = pytz.timezone('Asia/Kolkata')
             start_dt = ist.localize(datetime.strptime(f"{date_str} 09:15:00", "%Y-%m-%d %H:%M:%S"))
@@ -151,82 +141,46 @@ class ReplayEngine:
 
             logger.info(f"Replay Query: Range {start_ms} to {end_ms} for {instrument_keys}")
 
-            # Search keys: include HRNs and their raw key counterparts if known
             search_keys = set(instrument_keys)
             for k in instrument_keys:
                 raw = symbol_mapper.resolve_to_key(k)
-                if raw:
-                    search_keys.add(raw)
-                    search_keys.add(raw.replace('|', ':'))
-                    search_keys.add(raw.replace(':', '|'))
+                if raw: search_keys.add(raw)
 
-            # Query for ticks within range.
-            # Broaden to include all data for the day if exact range fails,
-            # or just use the date field if we start adding it to ticks.
-            # For now, let's stick to the ms range but make it more robust.
-            query = {
-                'instrumentKey': {'$in': list(search_keys)},
-                '$or': [
-                    {'ts_ms': {'$gte': start_ms, '$lte': end_ms}},
-                    # Legacy fallback (try both int and str)
-                    {'fullFeed.marketFF.ltpc.ltt': {'$gte': str(start_ms), '$lte': str(end_ms)}},
-                    {'fullFeed.indexFF.ltpc.ltt': {'$gte': str(start_ms), '$lte': str(end_ms)}},
-                    {'fullFeed.marketFF.ltpc.ltt': {'$gte': start_ms, '$lte': end_ms}},
-                    {'fullFeed.indexFF.ltpc.ltt': {'$gte': start_ms, '$lte': end_ms}}
-                ]
-            }
+            keys_str = ", ".join([f"'{k}'" for k in search_keys])
 
-            # Count documents to verify data presence before streaming
-            total_docs = self.tick_collection.count_documents(query)
-            if total_docs == 0:
-                logger.warning(f"No replay data found for {date_str} / {instrument_keys}")
-                # Try a broader search just by instrument key to see if any data exists at all
-                any_data = self.tick_collection.find_one({'instrumentKey': {'$in': instrument_keys}})
-                if any_data:
-                    logger.info(f"Broad search found data, but not in range {start_ms}-{end_ms}")
+            # Optimized synchronized query for all instruments
+            sql = f"""
+                SELECT full_feed FROM ticks
+                WHERE instrumentKey IN ({keys_str})
+                AND ts_ms >= {start_ms} AND ts_ms <= {end_ms}
+                ORDER BY ts_ms ASC
+            """
 
+            ticks_rows = db.query(sql)
+            if not ticks_rows:
+                logger.warning(f"No replay data found for {date_str}")
                 self.emit_fn('replay_error', {'message': f"No data found for {date_str}"})
                 self.emit_fn('replay_finished', {'date': date_str})
                 self.is_running = False
                 return
 
-            logger.info(f"Streaming {total_docs} ticks for replay")
-
-            # Sort by whatever timestamp is available.
-            # projection={'_id': 0} fixes JSON serialization error for ObjectId
-            # Use a compound sort to ensure stability
-            ticks_cursor = self.tick_collection.find(query, {'_id': 0}).sort([
-                ('ts_ms', 1),
-                ('fullFeed.marketFF.ltpc.ltt', 1),
-                ('fullFeed.indexFF.ltpc.ltt', 1),
-                ('_id', 1)
-            ])
+            logger.info(f"Streaming {len(ticks_rows)} ticks for replay")
 
             # Fetch OI data for the same day
-            # We need the underlying symbol for these instruments
             symbols = set()
             for key in instrument_keys:
-                # Try HRN first
-                if "NIFTY" in key.upper(): symbols.add("NIFTY")
-                if "BANKNIFTY" in key.upper(): symbols.add("BANKNIFTY")
+                sym = symbol_mapper.get_symbol(key)
+                if sym != "UNKNOWN": symbols.add(sym)
 
-                raw_key = symbol_mapper.resolve_to_key(key) or key
-                instr = self.instr_collection.find_one({'instrument_key': raw_key})
-                if instr:
-                    sym = instr.get('underlying_symbol') or instr.get('trading_symbol')
-                    if sym: symbols.add(sym)
-
-            oi_cursor = self.oi_collection.find({
-                'symbol': {'$in': list(symbols)},
-                'date': date_str
-            }).sort([('timestamp', 1)])
-
-            oi_records = list(oi_cursor)
+            syms_str = ", ".join([f"'{s}'" for s in symbols])
+            oi_sql = f"SELECT * FROM oi_data WHERE symbol IN ({syms_str}) AND date = '{date_str}' ORDER BY timestamp ASC"
+            oi_records = db.query(oi_sql)
             oi_idx = 0
 
             last_tick_time = None
 
-            for tick in ticks_cursor:
+            for row in ticks_rows:
+                tick = json.loads(row['full_feed'])
                 if self.stop_event.is_set():
                     break
 
@@ -318,7 +272,7 @@ class ReplayEngine:
                 # Emit the tick using HRN
                 hrn = symbol_mapper.get_hrn(raw_key)
                 feeds_map = {hrn: tick}
-                self.emit_fn('raw_tick', json.dumps(feeds_map, cls=MongoJSONEncoder))
+                self.emit_fn('raw_tick', json.dumps(feeds_map, cls=LocalDBJSONEncoder))
 
                 # Aggregate and emit footprint update
                 self._process_footprint(inst_key, tick)
