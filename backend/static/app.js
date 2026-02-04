@@ -333,7 +333,16 @@ function updateCandle(prev, quote) {
 // --- Rendering ---
 
 function renderChart(chart, title, data, mtf = {}) {
-    if (!data.length) return;
+    if (!chart || !data.length) return;
+
+    // Preserve zoom state
+    let start = 70;
+    let end = 100;
+    const currentOption = chart.getOption();
+    if (currentOption && currentOption.dataZoom && currentOption.dataZoom.length > 0) {
+        start = currentOption.dataZoom[0].start;
+        end = currentOption.dataZoom[0].end;
+    }
 
     // 1. Indicators Logic
     const volumes = data.map(d => d.volume);
@@ -394,13 +403,25 @@ function renderChart(chart, title, data, mtf = {}) {
         },
         axisPointer: { link: { xAxisIndex: 'all' } },
         dataZoom: [
-            { type: 'inside', xAxisIndex: [0, 1], start: 70, end: 100 },
             {
-                type: 'slider', xAxisIndex: [0, 1],
+                type: 'inside',
+                xAxisIndex: [0, 1],
+                start: start,
+                end: end
+            },
+            {
+                type: 'inside',
+                yAxisIndex: [0],
+                filterMode: 'empty'
+            },
+            {
+                type: 'slider',
+                xAxisIndex: [0, 1],
                 top: '92%', height: 16, borderColor: 'transparent',
                 textStyle: { color: '#4b5563', fontSize: 8 },
                 handleSize: '80%',
-                start: 70, end: 100
+                start: start,
+                end: end
             }
         ],
         grid: [
@@ -534,13 +555,39 @@ function mapMTFTo1M(data1m, dataMTF, mtfRes) {
 }
 
 function renderPcrChart() {
-    if (!pcrData.length) return;
+    if (!charts.pcr || !pcrData.length) return;
+
+    // Preserve zoom state
+    let start = 0;
+    let end = 100;
+    const currentOption = charts.pcr.getOption();
+    if (currentOption && currentOption.dataZoom && currentOption.dataZoom.length > 0) {
+        start = currentOption.dataZoom[0].start;
+        end = currentOption.dataZoom[0].end;
+    }
+
     const options = {
         backgroundColor: 'transparent',
         animation: false,
         dataZoom: [
-            { type: 'inside' },
-            { type: 'slider', bottom: 0, height: 16 }
+            {
+                type: 'inside',
+                xAxisIndex: [0],
+                start: start,
+                end: end
+            },
+            {
+                type: 'inside',
+                yAxisIndex: [0],
+                filterMode: 'empty'
+            },
+            {
+                type: 'slider',
+                bottom: 0,
+                height: 16,
+                start: start,
+                end: end
+            }
         ],
         grid: { top: 10, left: 10, right: 50, bottom: 30, containLabel: true },
         xAxis: {
