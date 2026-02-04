@@ -32,10 +32,10 @@ class TradingViewAPI:
             tv_meta = self.symbol_map.get(symbol)
             if not tv_meta:
                 # Try to extract base symbol if it's like 'NIFTY 50'
-                if 'NIFTY' in symbol:
-                    tv_meta = self.symbol_map['NIFTY']
-                elif 'BANK' in symbol:
+                if 'BANK' in symbol:
                     tv_meta = self.symbol_map['BANKNIFTY']
+                elif 'NIFTY' in symbol:
+                    tv_meta = self.symbol_map['NIFTY']
                 else:
                     return None
 
