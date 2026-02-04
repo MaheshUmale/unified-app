@@ -43,6 +43,7 @@ class TradingViewAPI:
             elif any(x in symbol_or_hrn.upper() for x in ['CALL', 'PUT']):
                 if 'NIFTY' in symbol_or_hrn.upper() and '50' not in symbol_or_hrn:
                     tv_symbol = symbol_or_hrn.upper().replace('NIFTY', 'NIFTY 50')
+
                 else:
                     tv_symbol = symbol_or_hrn.upper()
 
