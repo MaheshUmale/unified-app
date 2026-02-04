@@ -7,7 +7,7 @@ import time
 import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta, date
-from db.mongodb import get_oi_collection, get_stocks_collection, get_trendlyne_buildup_collection
+from db.local_db import db
 from core.symbol_mapper import symbol_mapper
 
 logger = logging.getLogger(__name__)
@@ -143,22 +143,7 @@ def fetch_and_save_oi_snapshot(symbol: str, stock_id: int, expiry_date_str: str,
         hrn = symbol_mapper.get_symbol(symbol)
         if hrn == "UNKNOWN": hrn = symbol.upper()
 
-        doc = {
-            'stock_id': hrn, # Unified HRN identifier
-            'symbol': hrn,
-            'date': current_date_str,
-            'timestamp': timestamp_snapshot,
-            'expiry_date': expiry_str,
-            'call_oi': total_call_oi,
-            'put_oi': total_put_oi,
-            'change_in_call_oi': total_call_change,
-            'change_in_put_oi': total_put_change,
-            'source': 'trendlyne_backfill',
-            'updated_at': datetime.now()
-        }
-
-        query = {'stock_id': hrn, 'date': current_date_str, 'timestamp': timestamp_snapshot}
-        oi_collection.update_one(query, {'$set': doc}, upsert=True)
+        db.insert_oi(hrn, current_date_str, timestamp_snapshot, total_call_oi, total_put_oi, 0, source='trendlyne_backfill')
         return True
 
     except Exception as e:
@@ -190,7 +175,7 @@ def get_expiry_dates(stock_id: int, mtype: str = 'options'):
         return []
 
 def fetch_futures_buildup(symbol: str, expiry: str) -> List[Dict[str, Any]]:
-    """Fetches futures buildup data and caches it. Falls back to local data if needed."""
+    """Fetches futures buildup data. Falls back to local data if needed."""
     session = TrendlyneSession.get_session()
     # Try multiple common URL formats as backup
     formats = [
@@ -209,26 +194,14 @@ def fetch_futures_buildup(symbol: str, expiry: str) -> List[Dict[str, Any]]:
         except:
             continue
 
-    # Cache in MongoDB if we got results
     if results:
-        hrn = symbol_mapper.get_symbol(symbol)
-        if hrn == "UNKNOWN": hrn = symbol.upper()
-
-        coll = get_trendlyne_buildup_collection()
-        for item in results:
-            item['symbol'] = hrn
-            item['expiry'] = expiry
-            item['mtype'] = 'futures'
-            item['updated_at'] = datetime.now()
-            query = {'symbol': hrn, 'expiry': expiry, 'timestamp': item.get('timestamp'), 'mtype': 'futures'}
-            coll.update_one(query, {'$set': item}, upsert=True)
         return results
 
     # Fallback to local data if Trendlyne fails
     return get_local_buildup(symbol, mtype='futures', expiry=expiry)
 
 def fetch_option_buildup(symbol: str, expiry: str, strike: int, option_type: str) -> List[Dict[str, Any]]:
-    """Fetches option buildup data and caches it. Falls back to local data if needed."""
+    """Fetches option buildup data. Falls back to local data if needed."""
     session = TrendlyneSession.get_session()
     url = f"https://smartoptions.trendlyne.com/phoenix/api/fno/buildup-15/{expiry}/{symbol}/?fno_mtype=options&format=json&option_type={option_type}&strikePrice={strike}"
 
@@ -241,75 +214,37 @@ def fetch_option_buildup(symbol: str, expiry: str, strike: int, option_type: str
     except:
         pass
 
-    # Cache in MongoDB
     if results:
-        # Generate HRN for the option
-        opt_type = 'CALL' if option_type.upper() in ['CALL', 'CE'] else 'PUT'
-        meta = {
-            'symbol': symbol,
-            'type': opt_type,
-            'strike': strike,
-            'expiry': expiry
-        }
-        # Use dummy key to generate HRN if not in master
-        hrn = symbol_mapper.get_hrn(f"TL_OPT|{symbol}|{expiry}|{strike}|{opt_type}", meta)
-
-        coll = get_trendlyne_buildup_collection()
-        for item in results:
-            item['hrn'] = hrn
-            item['symbol'] = symbol
-            item['expiry'] = expiry
-            item['strike'] = strike
-            item['option_type'] = option_type
-            item['mtype'] = 'options'
-            item['updated_at'] = datetime.now()
-            query = {
-                'hrn': hrn,
-                'timestamp': item.get('timestamp'),
-                'mtype': 'options'
-            }
-            coll.update_one(query, {'$set': item}, upsert=True)
         return results
 
     # Fallback to local data
     return get_local_buildup(symbol, mtype='options', strike=strike, option_type=option_type, expiry=expiry)
 
 def get_local_buildup(symbol: str, mtype='futures', strike=None, option_type=None, expiry=None) -> List[Dict[str, Any]]:
-    """Calculates buildup from local MongoDB strike_oi_data, intraday bars, or Upstox API."""
+    """Calculates buildup from local DuckDB strike_oi_data or intraday bars."""
     try:
-        from db.mongodb import get_db
         from core.pcr_logic import analyze_oi_buildup
         from core import data_engine
-        from external import upstox_helper
-        from external.upstox_api import UpstoxAPI
-        from config import ACCESS_TOKEN
 
-        db = get_db()
-
-        # 1. Resolve Instrument Key
-        # Standardize symbol for Upstox resolution
-        res_symbol = "NIFTY" if "nifty 50" in symbol.lower() else "BANKNIFTY" if "bank" in symbol.lower() else symbol
-
-        # Standardize option type: Map CALL/PUT to CE/PE for Upstox resolution
-        opt_type = 'CE' if option_type and option_type.upper() in ['CALL', 'CE'] else 'PE' if option_type and option_type.upper() in ['PUT', 'PE'] else option_type.upper() if option_type else None
+        # 1. Resolve HRN
+        opt_type = 'CALL' if option_type and option_type.upper() in ['CALL', 'CE'] else 'PUT' if option_type and option_type.upper() in ['PUT', 'PE'] else None
 
         if mtype == 'futures':
-            raw_key = upstox_helper.resolve_instrument_key(res_symbol, 'FUT', expiry=expiry)
+            # This is a guess since we don't have upstox_helper anymore.
+            # We'll try to find it in metadata.
+            rows = db.query("SELECT hrn FROM metadata WHERE hrn LIKE ?", (f"{symbol}%FUT",))
+            hrn = rows[0]['hrn'] if rows else f"{symbol} FUT"
         else:
-            raw_key = upstox_helper.resolve_instrument_key(res_symbol, opt_type, strike=strike, expiry=expiry)
+            # Try to match metadata
+            rows = db.query("SELECT hrn FROM metadata WHERE hrn LIKE ?", (f"{symbol}%{opt_type}%{strike}",))
+            hrn = rows[0]['hrn'] if rows else f"{symbol} {opt_type} {strike}"
 
-        if not raw_key:
-            logger.warning(f"Buildup Fallback: Could not resolve key for {symbol} {mtype} strike={strike} expiry={expiry} opt_type={opt_type}")
-            return []
-
-        hrn = symbol_mapper.get_hrn(raw_key)
-
-        logger.info(f"Buildup Fallback: Using raw {raw_key} / hrn {hrn} for {symbol}")
+        logger.info(f"Buildup Fallback: Using hrn {hrn} for {symbol}")
 
         # 2. Try fetching from strike_oi_data first (cached ticks)
-        coll = db['strike_oi_data']
-        cursor = coll.find({'instrument_key': hrn}).sort([('date', -1), ('timestamp', -1)]).limit(60)
-        docs = list(cursor)[::-1] # chronological
+        sql = "SELECT date, timestamp, price, oi FROM strike_oi_data WHERE instrument_key = ? ORDER BY updated_at DESC LIMIT 60"
+        docs = db.query(sql, (hrn,))
+        docs = docs[::-1] # chronological
         source = "DB_STRIKE_OI"
 
         # 3. If insufficient, use intraday aggregated bars (from tick_data)
@@ -326,25 +261,8 @@ def get_local_buildup(symbol: str, mtype='futures', strike=None, option_type=Non
                     })
                 source = "DB_TICK_DATA"
 
-        # 4. Final attempt: Fetch from Upstox API if still insufficient
         if len(docs) < 2:
-            logger.info(f"Buildup Fallback: Fetching from Upstox API for {raw_key}")
-            upstox_api = UpstoxAPI(ACCESS_TOKEN)
-            data = upstox_api.get_intraday_candles(raw_key)
-            if data and 'data' in data and 'candles' in data['data']:
-                candles = data['data']['candles'] # newest first
-                docs = []
-                for c in reversed(candles): # to chronological
-                    docs.append({
-                        'date': c[0][:10],
-                        'timestamp': c[0][11:19],
-                        'price': c[4],
-                        'oi': c[6] if len(c) > 6 else 0
-                    })
-                source = "UPSTOX_API"
-
-        if len(docs) < 2:
-            logger.warning(f"Buildup Fallback: Insufficient data points found for {instrument_key}")
+            logger.warning(f"Buildup Fallback: Insufficient data points found for {hrn}")
             return []
 
         logger.info(f"Buildup Fallback: Calculated from {source} ({len(docs)} points)")

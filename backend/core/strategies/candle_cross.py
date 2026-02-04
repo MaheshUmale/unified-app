@@ -6,25 +6,19 @@ from typing import Dict, Any
 from collections import deque
 from typing import Deque
 
-from db.mongodb import get_db, SIGNAL_COLLECTION_NAME
+from db.local_db import db
 
 class DataPersistor:
-    """Manages MongoDB connection and logging to the 'trade_signals' collection."""
+    """Manages LocalDB logging for trade signals."""
     def __init__(self):
-        self.db = get_db()
-        if self.db is None:
-             print("MongoDB connection failed in DataPersistor.", file=sys.stderr)
-        else:
-             print("DataPersistor initialized with MongoDB.")
+        print("DataPersistor initialized with LocalDB.")
 
     def log_signal(self, log_entry: Dict[str, Any]):
-        """Inserts a trade signal document into the 'trade_signals' collection."""
+        """Inserts a trade signal into the trade_signals table."""
         try:
-            db = get_db()
-            if db is not None:
-                db[SIGNAL_COLLECTION_NAME].insert_one(log_entry)
+            db.insert_signal(log_entry)
         except Exception as e:
-            print(f"MongoDB insertion error (trade signal): {e}", file=sys.stderr)
+            print(f"LocalDB insertion error (trade signal): {e}", file=sys.stderr)
 
 
 

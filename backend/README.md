@@ -15,7 +15,7 @@ Handles all communication with third-party APIs and data providers.
 
 ### 2. DB Access Module (`db/`)
 Centralized database interaction layer using MongoDB.
-- **`mongodb.py`**: Handles connection pooling, collection access, and indexing for `PRO_TRADE_DATABASE`.
+    - **`local_db.py`**: Handles DuckDB connection and optimized local storage.
 
 ### 3. Brain/Logic Module (`core/`)
 The decision-making heart of the platform.

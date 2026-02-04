@@ -7,6 +7,7 @@ import json
 from datetime import datetime, timedelta
 from bson import ObjectId
 import logging
+logger = logging.getLogger(__name__)
 import random
 import ssl
 import sys
@@ -17,19 +18,8 @@ import uuid
 from collections import deque
 from datetime import datetime, timedelta
 
-import MarketDataFeedV3_pb2 as pb
-import pandas as pd
-from google.protobuf.json_format import MessageToDict
-from external import upstox_helper as ExtractInstrumentKeys
-from external.upstox_feed import UpstoxFeed
-from db.mongodb import (
-    get_db,
-    get_instruments_collection,
-    get_oi_collection,
-    get_raw_tick_data_collection,
-    get_stocks_collection,
-    get_tick_data_collection,
-)
+from external import trendlyne_api as TrendlyneAPI
+from db.local_db import db, LocalDBJSONEncoder
 from typing import Dict, Any, List, Optional, Set, Union
 from core.pcr_logic import calculate_total_pcr, analyze_oi_buildup
 from core.symbol_mapper import symbol_mapper
@@ -68,16 +58,10 @@ instrument_metadata = {} # instrument_key -> {'symbol': str, 'type': 'CE'|'PE'|'
 pcr_running_totals = {} # symbol -> {'CE': total_oi, 'PE': total_oi, 'last_save': timestamp}
 current_expiries = {} # symbol -> 'YYYY-MM-DD'
 
-# Initialize Collections
-tick_collection = get_tick_data_collection()
-raw_tick_collection = get_raw_tick_data_collection()
-
-# Batching for MongoDB
-TICK_BATCH_SIZE = 50
+# Batching for DuckDB
+TICK_BATCH_SIZE = 100
 tick_buffer = []
-raw_tick_buffer = []
 buffer_lock = threading.Lock()
-raw_buffer_lock = threading.Lock()
 
 # Worker Queue for non-blocking persistence
 import queue
@@ -109,14 +93,6 @@ def persistence_worker():
 
 threading.Thread(target=persistence_worker, daemon=True).start()
 
-class MongoJSONEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, datetime):
-            return obj.isoformat()
-        if isinstance(obj, ObjectId):
-            return str(obj)
-        return super().default(obj)
-
 def set_socketio(sio, loop=None):
     """
     Allows the main app to inject the SocketIO instance and the main event loop.
@@ -138,9 +114,9 @@ def emit_event(event: str, data: Any, room: Optional[str] = None):
     if not socketio_instance:
         return
 
-    # Ensure data is JSON serializable (handles datetimes/ObjectIds)
+    # Ensure data is JSON serializable
     if isinstance(data, (dict, list)):
-        data = json.loads(json.dumps(data, cls=MongoJSONEncoder))
+        data = json.loads(json.dumps(data, cls=LocalDBJSONEncoder))
 
     try:
         if main_event_loop and main_event_loop.is_running():
@@ -163,7 +139,7 @@ def emit_event(event: str, data: Any, room: Optional[str] = None):
         logging.error(f"Error emitting SocketIO event {event}: {e}")
 
 def flush_tick_buffer():
-    """Flushes the tick buffer to MongoDB."""
+    """Flushes the tick buffer to LocalDB."""
     global tick_buffer
     to_insert = []
     with buffer_lock:
@@ -173,24 +149,9 @@ def flush_tick_buffer():
 
     if to_insert:
         try:
-            tick_collection.insert_many(to_insert, ordered=False)
+            db.insert_ticks(to_insert)
         except Exception as e:
-            logging.error(f"MongoDB Batch Insert Error: {e}")
-
-def flush_raw_tick_buffer():
-    """Flushes the raw tick buffer to MongoDB."""
-    global raw_tick_buffer
-    to_insert = []
-    with raw_buffer_lock:
-        if raw_tick_buffer:
-            to_insert = raw_tick_buffer
-            raw_tick_buffer = []
-
-    if to_insert:
-        try:
-            raw_tick_collection.insert_many(to_insert, ordered=False)
-        except Exception as e:
-            logging.error(f"MongoDB Raw Batch Insert Error: {e}")
+            logging.error(f"LocalDB Batch Insert Error: {e}")
 
 # Session State (Per-Instrument)
 active_bars = {}
@@ -209,20 +170,6 @@ def register_strategy(instrument_key, strategy_instance):
         active_strategies[instrument_key] = []
     active_strategies[instrument_key].append(strategy_instance)
 
-def decode_protobuf(buffer: bytes) -> pb.FeedResponse:
-    """
-    Decode the binary Protobuf message into a Python object.
-
-    Args:
-        buffer (bytes): The raw binary message from the WebSocket.
-
-    Returns:
-        pb.FeedResponse: The decoded Protobuf object.
-    """
-    feed_response = pb.FeedResponse()
-    feed_response.ParseFromString(buffer)
-    return feed_response
-
 def normalize_key(key: str) -> str:
     """Normalizes instrument keys to use pipe separator instead of colon."""
     if not key: return key
@@ -230,30 +177,21 @@ def normalize_key(key: str) -> str:
 
 def on_message(message: Union[Dict, bytes, str]):
     """
-    Primary callback for incoming WebSocket messages from Upstox.
-    Handles decoding (Protobuf/JSON), archiving to MongoDB, and dispatching to registered strategies and UI.
-
-    Args:
-        message: The raw message from the WebSocket feed.
+    Primary callback for incoming data messages (TradingView).
+    Handles archiving to LocalDB, and dispatching to registered strategies and UI.
     """
     global active_bars, session_stats, socketio_instance
 
     data = None
     if isinstance(message, dict):
         data = message
-    elif isinstance(message, bytes):
-        try:
-            decoded_data = decode_protobuf(message)
-            data = MessageToDict(decoded_data)
-        except Exception as e:
-            logging.error(f"Protobuf decode failed: {e}")
-            return
-
-    if data is None:
+    elif isinstance(message, str):
         try:
             data = json.loads(message)
-        except (json.JSONDecodeError, UnicodeDecodeError):
+        except:
             return
+    else:
+        return
 
     msg_type = data.get('type')
     if msg_type == 'initial_feed':
@@ -264,14 +202,14 @@ def on_message(message: Union[Dict, bytes, str]):
 
     feeds_map = data.get('feeds', {})
     if feeds_map:
-        # logging.info(f"WSS: Received ticks for {list(feeds_map.keys())}")
-        pass
+        logger.info(f"WSS: Received ticks for {list(feeds_map.keys())}")
 
     if feeds_map:
         current_time = datetime.now()
         new_ticks = []
         hrn_feeds = {}
 
+        today_str = current_time.strftime("%Y-%m-%d")
         for inst_key, feed_datum in list(feeds_map.items()):
             # Resolve HRN
             inst_key = normalize_key(inst_key)
@@ -285,6 +223,7 @@ def on_message(message: Union[Dict, bytes, str]):
 
             feed_datum['instrumentKey'] = hrn
             feed_datum['raw_key'] = inst_key # Keep raw key for internal use
+            feed_datum['date'] = today_str # Optimized for replay
             feed_datum['_insertion_time'] = current_time
             hrn_feeds[hrn] = feed_datum
 
@@ -395,13 +334,6 @@ def on_message(message: Union[Dict, bytes, str]):
                         logging.error(f"Error in strategy {strategy.__class__.__name__} for {hrn}: {e}")
 
             process_footprint_tick(hrn, feed_datum)
-
-        # Batch raw tick persistence (Standardized with HRNs)
-        global raw_tick_buffer
-        with raw_buffer_lock:
-            raw_tick_buffer.append(data)
-            if len(raw_tick_buffer) >= TICK_BATCH_SIZE:
-                threading.Thread(target=flush_raw_tick_buffer, daemon=True).start()
 
         # Throttled SocketIO Emission (Global per feed message)
         try:
@@ -539,71 +471,50 @@ def process_footprint_tick(instrument_key: str, data_datum: Dict[str, Any]):
     except Exception as e:
         logging.error(f"Error processing footprint tick: {e}")
 
-upstox_feed: Optional[UpstoxFeed] = None
-
 def subscribe_instrument(instrument_key: str):
-    """Dynamic subscription to an instrument. Handles HRN or raw key."""
+    """Dynamic subscription to an instrument. TradingView feed polls automatically."""
     raw_key = symbol_mapper.resolve_to_key(instrument_key) or instrument_key
-
-    if upstox_feed:
-        upstox_feed.subscribe(raw_key)
 
     # Try to resolve metadata if not present
     if raw_key not in instrument_metadata:
         threading.Thread(target=resolve_metadata, args=(raw_key,), daemon=True).start()
 
 def resolve_metadata(instrument_key: str):
-    """Resolves and caches instrument metadata (Symbol, Type, Strike, Expiry). Falls back to DB for historical."""
+    """Resolves and caches instrument metadata. Uses TradingView/Trendlyne for lookup."""
     try:
-        # 1. Try Live Master
-        df = ExtractInstrumentKeys.get_instrument_df()
-        match = df[df['instrument_key'] == instrument_key]
-        if not match.empty:
-            row = match.iloc[0]
-            expiry_date = ''
-            if row.get('expiry'):
-                dt = pd.to_datetime(row['expiry'])
-                if not pd.isna(dt):
-                    expiry_date = dt.strftime('%Y-%m-%d')
+        # Resolve from Local DB first
+        res = db.get_metadata(instrument_key)
+        if res:
+            meta = res.get('metadata')
+            if meta:
+                instrument_metadata[instrument_key] = meta
 
-            meta = {
-                'symbol': row['name'],
-                'type': row['instrument_type'],
-                'strike': float(row.get('strike_price', 0)),
-                'expiry': expiry_date
-            }
-            instrument_metadata[instrument_key] = meta
+        # If not in DB, try to deduce from HRN if it's already an HRN
+        if instrument_key not in instrument_metadata:
+            if any(x in instrument_key for x in ['CALL', 'PUT', 'FUT']):
+                # Deduce meta from HRN string
+                parts = instrument_key.split(' ')
+                # NIFTY 06 FEB 2026 CALL 25500
+                if len(parts) >= 6:
+                    symbol = parts[0]
+                    expiry = parts[1:4] # DD MMM YYYY
+                    itype = parts[4]
+                    strike = parts[5]
 
-            # Resolve HRN and ensure it's in symbol_mapper
-            symbol_mapper.get_hrn(instrument_key, meta)
+                    try:
+                        exp_dt = datetime.strptime(" ".join(expiry), "%d %b %Y")
+                        meta = {
+                            'symbol': symbol,
+                            'type': 'CE' if itype == 'CALL' else 'PE' if itype == 'PUT' else 'FUT',
+                            'strike': float(strike),
+                            'expiry': exp_dt.strftime('%Y-%m-%d')
+                        }
+                        instrument_metadata[instrument_key] = meta
+                        symbol_mapper.get_hrn(instrument_key, meta)
+                    except:
+                        pass
 
-            # Cache in MongoDB for future replay discovery
-            db = get_db()
-            db['instruments'].update_one(
-                {'instrument_key': instrument_key},
-                {'$set': {
-                    'name': row['name'],
-                    'instrument_type': row['instrument_type'],
-                    'strike_price': float(row.get('strike_price', 0)),
-                    'expiry_date': expiry_date,
-                    'trading_symbol': row.get('trading_symbol') or row.get('symbol'),
-                    'updated_at': datetime.now()
-                }},
-                upsert=True
-            )
-        else:
-            # 2. Try MongoDB (for expired/historical instruments)
-            db = get_db()
-            doc = db['instruments'].find_one({'instrument_key': instrument_key})
-            if doc:
-                instrument_metadata[instrument_key] = {
-                    'symbol': doc.get('name') or doc.get('underlying_symbol') or 'UNKNOWN',
-                    'type': doc.get('instrument_type') or 'UNKNOWN',
-                    'strike': float(doc.get('strike_price', 0)),
-                    'expiry': doc.get('expiry_date') or ''
-                }
-
-        # 3. Update current nearest expiry for the symbol (only future/today)
+        # Update current nearest expiry for the symbol
         if instrument_key in instrument_metadata:
             meta = instrument_metadata[instrument_key]
             symbol = meta['symbol']
@@ -688,19 +599,13 @@ def save_vix_to_db(vix_value, hrn="INDIA VIX"):
     """Persists India VIX for strategy context. Gated by replay timestamps."""
     if replay_mode: return # Keep simulation in memory
     try:
-        db = get_db()
-        coll = db['vix_data']
         now = get_now()
-        doc = {
-            'symbol': hrn,
-            'value': vix_value,
-            'date': now.strftime("%Y-%m-%d"),
-            'timestamp': now.strftime("%H:%M:%S"),
-            'updated_at': now
-        }
+        date_str = now.strftime("%Y-%m-%d")
+        ts_str = now.strftime("%H:%M:%S")
+
         last_save = last_emit_times.get("SAVE_VIX", 0)
         if time.time() - last_save > 60:
-            coll.insert_one(doc)
+            db.insert_vix(date_str, hrn, ts_str, vix_value)
             last_emit_times["SAVE_VIX"] = time.time()
     except Exception as e:
         logging.error(f"Error saving VIX: {e}")
@@ -739,47 +644,32 @@ def save_strike_metrics_to_db(hrn, oi, price, iv=0, greeks=None):
             return
 
         # Regular live persistence
-        db = get_db()
-        coll = db['strike_oi_data']
         # Only save every 1 minute to avoid bloat
         last_emit = last_emit_times.get(f"SAVE_STRIKE_{hrn}", 0)
         if time.time() - last_emit > 60: # Every 1 minute
-            coll.insert_one(doc)
+            db.insert_strike_metric(doc)
             last_emit_times[f"SAVE_STRIKE_{hrn}"] = time.time()
     except Exception as e:
         logging.error(f"Error saving strike metrics: {e}")
 
 def save_oi_to_db(symbol, call_oi, put_oi, price=0):
-    """Persists aggregated OI to MongoDB for historical analytics. Gated by replay timestamps."""
+    """Persists aggregated OI for historical analytics. Gated by replay timestamps."""
     if replay_mode: return # Skip for replay to avoid pollution
     try:
-        oi_coll = get_oi_collection()
         now = get_now()
-        doc = {
-            'stock_id': symbol, # Unified ID
-            'symbol': symbol,
-            'date': now.strftime("%Y-%m-%d"),
-            'timestamp': now.strftime("%H:%M"),
-            'call_oi': call_oi,
-            'put_oi': put_oi,
-            'price': price,
-            'source': 'live_engine',
-            'updated_at': now
-        }
-        query = {'stock_id': symbol, 'date': doc['date'], 'timestamp': doc['timestamp']}
-        oi_coll.update_one(query, {'$set': doc}, upsert=True)
+        date_str = now.strftime("%Y-%m-%d")
+        ts_str = now.strftime("%H:%M")
+        db.insert_oi(symbol, date_str, ts_str, call_oi, put_oi, price, source='live_engine')
         logging.info(f"Saved real-time OI for {symbol}")
     except Exception as e:
         logging.error(f"Error saving real-time OI: {e}")
 
 def start_pcr_calculation_thread():
     """Starts background threads for accurate PCR calculation and expiry tracking."""
-    from external.upstox_api import UpstoxAPI
-    from config import ACCESS_TOKEN
+    from external.tv_mcp import process_option_chain_with_analysis
 
     def run_full_chain_pcr():
         from external import trendlyne_api
-        api = UpstoxAPI(ACCESS_TOKEN)
         while True:
             if not is_market_hours():
                 time.sleep(300)
@@ -787,92 +677,47 @@ def start_pcr_calculation_thread():
 
             for symbol in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']:
                 try:
-                    # 1. Get nearest expiry
-                    # Ensure we have the latest expiry by resolving keys if needed
-                    if symbol not in current_expiries:
-                         from external import upstox_helper
-                         current_spots = {
-                            "NIFTY": latest_prices.get("NSE_INDEX|Nifty 50", 0),
-                            "BANKNIFTY": latest_prices.get("NSE_INDEX|Nifty Bank", 0),
-                            "FINNIFTY": latest_prices.get("NSE_INDEX|Nifty Fin Service", 0)
-                         }
-                         if current_spots.get(symbol, 0) > 0:
-                             upstox_helper.get_upstox_instruments([symbol], current_spots)
-
                     expiry_str = current_expiries.get(symbol)
-                    if not expiry_str:
-                        continue
 
-                    # 2. Attempt to fetch Golden PCR from Trendlyne first
-                    trendlyne_pcr = trendlyne_api.fetch_latest_pcr(symbol, expiry_str)
-                    if trendlyne_pcr:
-                        pcr = trendlyne_pcr.get('pcr')
-                        total_ce = trendlyne_pcr.get('total_call_oi', 0)
-                        total_pe = trendlyne_pcr.get('total_put_oi', 0)
+                    # 1. Attempt to fetch Golden PCR from Trendlyne
+                    if expiry_str:
+                        trendlyne_pcr = trendlyne_api.fetch_latest_pcr(symbol, expiry_str)
+                        if trendlyne_pcr:
+                            pcr = trendlyne_pcr.get('pcr')
+                            logging.info(f"Golden PCR from Trendlyne for {symbol}: {pcr}")
+                            emit_event('oi_update', {
+                                'symbol': symbol,
+                                'pcr': pcr,
+                                'timestamp': datetime.now().isoformat(),
+                                'put_oi': trendlyne_pcr.get('total_put_oi', 0),
+                                'call_oi': trendlyne_pcr.get('total_call_oi', 0),
+                                'source': 'trendlyne'
+                            })
+                            continue
 
-                        logging.info(f"Golden PCR from Trendlyne for {symbol}: {pcr}")
-                        emit_event('oi_update', {
-                            'symbol': symbol,
-                            'pcr': pcr,
-                            'timestamp': datetime.now().isoformat(),
-                            'put_oi': total_pe,
-                            'call_oi': total_ce,
-                            'source': 'trendlyne'
-                        })
-                        # Update the emit throttle for live ticks so we don't double emit immediately
-                        if symbol in pcr_running_totals:
-                            pcr_running_totals[symbol]['last_emit'] = time.time()
-                        continue # Skip Upstox if Trendlyne succeeded
-
-                    # 3. Fallback to Upstox full option chain
-                    index_key = symbol_mapper.resolve_to_key(symbol)
-                    if not index_key: continue
-
-                    chain = api.get_option_chain(index_key, expiry_str)
-                    if chain and chain.get('status') == 'success':
-                        data = chain.get('data', [])
-
-                        total_ce_oi = 0
-                        total_pe_oi = 0
-                        for item in data:
-                            if item.get('call_options'):
-                                total_ce_oi += item['call_options'].get('market_data', {}).get('oi', 0)
-                            if item.get('put_options'):
-                                total_pe_oi += item['put_options'].get('market_data', {}).get('oi', 0)
+                    # 2. Fallback to TradingView Option Chain Scanner
+                    tv_res = process_option_chain_with_analysis(symbol, 'NSE', expiry_date='nearest')
+                    if tv_res['success']:
+                        total_ce_oi = sum(opt['oi'] for opt in tv_res['data'] if opt['type'] == 'call')
+                        total_pe_oi = sum(opt['oi'] for opt in tv_res['data'] if opt['type'] == 'put')
 
                         if total_ce_oi > 0:
                             pcr = round(total_pe_oi / total_ce_oi, 2)
-                            logging.info(f"Fallback Full Chain PCR for {symbol}: {pcr}")
-
+                            logging.info(f"TradingView Scanner PCR for {symbol}: {pcr}")
                             emit_event('oi_update', {
                                 'symbol': symbol,
                                 'pcr': pcr,
                                 'timestamp': datetime.now().isoformat(),
                                 'put_oi': total_pe_oi,
                                 'call_oi': total_ce_oi,
-                                'source': 'upstox_full'
+                                'source': 'tradingview_scanner'
                             })
-                            # Update the emit throttle for live ticks
-                            if symbol in pcr_running_totals:
-                                pcr_running_totals[symbol]['last_emit'] = time.time()
                 except Exception as e:
                     logging.error(f"Error in full chain PCR for {symbol}: {e}")
 
-            time.sleep(60) # Every 1 minute
+            time.sleep(60)
 
     threading.Thread(target=run_full_chain_pcr, daemon=True).start()
-
-    def run_expiry_refresh():
-        while True:
-            try:
-                # Periodically re-fetch instrument master to ensure we have latest expiries
-                ExtractInstrumentKeys.get_instrument_df()
-            except Exception as e:
-                logging.error(f"Error refreshing instrument master: {e}")
-            time.sleep(3600) # Every hour
-
-    t = threading.Thread(target=run_expiry_refresh, daemon=True)
-    t.start()
 
 def is_market_hours() -> bool:
     """Checks if the current time is within Indian market hours (09:15 - 15:30 IST)."""
@@ -891,53 +736,15 @@ def is_market_hours() -> bool:
 
 def start_websocket_thread(access_token: str, instrument_keys: List[str]):
     """
-    Starts the Upstox SDK MarketDataStreamerV3 via UpstoxFeed with market hour awareness.
-    Also starts the TradingView live feed for indices.
+    Starts the TradingView live feed for indices and options.
     """
-    global upstox_feed
     start_pcr_calculation_thread()
     from external.tv_feed import start_tv_feed
     start_tv_feed(on_message)
 
-    def market_hour_monitor():
-        global upstox_feed
-        while True:
-            try:
-                market_active = is_market_hours()
-
-                if market_active:
-                    if upstox_feed is None:
-                        logging.info("Market Hours: Initializing WebSocket Feed...")
-                        upstox_feed = UpstoxFeed(access_token, on_message)
-                        upstox_feed.connect(instrument_keys)
-                    elif not upstox_feed.is_connected():
-                        logging.info("Market Hours: Reconnecting WebSocket Feed...")
-                        upstox_feed.connect(instrument_keys)
-                else:
-                    if upstox_feed and upstox_feed.is_connected():
-                        logging.info("Outside Market Hours: Disconnecting WebSocket Feed...")
-                        upstox_feed.disconnect()
-            except Exception as e:
-                logging.error(f"Market monitor loop error: {e}")
-
-            time.sleep(60)
-
-    def subscription_keep_alive():
-        while True:
-            time.sleep(120) # Throttled
-            if not is_market_hours():
-                continue
-
-            try:
-                new_keys = ExtractInstrumentKeys.getNiftyAndBNFnOKeys()
-                if new_keys and upstox_feed and upstox_feed.is_connected():
-                    for key in new_keys:
-                        upstox_feed.subscribe(key)
-            except Exception as e:
-                logging.error(f"Keep-alive subscription failed: {e}")
-
-    threading.Thread(target=market_hour_monitor, daemon=True).start()
-    threading.Thread(target=subscription_keep_alive, daemon=True).start()
+    # No longer using UpstoxFeed, so we don't need the monitor or keep-alive threads for it.
+    # TradingView feed handles its own reconnection/polling.
+    logger.info("TradingView Live Feed initialized.")
 
 def load_intraday_data(instrument_key, date_str=None, timeframe_min=1, lookback_days=0):
     """
@@ -973,21 +780,17 @@ def load_intraday_data(instrument_key, date_str=None, timeframe_min=1, lookback_
     raw_key = symbol_mapper.resolve_to_key(instrument_key)
     if raw_key and raw_key not in keys_to_search:
         keys_to_search.append(raw_key)
-        if '|' in raw_key:
-            keys_to_search.append(raw_key.replace('|', ':'))
 
-    query = {
-        'instrumentKey': {'$in': keys_to_search},
-        '$or': [
-            {'ts_ms': {'$gte': start_ms, '$lte': end_ms}},
-            {'fullFeed.marketFF.ltpc.ltt': {'$gte': str(start_ms), '$lte': str(end_ms)}},
-            {'fullFeed.indexFF.ltpc.ltt': {'$gte': str(start_ms), '$lte': str(end_ms)}},
-            {'fullFeed.marketFF.ltpc.ltt': {'$gte': start_ms, '$lte': end_ms}},
-            {'fullFeed.indexFF.ltpc.ltt': {'$gte': start_ms, '$lte': end_ms}}
-        ]
-    }
+    # DuckDB Optimized query
+    keys_str = ", ".join([f"'{k}'" for k in keys_to_search])
+    sql = f"""
+        SELECT full_feed FROM ticks
+        WHERE instrumentKey IN ({keys_str})
+        AND ts_ms >= {start_ms} AND ts_ms <= {end_ms}
+        ORDER BY ts_ms ASC
+    """
 
-    cursor = tick_collection.find(query).sort('_id', 1)
+    rows = db.query(sql)
     bars = []
 
     try:
@@ -997,7 +800,8 @@ def load_intraday_data(instrument_key, date_str=None, timeframe_min=1, lookback_
 
         replay = ReplayManager(emit_fn=collect_bar)
         replay.timeframe_sec = timeframe_min * 60
-        for doc in cursor:
+        for row in rows:
+            doc = json.loads(row['full_feed'])
             replay.process_replay_tick(doc)
 
         if replay.aggregated_bar:
@@ -1028,11 +832,12 @@ class ReplayManager:
         self.stop_flag = False
         self.aggregated_bar = None
 
-        query = {'instrumentKey': instrument_key}
-        cursor = tick_collection.find(query).sort('_id', 1)
+        sql = f"SELECT full_feed FROM ticks WHERE instrumentKey = ? ORDER BY ts_ms ASC"
+        rows = db.query(sql, (instrument_key,))
 
         count = 0
-        for doc in cursor:
+        for row in rows:
+            doc = json.loads(row['full_feed'])
             if self.stop_flag:
                 self.emit_fn('replay_finished', {'reason': 'stopped'})
                 return
