@@ -338,10 +338,20 @@ function renderChart(chart, title, data, mtf = {}) {
     // Preserve zoom state
     let start = 70;
     let end = 100;
+    let yStart = 0;
+    let yEnd = 100;
     const currentOption = chart.getOption();
-    if (currentOption && currentOption.dataZoom && currentOption.dataZoom.length > 0) {
-        start = currentOption.dataZoom[0].start;
-        end = currentOption.dataZoom[0].end;
+    if (currentOption && currentOption.dataZoom) {
+        const xZoom = currentOption.dataZoom.find(dz => dz.xAxisIndex && dz.xAxisIndex.includes(0));
+        if (xZoom) {
+            start = xZoom.start;
+            end = xZoom.end;
+        }
+        const yZoom = currentOption.dataZoom.find(dz => dz.yAxisIndex && dz.yAxisIndex.includes(0));
+        if (yZoom) {
+            yStart = yZoom.start;
+            yEnd = yZoom.end;
+        }
     }
 
     // 1. Indicators Logic
@@ -412,7 +422,9 @@ function renderChart(chart, title, data, mtf = {}) {
             {
                 type: 'inside',
                 yAxisIndex: [0],
-                filterMode: 'empty'
+                filterMode: 'empty',
+                start: yStart,
+                end: yEnd
             },
             {
                 type: 'slider',
@@ -560,10 +572,20 @@ function renderPcrChart() {
     // Preserve zoom state
     let start = 0;
     let end = 100;
+    let yStart = 0;
+    let yEnd = 100;
     const currentOption = charts.pcr.getOption();
-    if (currentOption && currentOption.dataZoom && currentOption.dataZoom.length > 0) {
-        start = currentOption.dataZoom[0].start;
-        end = currentOption.dataZoom[0].end;
+    if (currentOption && currentOption.dataZoom) {
+        const xZoom = currentOption.dataZoom.find(dz => dz.xAxisIndex && dz.xAxisIndex.includes(0));
+        if (xZoom) {
+            start = xZoom.start;
+            end = xZoom.end;
+        }
+        const yZoom = currentOption.dataZoom.find(dz => dz.yAxisIndex && dz.yAxisIndex.includes(0));
+        if (yZoom) {
+            yStart = yZoom.start;
+            yEnd = yZoom.end;
+        }
     }
 
     const options = {
@@ -579,7 +601,9 @@ function renderPcrChart() {
             {
                 type: 'inside',
                 yAxisIndex: [0],
-                filterMode: 'empty'
+                filterMode: 'empty',
+                start: yStart,
+                end: yEnd
             },
             {
                 type: 'slider',

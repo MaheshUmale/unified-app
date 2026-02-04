@@ -30,6 +30,7 @@ from core.replay_engine import ReplayEngine
 from core.backfill_manager import BackfillManager
 from external import trendlyne_api as trendlyne_service
 from external.upstox_api import UpstoxAPI
+from external.tv_api import tv_api
 from core.strategies.candle_cross import CandleCrossStrategy, DataPersistor
 from core.strategies.atm_buying_strategy import ATMOptionBuyingStrategy
 try:
@@ -529,10 +530,18 @@ async def trigger_trendlyne_backfill(
 
 @fastapi_app.get("/api/upstox/intraday/{instrument_key}")
 async def get_upstox_intraday(instrument_key: str, date: Optional[str] = None, interval: str = '1'):
-    """Fetch intraday candles from DB backfill or Upstox V3. instrument_key can be HRN."""
+    """Fetch intraday candles from DB backfill, Upstox V3 or TradingView. instrument_key can be HRN."""
     try:
         clean_key = unquote(instrument_key)
         raw_key = symbol_mapper.resolve_to_key(clean_key) or clean_key
+
+        # 0. Priority: TradingView for Index Symbols (Better Volume)
+        if not date and any(idx in clean_key.upper() for idx in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']):
+            symbol = symbol_mapper.get_symbol(clean_key)
+            tv_candles = await asyncio.to_thread(tv_api.get_hist_candles, symbol, interval, 1000)
+            if tv_candles:
+                logger.info(f"Using TradingView history for {symbol}")
+                return {"candles": tv_candles}
 
         # 1. Try backfill from MongoDB via data_engine (uses HRN)
         # In live mode (date is None), fetch 2 extra days for indicator warm-up

@@ -19,3 +19,4 @@ pytest
 playwright
 dnspython
 mongomock
+git+https://github.com/rongardF/tvdatafeed.git
