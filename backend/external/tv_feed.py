@@ -50,6 +50,7 @@ class TradingViewFeed:
         while not self.stop_event.is_set():
             for symbol in self.indices:
                 try:
+                    print(symbol)
                     df = self.tv.get_hist(symbol=symbol, exchange='NSE', interval=Interval.in_1_minute, n_bars=1)
                     if df is not None and not df.empty:
                         last_row = df.iloc[-1]
