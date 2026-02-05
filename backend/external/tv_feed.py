@@ -2,7 +2,11 @@ import logging
 import threading
 import time
 from datetime import datetime
-from tvDatafeed import TvDatafeed, Interval
+try:
+    from tvDatafeed import TvDatafeed, Interval
+except ImportError:
+    TvDatafeed = None
+    Interval = None
 from core.symbol_mapper import symbol_mapper
 import os
 
@@ -15,10 +19,13 @@ class TradingViewFeed:
         self.on_message = on_message_callback
         username = os.getenv('TV_USERNAME')
         password = os.getenv('TV_PASSWORD')
-        if username and password:
-            self.tv = TvDatafeed(username, password)
+        if TvDatafeed:
+            if username and password:
+                self.tv = TvDatafeed(username, password)
+            else:
+                self.tv = TvDatafeed()
         else:
-            self.tv = TvDatafeed()
+            self.tv = None
 
         self.indices = ['NIFTY', 'BANKNIFTY', 'CNXFINANCE', 'INDIAVIX']
         self.stop_event = threading.Event()
@@ -48,6 +55,9 @@ class TradingViewFeed:
     def _run_indices(self):
         """Polls index prices from TradingView."""
         while not self.stop_event.is_set():
+            if not self.tv:
+                time.sleep(10)
+                continue
             for symbol in self.indices:
                 try:
                     df = self.tv.get_hist(symbol=symbol, exchange='NSE', interval=Interval.in_1_minute, n_bars=1)
@@ -84,10 +94,11 @@ class TradingViewFeed:
                         self.on_message(feed_msg)
                 except Exception as e:
                     logger.error(f"Error in TV Index Feed for {symbol}: {e}")
-            time.sleep(1)
+            # Poll every 10 seconds as a backup to WSS real-time feed
+            time.sleep(10)
 
     def _run_options(self):
-        """Polls option chain from TradingView scanner every 10 seconds."""
+        """Polls option chain from TradingView scanner every 15 seconds."""
         while not self.stop_event.is_set():
             for symbol in ['NIFTY', 'BANKNIFTY', 'CNXFINANCE']:
                 try:
@@ -139,8 +150,8 @@ class TradingViewFeed:
                 except Exception as e:
                     logger.error(f"Error in TV Option Feed for {symbol}: {e}")
 
-            # Poll every 10 seconds to avoid hitting rate limits too hard
-            time.sleep(10)
+            # Poll every 15 seconds to avoid hitting rate limits too hard
+            time.sleep(15)
 
 tv_feed = None
 

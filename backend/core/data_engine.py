@@ -577,12 +577,16 @@ def update_pcr_for_instrument(instrument_key: str):
         # 1. Emit to UI (Throttled to 30 seconds)
         last_emit = pcr_running_totals[symbol].get('last_emit', 0)
         if now_time - last_emit > 30:
+            index_key = symbol_mapper.resolve_to_key(symbol)
+            price = latest_prices.get(index_key, 0)
+
             emit_event('oi_update', {
                 'symbol': symbol,
                 'pcr': pcr,
                 'timestamp': datetime.now().isoformat(),
                 'put_oi': total_pe_oi,
                 'call_oi': total_ce_oi,
+                'price': price,
                 'source': 'live_tick'
             })
             pcr_running_totals[symbol]['last_emit'] = now_time
@@ -710,12 +714,17 @@ def start_pcr_calculation_thread():
                         if total_ce_oi > 0:
                             pcr = round(total_pe_oi / total_ce_oi, 2)
                             logging.info(f"TradingView Scanner PCR for {symbol}: {pcr}")
+
+                            index_key = symbol_mapper.resolve_to_key(symbol)
+                            price = latest_prices.get(index_key, 0)
+
                             emit_event('oi_update', {
                                 'symbol': symbol,
                                 'pcr': pcr,
                                 'timestamp': datetime.now().isoformat(),
                                 'put_oi': total_pe_oi,
                                 'call_oi': total_ce_oi,
+                                'price': price,
                                 'source': 'tradingview_scanner'
                             })
                 except Exception as e:

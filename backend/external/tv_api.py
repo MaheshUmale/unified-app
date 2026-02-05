@@ -1,5 +1,9 @@
 import logging
-from tvDatafeed import TvDatafeed, Interval
+try:
+    from tvDatafeed import TvDatafeed, Interval
+except ImportError:
+    TvDatafeed = None
+    Interval = None
 from tradingview_scraper.symbols.stream import Streamer
 import logging
 import os
@@ -42,12 +46,16 @@ class TradingViewAPI:
     def __init__(self):
         username = os.getenv('TV_USERNAME')
         password = os.getenv('TV_PASSWORD')
-        if username and password:
-            self.tv = TvDatafeed(username, password)
-            logger.info("TradingViewAPI initialized with credentials")
+        if TvDatafeed:
+            if username and password:
+                self.tv = TvDatafeed(username, password)
+                logger.info("TradingViewAPI initialized with credentials")
+            else:
+                self.tv = TvDatafeed()
+                logger.info("TradingViewAPI initialized with guest access")
         else:
-            self.tv = TvDatafeed()
-            logger.info("TradingViewAPI initialized with guest access")
+            self.tv = None
+            logger.warning("tvDatafeed not installed, falling back to Streamer only")
 
         self.streamer = Streamer()
         self.symbol_map = {
@@ -123,6 +131,9 @@ class TradingViewAPI:
                 logger.warning(f"Streamer failed for {tv_symbol}, falling back to tvDatafeed: {e}")
 
             # Fallback to tvDatafeed
+            if not self.tv:
+                return None
+
             tv_interval = Interval.in_1_minute
             if interval_min == '5': tv_interval = Interval.in_5_minute
             elif interval_min == '15': tv_interval = Interval.in_15_minute
