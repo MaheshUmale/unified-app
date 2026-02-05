@@ -50,7 +50,7 @@ def fetch_option_chain_data(
             "columns": [
                 "ask", "bid", "currency", "delta", "expiration", "gamma",
                 "iv", "option-type", "pricescale", "rho", "root", "strike",
-                "theoPrice", "theta", "vega", "bid_iv", "ask_iv", "close", "volume"
+                "theoPrice", "theta", "vega", "bid_iv", "ask_iv", "close", "volume", "open_interest"
             ],
             "filter": filter_conditions,
             "ignore_unknown_fields": False,
