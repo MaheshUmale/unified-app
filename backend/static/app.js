@@ -12,6 +12,13 @@ let candleSeries = null;
 let volumeSeries = null;
 let lastCandle = null;
 
+// Replay State
+let isReplayMode = false;
+let fullHistory = { candles: [], volume: [] };
+let replayIndex = -1;
+let replayInterval = null;
+let isPlaying = false;
+
 // --- Initialization ---
 
 function init() {
@@ -69,10 +76,28 @@ function init() {
         window.addEventListener('resize', () => {
             mainChart.resize(chartContainer.clientWidth, chartContainer.clientHeight);
         });
+
+        // Click to select replay start
+        mainChart.subscribeClick((param) => {
+            if (isReplayMode && param.time && replayIndex === -1) {
+                const clickedTime = param.time;
+                const index = fullHistory.candles.findIndex(c => c.time === clickedTime);
+                if (index !== -1) {
+                    replayIndex = index;
+                    stepReplay(0);
+
+                    document.getElementById('replayPlayBtn').disabled = false;
+                    document.getElementById('replayNextBtn').disabled = false;
+                    document.getElementById('replayPrevBtn').disabled = false;
+                }
+            }
+        });
     }
 
     initSocket();
     initSearch();
+    initZoomControls();
+    initReplayControls();
 
     // Initial load
     switchSymbol(currentSymbol);
@@ -161,30 +186,68 @@ async function switchSymbol(symbol) {
                 color: c.close >= c.open ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'
             })).sort((a, b) => a.time - b.time);
 
-            candleSeries.setData(chartData);
-            volumeSeries.setData(volData);
+            fullHistory = { candles: chartData, volume: volData };
 
-            lastCandle = chartData[chartData.length - 1];
-            lastCandle.volume = candles[candles.length - 1].volume;
+            if (!isReplayMode) {
+                candleSeries.setData(chartData);
+                volumeSeries.setData(volData);
+                lastCandle = chartData[chartData.length - 1];
+                lastCandle.volume = candles[candles.length - 1].volume;
+            } else {
+                // If switching symbol while in replay mode, reset replay
+                document.getElementById('exitReplayBtn').click();
+            }
 
             // Auto fit content
             mainChart.timeScale().fitContent();
         } else {
             candleSeries.setData([]);
             volumeSeries.setData([]);
+            fullHistory = { candles: [], volume: [] };
         }
 
         socket.emit('subscribe', { instrumentKeys: [currentSymbol] });
     } catch (e) {
         console.error("Switch symbol failed:", e);
+        // Fallback for demonstration if API fails
+        if (currentSymbol === 'NSE:NIFTY' || currentSymbol.includes('BTCUSD')) {
+            generateMockData();
+        }
     } finally {
         setLoading(false);
     }
 }
 
+function generateMockData() {
+    const now = Math.floor(Date.now() / 1000);
+    const mockCandles = [];
+    const mockVolume = [];
+    let price = 25000;
+    for (let i = 0; i < 100; i++) {
+        const t = now - (100 - i) * 60;
+        const o = price + Math.random() * 20 - 10;
+        const c = o + Math.random() * 20 - 10;
+        const h = Math.max(o, c) + Math.random() * 5;
+        const l = Math.min(o, c) - Math.random() * 5;
+        mockCandles.push({ time: t, open: o, high: h, low: l, close: c });
+        mockVolume.push({ time: t, value: Math.random() * 1000, color: c >= o ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)' });
+        price = c;
+    }
+    fullHistory = { candles: mockCandles, volume: mockVolume };
+    candleSeries.setData(mockCandles);
+    volumeSeries.setData(mockVolume);
+    lastCandle = {...mockCandles[mockCandles.length - 1]};
+    mainChart.timeScale().fitContent();
+}
+
 async function fetchIntraday(key, interval = '1') {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
     let url = `/api/tv/intraday/${encodeURIComponent(key)}?interval=${interval}`;
-    const res = await fetch(url);
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
     const data = await res.json();
     if (data && data.candles) {
         return data.candles.map(c => ({
@@ -218,7 +281,7 @@ function handleTickUpdate(quotes) {
 }
 
 function updateRealtimeCandle(quote) {
-    if (!candleSeries) return;
+    if (!candleSeries || isReplayMode) return;
 
     const tickTime = Math.floor(quote.ts_ms / 1000);
     const candleTime = tickTime - (tickTime % 60); // 1-min alignment
@@ -228,10 +291,7 @@ function updateRealtimeCandle(quote) {
     if (!lastCandle || candleTime > lastCandle.time) {
         lastCandle = {
             time: candleTime,
-            open: price,
-            high: price,
-            low: price,
-            close: price,
+            open: price, high: price, low: price, close: price,
             volume: ltq
         };
     } else {
@@ -267,6 +327,98 @@ function setLoading(show) {
     const loadingDom = document.getElementById('loading');
     if (loadingDom) {
         loadingDom.classList.toggle('hidden', !show);
+    }
+}
+
+function initZoomControls() {
+    const zoomInBtn = document.getElementById('zoomInBtn');
+    const zoomOutBtn = document.getElementById('zoomOutBtn');
+    const resetZoomBtn = document.getElementById('resetZoomBtn');
+
+    if (zoomInBtn) zoomInBtn.addEventListener('click', () => mainChart && mainChart.timeScale().zoomIn(0.2));
+    if (zoomOutBtn) zoomOutBtn.addEventListener('click', () => mainChart && mainChart.timeScale().zoomOut(0.2));
+    if (resetZoomBtn) resetZoomBtn.addEventListener('click', () => mainChart && mainChart.timeScale().fitContent());
+}
+
+function initReplayControls() {
+    const replayModeBtn = document.getElementById('replayModeBtn');
+    const exitReplayBtn = document.getElementById('exitReplayBtn');
+    const replayPlayBtn = document.getElementById('replayPlayBtn');
+    const replayNextBtn = document.getElementById('replayNextBtn');
+    const replayPrevBtn = document.getElementById('replayPrevBtn');
+    const normalControls = document.getElementById('normalControls');
+    const replayControls = document.getElementById('replayControls');
+
+    replayModeBtn.addEventListener('click', () => {
+        isReplayMode = true;
+        normalControls.classList.add('hidden');
+        replayControls.classList.remove('hidden');
+        document.getElementById('replayStatus').innerText = 'SELECT START POINT';
+
+        replayPlayBtn.disabled = true;
+        replayNextBtn.disabled = true;
+        replayPrevBtn.disabled = true;
+    });
+
+    exitReplayBtn.addEventListener('click', () => {
+        stopReplay();
+        isReplayMode = false;
+        replayControls.classList.add('hidden');
+        normalControls.classList.remove('hidden');
+
+        candleSeries.setData(fullHistory.candles);
+        volumeSeries.setData(fullHistory.volume);
+        if (fullHistory.candles.length > 0) {
+            lastCandle = {...fullHistory.candles[fullHistory.candles.length - 1]};
+        }
+    });
+
+    replayNextBtn.addEventListener('click', () => stepReplay(1));
+    replayPrevBtn.addEventListener('click', () => stepReplay(-1));
+
+    replayPlayBtn.addEventListener('click', () => {
+        if (isPlaying) pauseReplay();
+        else startReplay();
+    });
+}
+
+function startReplay() {
+    isPlaying = true;
+    document.getElementById('playIcon').classList.add('hidden');
+    document.getElementById('pauseIcon').classList.remove('hidden');
+    replayInterval = setInterval(() => {
+        if (replayIndex < fullHistory.candles.length - 1) {
+            stepReplay(1);
+        } else {
+            pauseReplay();
+        }
+    }, 1000);
+}
+
+function pauseReplay() {
+    isPlaying = false;
+    document.getElementById('playIcon').classList.remove('hidden');
+    document.getElementById('pauseIcon').classList.add('hidden');
+    if (replayInterval) clearInterval(replayInterval);
+}
+
+function stopReplay() {
+    pauseReplay();
+    replayIndex = -1;
+}
+
+function stepReplay(delta) {
+    const newIndex = replayIndex + delta;
+    if (newIndex >= 0 && newIndex < fullHistory.candles.length) {
+        replayIndex = newIndex;
+        const visibleCandles = fullHistory.candles.slice(0, replayIndex + 1);
+        const visibleVolume = fullHistory.volume.slice(0, replayIndex + 1);
+
+        candleSeries.setData(visibleCandles);
+        volumeSeries.setData(visibleVolume);
+
+        lastCandle = {...visibleCandles[visibleCandles.length - 1]};
+        document.getElementById('replayStatus').innerText = `BAR ${replayIndex + 1} / ${fullHistory.candles.length}`;
     }
 }
 
