@@ -25,10 +25,6 @@ from external import trendlyne_api as trendlyne_service
 from external.tv_api import tv_api
 from core.strategies.candle_cross import CandleCrossStrategy, DataPersistor
 from core.strategies.atm_buying_strategy import ATMOptionBuyingStrategy
-try:
-    from core.strategies.combined_signal import CombinedSignalEngine
-except ImportError:
-    CombinedSignalEngine = None
 from collections import defaultdict
 from datetime import datetime, timedelta
 from urllib.parse import unquote
@@ -54,23 +50,6 @@ async def lifespan(app: FastAPI):
 
     # 1. Initialize Strategies
     all_instruments = INITIAL_INSTRUMENTS
-
-    if CombinedSignalEngine:
-        logger.info("Initializing CombinedSignalEngine...")
-        class DummyWriter:
-            def write(self, s): pass
-        dummy_writer = DummyWriter()
-
-        for key in all_instruments:
-            hrn = symbol_mapper.get_hrn(key)
-            logger.info(f"Initializing Combined Strategy for {hrn} ({key})...")
-            strategy = CombinedSignalEngine(
-                instrument_key=hrn,
-                csv_writer=dummy_writer,
-                obi_throttle_sec=1.0
-            )
-            data_engine.register_strategy(hrn, strategy)
-        logger.info("CombinedSignalEngine initialized")
 
     if CandleCrossStrategy:
         logger.info("Initializing CandleCrossStrategy...")
@@ -258,7 +237,6 @@ def get_live_report_data() -> Dict[str, Any]:
         'strategy': ''
     })
     total_pnl = 0
-    instr_coll = get_instruments_collection()
 
     for signal in signals:
         trade_id = signal.get('trade_id')
@@ -658,12 +636,12 @@ async def get_historical_pcr(symbol: str, date: Optional[str] = None):
         # Fetch today's OI data
         today_str = date or datetime.now().strftime("%Y-%m-%d")
 
-        sql = "SELECT * FROM oi_data WHERE symbol = ? AND date = ? ORDER BY timestamp ASC"
+        sql = "SELECT CAST(date AS VARCHAR) as date_str, timestamp, call_oi, put_oi, source FROM oi_data WHERE symbol = ? AND date = ? ORDER BY timestamp ASC"
         rows = db.query(sql, (symbol, today_str))
 
         results_map = {}
         for doc in rows:
-            ts = f"{doc['date']}T{doc['timestamp']}:00"
+            ts = f"{doc['date_str']}T{doc['timestamp']}:00"
             call_oi = doc.get('call_oi', 0)
             put_oi = doc.get('put_oi', 0)
             pcr = round(put_oi / call_oi, 2) if call_oi > 0 else 0
@@ -686,14 +664,14 @@ async def get_historical_pcr(symbol: str, date: Optional[str] = None):
             import threading
             threading.Thread(target=trendlyne_service.perform_backfill, args=(symbol,), kwargs={'interval_minutes': 5}, daemon=True).start()
 
-            fallback_sql = "SELECT * FROM oi_data WHERE symbol = ? ORDER BY date DESC, timestamp DESC LIMIT 10"
+            fallback_sql = "SELECT CAST(date AS VARCHAR) as date_str, timestamp, call_oi, put_oi FROM oi_data WHERE symbol = ? ORDER BY date DESC, timestamp DESC LIMIT 10"
             fallback_rows = db.query(fallback_sql, (symbol,))
             for doc in fallback_rows[::-1]:
                 call_oi = doc.get('call_oi', 0)
                 put_oi = doc.get('put_oi', 0)
                 pcr = round(put_oi / call_oi, 2) if call_oi > 0 else 0
                 results.append({
-                    'timestamp': f"{doc['date']}T{doc['timestamp']}:00",
+                    'timestamp': f"{doc['date_str']}T{doc['timestamp']}:00",
                     'pcr': pcr,
                     'call_oi': call_oi,
                     'put_oi': put_oi
