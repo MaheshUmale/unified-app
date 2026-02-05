@@ -106,8 +106,9 @@ function displaySearchResults(symbols) {
             <div class="text-[8px] text-gray-500 uppercase truncate">${s.description} | ${s.exchange}</div>
         `;
         item.addEventListener('click', () => {
-            const fullSymbol = s.exchange ? `${s.exchange}:${s.symbol}` : s.symbol;
-            document.getElementById('symbolSearch').value = s.symbol;
+            const cleanSymbol = s.symbol.replace(/<\/?[^>]+(>|$)/g, "");
+            const fullSymbol = s.exchange ? `${s.exchange}:${cleanSymbol}` : cleanSymbol;
+            document.getElementById('symbolSearch').value = cleanSymbol;
             resultsDiv.classList.add('hidden');
             switchIndex(fullSymbol);
         });
