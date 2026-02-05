@@ -474,6 +474,9 @@ def subscribe_instrument(instrument_key: str):
     """Dynamic subscription to an instrument. TradingView feed polls automatically."""
     raw_key = symbol_mapper.resolve_to_key(instrument_key) or instrument_key
 
+    # Subscribe via WSS as well for real-time updates
+    subscribe_instrument_wss(instrument_key)
+
     # Try to resolve metadata if not present
     if raw_key not in instrument_metadata:
         threading.Thread(target=resolve_metadata, args=(raw_key,), daemon=True).start()
@@ -745,9 +748,36 @@ def start_websocket_thread(access_token: str, instrument_keys: List[str]):
     from external.tv_feed import start_tv_feed
     start_tv_feed(on_message)
 
+    # Start WebSocket feed for real-time price updates
+    from external.tv_live_wss import start_tv_wss
+    wss_symbols = ['NSE:NIFTY', 'NSE:BANKNIFTY', 'NSE:CNXFINANCE', 'NSE:INDIAVIX']
+    start_tv_wss(on_message, wss_symbols)
+
     # No longer using UpstoxFeed, so we don't need the monitor or keep-alive threads for it.
     # TradingView feed handles its own reconnection/polling.
-    logger.info("TradingView Live Feed initialized.")
+    logger.info("TradingView Live Feed (Polling + WSS) initialized.")
+
+def subscribe_instrument_wss(instrument_key: str):
+    """Subscribes to an instrument via WSS if it's a TV-compatible symbol."""
+    from external.tv_live_wss import start_tv_wss
+    from core.symbol_mapper import symbol_mapper
+
+    # If it's an HRN, try to resolve it to a TV symbol or keep it as is
+    # TradingView WSS usually likes EXCHANGE:SYMBOL
+    if ':' not in instrument_key:
+        # Try to map common HRNs
+        mapping = {
+            'NIFTY': 'NSE:NIFTY',
+            'BANKNIFTY': 'NSE:BANKNIFTY',
+            'FINNIFTY': 'NSE:CNXFINANCE',
+            'INDIA VIX': 'NSE:INDIAVIX'
+        }
+        tv_symbol = mapping.get(instrument_key, instrument_key)
+    else:
+        tv_symbol = instrument_key
+
+    wss = start_tv_wss(on_message)
+    wss.subscribe([tv_symbol])
 
 def load_intraday_data(instrument_key, date_str=None, timeframe_min=1, lookback_days=0):
     """
