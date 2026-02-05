@@ -50,7 +50,7 @@ def fetch_option_chain_data(
             "columns": [
                 "ask", "bid", "currency", "delta", "expiration", "gamma",
                 "iv", "option-type", "pricescale", "rho", "root", "strike",
-                "theoPrice", "theta", "vega", "bid_iv", "ask_iv", "close", "volume", "open_interest"
+                "theoPrice", "theta", "vega", "bid_iv", "ask_iv", "close", "volume"
             ],
             "filter": filter_conditions,
             "ignore_unknown_fields": False,
@@ -184,7 +184,7 @@ def process_option_chain_with_analysis(
                 'gamma': opt_data.get('gamma'),
                 'theta': opt_data.get('theta'),
                 'vega': opt_data.get('vega'),
-                'oi': opt_data.get('open_interest', 0),
+                'oi': 0, # OI not available in this scanner
                 'volume': opt_data.get('volume', 0)
             })
 
