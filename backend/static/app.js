@@ -11,8 +11,6 @@ let mainChart = null;
 let candleSeries = null;
 let volumeSeries = null;
 let lastCandle = null;
-let isReplay = false;
-let replayDate = '';
 
 // --- Initialization ---
 
@@ -35,6 +33,7 @@ function init() {
             },
             rightPriceScale: {
                 borderColor: '#1f2937',
+                autoScale: true,
             },
             timeScale: {
                 borderColor: '#1f2937',
@@ -43,14 +42,7 @@ function init() {
             },
         });
 
-        // Compatibility for different versions of Lightweight Charts
-        candleSeries = mainChart.addCandlestickSeries ? mainChart.addCandlestickSeries({
-            upColor: '#22c55e',
-            downColor: '#ef4444',
-            borderVisible: false,
-            wickUpColor: '#22c55e',
-            wickDownColor: '#ef4444',
-        }) : mainChart.addSeries(LightweightCharts.CandlestickSeries, {
+        candleSeries = mainChart.addCandlestickSeries({
             upColor: '#22c55e',
             downColor: '#ef4444',
             borderVisible: false,
@@ -58,24 +50,16 @@ function init() {
             wickDownColor: '#ef4444',
         });
 
-        volumeSeries = mainChart.addHistogramSeries ? mainChart.addHistogramSeries({
+        // Use a separate price scale for volume to prevent squashing candles
+        volumeSeries = mainChart.addHistogramSeries({
             color: '#3b82f6',
-            lineWidth: 2,
             priceFormat: {
                 type: 'volume',
             },
-            overlay: true,
-            scaleMargins: {
-                top: 0.8,
-                bottom: 0,
-            },
-        }) : mainChart.addSeries(LightweightCharts.HistogramSeries, {
-            color: '#3b82f6',
-            lineWidth: 2,
-            priceFormat: {
-                type: 'volume',
-            },
-            overlay: true,
+            priceScaleId: '', // Separate overlay scale
+        });
+
+        volumeSeries.priceScale().applyOptions({
             scaleMargins: {
                 top: 0.8,
                 bottom: 0,
@@ -89,7 +73,6 @@ function init() {
 
     initSocket();
     initSearch();
-    fetchReplayDates();
 
     // Initial load
     switchSymbol(currentSymbol);
@@ -175,7 +158,7 @@ async function switchSymbol(symbol) {
             const volData = candles.map(c => ({
                 time: Math.floor(new Date(c.timestamp).getTime() / 1000),
                 value: c.volume,
-                color: c.close >= c.open ? 'rgba(34, 197, 94, 0.5)' : 'rgba(239, 68, 68, 0.5)'
+                color: c.close >= c.open ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'
             })).sort((a, b) => a.time - b.time);
 
             candleSeries.setData(chartData);
@@ -183,6 +166,9 @@ async function switchSymbol(symbol) {
 
             lastCandle = chartData[chartData.length - 1];
             lastCandle.volume = candles[candles.length - 1].volume;
+
+            // Auto fit content
+            mainChart.timeScale().fitContent();
         } else {
             candleSeries.setData([]);
             volumeSeries.setData([]);
@@ -198,7 +184,6 @@ async function switchSymbol(symbol) {
 
 async function fetchIntraday(key, interval = '1') {
     let url = `/api/tv/intraday/${encodeURIComponent(key)}?interval=${interval}`;
-    if (isReplay && replayDate) url += `&date=${replayDate}`;
     const res = await fetch(url);
     const data = await res.json();
     if (data && data.candles) {
@@ -211,33 +196,12 @@ async function fetchIntraday(key, interval = '1') {
 
 function initSocket() {
     socket.on('connect', () => {
-        const statusDom = document.getElementById('socketStatus');
-        if (statusDom) {
-            statusDom.innerHTML = '<div class="w-1.5 h-1.5 bg-green-500 rounded-full"></div> CONNECTED';
-        }
         socket.emit('subscribe', { instrumentKeys: [currentSymbol] });
-    });
-
-    socket.on('disconnect', () => {
-        const statusDom = document.getElementById('socketStatus');
-        if (statusDom) {
-            statusDom.innerHTML = '<div class="w-1.5 h-1.5 bg-red-500 rounded-full"></div> DISCONNECTED';
-        }
     });
 
     socket.on('raw_tick', (data) => {
         const rawData = typeof data === 'string' ? JSON.parse(data) : data;
         handleTickUpdate(rawData);
-    });
-
-    socket.on('replay_status', (status) => {
-        isReplay = !!status.active;
-        replayDate = status.date || '';
-        if (status.is_new) {
-             candleSeries.setData([]);
-             volumeSeries.setData([]);
-             lastCandle = null;
-        }
     });
 }
 
@@ -279,7 +243,7 @@ function updateRealtimeCandle(quote) {
     volumeSeries.update({
         time: lastCandle.time,
         value: lastCandle.volume,
-        color: lastCandle.close >= lastCandle.open ? 'rgba(34, 197, 94, 0.5)' : 'rgba(239, 68, 68, 0.5)'
+        color: lastCandle.close >= lastCandle.open ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'
     });
 }
 
@@ -302,46 +266,6 @@ function setLoading(show) {
     if (loadingDom) {
         loadingDom.classList.toggle('hidden', !show);
     }
-}
-
-async function fetchReplayDates() {
-    try {
-        const res = await fetch('/api/replay/dates');
-        const dates = await res.json();
-        const select = document.getElementById('replayDateSelect');
-        if (!select) return;
-
-        dates.forEach(d => {
-            const opt = document.createElement('option');
-            opt.value = d;
-            opt.innerText = d;
-            select.appendChild(opt);
-        });
-
-        select.addEventListener('change', (e) => {
-            if (e.target.value) {
-                isReplay = true;
-                replayDate = e.target.value;
-                switchSymbol(currentSymbol);
-            } else {
-                isReplay = false;
-                replayDate = '';
-                socket.emit('stop_replay', {});
-                switchSymbol(currentSymbol);
-            }
-        });
-    } catch (e) {
-        console.error("Fetch replay dates failed:", e);
-    }
-}
-
-const replayBtn = document.getElementById('replayBtn');
-if (replayBtn) {
-    replayBtn.addEventListener('click', () => {
-        if (isReplay && replayDate) {
-            socket.emit('start_replay', { date: replayDate, instrument_keys: [currentSymbol], speed: 10.0 });
-        }
-    });
 }
 
 try {

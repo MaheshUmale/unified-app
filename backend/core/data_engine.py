@@ -7,7 +7,7 @@ import json
 import logging
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict, Any, List, Optional, Union
 from db.local_db import db, LocalDBJSONEncoder
 from core.symbol_mapper import symbol_mapper
@@ -22,13 +22,7 @@ except ImportError:
 
 socketio_instance = None
 main_event_loop = None
-subscribed_instruments = set()
-replay_mode = False
-sim_time = None
-
-latest_prices = {}
 latest_total_volumes = {}
-instrument_metadata = {}
 
 TICK_BATCH_SIZE = 100
 tick_buffer = []
@@ -63,12 +57,10 @@ def flush_tick_buffer():
         except Exception as e:
             logger.error(f"DB Insert Error: {e}")
 
-# Session State
-active_bars = {}
 last_emit_times = {}
 
 def on_message(message: Union[Dict, str]):
-    global active_bars, tick_buffer
+    global tick_buffer
     try:
         data = json.loads(message) if isinstance(message, str) else message
         feeds_map = data.get('feeds', {})
@@ -95,11 +87,9 @@ def on_message(message: Union[Dict, str]):
                 feed_datum['ts_ms'] = ts_val
 
                 if ltpc.get('ltp'):
-                    price = float(ltpc['ltp'])
-                    feed_datum['last_price'] = price
-                    latest_prices[hrn] = price
+                    feed_datum['last_price'] = float(ltpc['ltp'])
 
-                # Volume Logic
+                # Volume Logic (Delta calculation)
                 delta_vol = 0
                 if feed_datum.get('tv_volume') is not None:
                     curr_vol = float(feed_datum['tv_volume'])
@@ -107,9 +97,6 @@ def on_message(message: Union[Dict, str]):
                         delta_vol = max(0, curr_vol - latest_total_volumes[hrn])
                     latest_total_volumes[hrn] = curr_vol
                 feed_datum['ltq'] = int(delta_vol)
-                if ltpc: ltpc['ltq'] = str(int(delta_vol))
-
-            process_footprint_tick(hrn, feed_datum)
 
         # Throttled UI Emission
         now = time.time()
@@ -121,39 +108,8 @@ def on_message(message: Union[Dict, str]):
             tick_buffer.extend(list(hrn_feeds.values()))
             if len(tick_buffer) >= TICK_BATCH_SIZE:
                 threading.Thread(target=flush_tick_buffer, daemon=True).start()
-    except:
-        pass
-
-def process_footprint_tick(instrument_key: str, data_datum: Dict[str, Any]):
-    global active_bars
-    try:
-        ff = data_datum.get('fullFeed', {})
-        ltpc = (ff.get('marketFF') or ff.get('indexFF', {})).get('ltpc')
-        if not ltpc or not ltpc.get('ltp'): return
-
-        raw_ltt = int(ltpc['ltt'])
-        if 0 < raw_ltt < 10000000000: raw_ltt *= 1000
-        current_bar_ts = (raw_ltt // 60000) * 60000
-        price = float(ltpc['ltp'])
-        qty = int(ltpc.get('ltq', 0))
-
-        if instrument_key not in active_bars: active_bars[instrument_key] = None
-        bar = active_bars[instrument_key]
-
-        if bar and current_bar_ts > bar['ts']:
-            active_bars[instrument_key] = None
-            bar = None
-
-        if not bar:
-            bar = {'ts': current_bar_ts, 'open': price, 'high': price, 'low': price, 'close': price, 'volume': 0}
-            active_bars[instrument_key] = bar
-
-        bar['high'] = max(bar['high'], price)
-        bar['low'] = min(bar['low'], price)
-        bar['close'] = price
-        bar['volume'] += qty
-    except:
-        pass
+    except Exception as e:
+        logger.error(f"Error in data_engine on_message: {e}")
 
 def subscribe_instrument(instrument_key: str):
     from external.tv_live_wss import start_tv_wss
@@ -163,44 +119,6 @@ def subscribe_instrument(instrument_key: str):
     wss.subscribe([mapping.get(instrument_key, instrument_key)])
 
 def start_websocket_thread(token: str, keys: List[str]):
-    from external.tv_feed import start_tv_feed
     from external.tv_live_wss import start_tv_wss
-    start_tv_feed(on_message)
+    # Only start WSS, removed polling feed as per "live feed from Tradingview wss" requirement
     start_tv_wss(on_message, ['NSE:NIFTY', 'NSE:BANKNIFTY', 'NSE:CNXFINANCE'])
-
-def load_intraday_data(instrument_key, date_str=None, timeframe_min=1):
-    import pytz
-    ist = pytz.timezone('Asia/Kolkata')
-    if not date_str: date_str = datetime.now(ist).strftime("%Y-%m-%d")
-    dt = datetime.strptime(date_str, "%Y-%m-%d")
-    start_ms = int(ist.localize(dt.replace(hour=9, minute=15)).timestamp() * 1000)
-    end_ms = int(ist.localize(dt.replace(hour=15, minute=30)).timestamp() * 1000)
-
-    sql = f"SELECT full_feed FROM ticks WHERE instrumentKey = '{instrument_key}' AND ts_ms >= {start_ms} AND ts_ms <= {end_ms} ORDER BY ts_ms ASC"
-    rows = db.query(sql)
-    bars = []
-
-    current_bar = None
-    tf_ms = timeframe_min * 60000
-
-    for r in rows:
-        tick = json.loads(r['full_feed'])
-        ltpc = (tick.get('fullFeed', {}).get('marketFF') or tick.get('fullFeed', {}).get('indexFF', {})).get('ltpc')
-        if not ltpc: continue
-        ts = int(ltpc['ltt'])
-        if 0 < ts < 10000000000: ts *= 1000
-        price = float(ltpc['ltp'])
-        qty = int(ltpc.get('ltq', 0))
-
-        bar_ts = (ts // tf_ms) * tf_ms
-        if not current_bar or bar_ts > current_bar['ts']:
-            if current_bar: bars.append(current_bar)
-            current_bar = {'ts': bar_ts, 'open': price, 'high': price, 'low': price, 'close': price, 'volume': qty}
-        else:
-            current_bar['high'] = max(current_bar['high'], price)
-            current_bar['low'] = min(current_bar['low'], price)
-            current_bar['close'] = price
-            current_bar['volume'] += qty
-
-    if current_bar: bars.append(current_bar)
-    return bars

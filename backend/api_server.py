@@ -18,7 +18,6 @@ from config import LOGGING_CONFIG, INITIAL_INSTRUMENTS
 from db.local_db import db
 from core import data_engine
 from core.symbol_mapper import symbol_mapper
-from core.replay_engine import ReplayEngine
 from external.tv_api import tv_api
 from datetime import datetime
 from urllib.parse import unquote
@@ -55,12 +54,6 @@ fastapi_app = FastAPI(title="ProTrade API", lifespan=lifespan)
 sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
 main_loop = None
 
-def emit_replay(event, data, room=None):
-    if main_loop:
-        asyncio.run_coroutine_threadsafe(sio.emit(event, data, room=room), main_loop)
-
-replay_engine = ReplayEngine(emit_fn=emit_replay, db_dependencies={})
-
 fastapi_app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -81,19 +74,9 @@ async def handle_subscribe(sid, data):
         try:
             await sio.enter_room(sid, key)
             data_engine.subscribe_instrument(key)
-        except ValueError:
-            break
-
-@sio.on('start_replay')
-async def handle_start_replay(sid, data):
-    date_str = data.get('date')
-    instrument_keys = data.get('instrument_keys', INITIAL_INSTRUMENTS)
-    speed = float(data.get('speed', 1.0))
-    replay_engine.start_replay(date_str, instrument_keys, speed)
-
-@sio.on('stop_replay')
-async def handle_stop_replay(sid, data):
-    replay_engine.stop_replay()
+        except Exception as e:
+            logger.error(f"Subscription error for {key}: {e}")
+            continue
 
 @fastapi_app.get("/health")
 async def health_check():
@@ -118,35 +101,17 @@ async def tv_search(text: str = Query(..., min_length=1)):
         raise HTTPException(status_code=500, detail="Failed to fetch search results")
 
 @fastapi_app.get("/api/tv/intraday/{instrument_key}")
-@fastapi_app.get("/api/upstox/intraday/{instrument_key}")
-async def get_intraday(instrument_key: str, date: Optional[str] = None, interval: str = '1'):
-    """Fetch intraday candles from TradingView or LocalDB."""
+async def get_intraday(instrument_key: str, interval: str = '1'):
+    """Fetch intraday candles from TradingView."""
     try:
         clean_key = unquote(instrument_key)
-        if not date:
-            tv_candles = await asyncio.to_thread(tv_api.get_hist_candles, clean_key, interval, 1000)
-            if tv_candles:
-                return {"candles": tv_candles}
-
-        db_history = data_engine.load_intraday_data(clean_key, date_str=date, timeframe_min=int(interval))
-        candles = []
-        for bar in db_history:
-            candles.append([
-                datetime.fromtimestamp(bar['ts']/1000).isoformat(),
-                bar['open'], bar['high'], bar['low'], bar['close'], bar['volume']
-            ])
-        return {"candles": candles[::-1]}
+        tv_candles = await asyncio.to_thread(tv_api.get_hist_candles, clean_key, interval, 1000)
+        if tv_candles:
+            return {"candles": tv_candles}
+        return {"candles": []}
     except Exception as e:
         logger.error(f"Error in intraday fetch: {e}")
         return {"candles": []}
-
-@fastapi_app.get("/api/replay/dates")
-async def get_replay_dates():
-    try:
-        rows = db.query("SELECT DISTINCT CAST(date AS VARCHAR) as d FROM ticks ORDER BY d DESC")
-        return [r['d'] for r in rows]
-    except:
-        return []
 
 # Template and Static Files
 templates = Jinja2Templates(directory="backend/templates")
