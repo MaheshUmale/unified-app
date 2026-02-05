@@ -201,14 +201,17 @@ function initSocket() {
 
     socket.on('raw_tick', (data) => {
         const rawData = typeof data === 'string' ? JSON.parse(data) : data;
+        console.log("Tick received:", rawData);
         handleTickUpdate(rawData);
     });
 }
 
 function handleTickUpdate(quotes) {
     const entries = Object.entries(quotes);
+    const currentNorm = normalizeSymbol(currentSymbol);
     for (const [key, quote] of entries) {
-        if (normalizeSymbol(key) === normalizeSymbol(currentSymbol)) {
+        const tickNorm = normalizeSymbol(key);
+        if (tickNorm === currentNorm) {
             updateRealtimeCandle(quote);
             break;
         }

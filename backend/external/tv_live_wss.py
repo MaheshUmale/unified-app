@@ -23,6 +23,8 @@ class TradingViewWSS:
             'NSE:INDIAVIX': 'INDIA VIX'
         }
         self.last_volumes = {} # track cumulative volume per symbol
+        self.last_prices = {} # track latest price per symbol
+        self.last_times = {} # track latest time per symbol
         self.stop_event = threading.Event()
         self.thread = None
 
@@ -46,6 +48,7 @@ class TradingViewWSS:
             logger.error(f"Error sending message to TV WSS: {e}")
 
     def subscribe(self, symbols):
+        symbols = [s.upper() for s in symbols]
         new_symbols = [s for s in symbols if s not in self.symbols]
         self.symbols.extend(new_symbols)
         if self.ws and self.ws.sock and self.ws.sock.connected:
@@ -54,20 +57,23 @@ class TradingViewWSS:
     def _subscribe_symbols(self, symbols):
         if not symbols: return
         for symbol in symbols:
-            self._send_message("quote_add_symbols", [self.quote_session, symbol, {"flags": ["force_permission"]}])
+            # Simplified subscribe call
+            self._send_message("quote_add_symbols", [self.quote_session, symbol])
         logger.info(f"Subscribed to {len(symbols)} symbols on TV WSS")
 
     def on_open(self, ws):
         logger.info("TV WSS Connection opened")
         self._send_message("set_auth_token", ["unauthorized_user_token"])
         self._send_message("quote_create_session", [self.quote_session])
-        self._send_message("quote_set_fields", [self.quote_session, "lp", "lp_time", "ch", "chp", "volume", "open_interest", "bid", "ask"])
+        self._send_message("quote_set_fields", [self.quote_session, "lp", "lp_time", "volume"])
         if self.symbols:
             self._subscribe_symbols(self.symbols)
 
     def on_message(self, ws, message):
         if isinstance(message, bytes):
             message = message.decode('utf-8')
+
+        logger.debug(f"RAW TV WSS: {message[:100]}...")
 
         # Heartbeat check
         if "~h~" in message:
@@ -86,31 +92,40 @@ class TradingViewWSS:
                 if data.get("m") == "qsd" and len(data["p"]) > 1:
                     quote_data = data["p"][1]
                     symbol = quote_data["n"]
-                    logger.info(f"TV WSS Raw Symbol: {symbol}")
+                    # Handle TradingView symbol prefix (e.g., =NSE:NIFTY)
+                    clean_symbol = symbol[1:] if symbol.startswith('=') else symbol
+
+                    logger.debug(f"TV WSS Tick for {clean_symbol}: {quote_data}")
                     values = quote_data.get("v", {})
 
-                    hrn = self.symbol_map.get(symbol, symbol)
+                    hrn = self.symbol_map.get(clean_symbol, clean_symbol)
 
-                    if 'lp' in values:
-                        ts_ms = int(values.get('lp_time', time.time()) * 1000)
+                    # Update tracked values
+                    if 'lp' in values: self.last_prices[clean_symbol] = values['lp']
+                    if 'last_price' in values: self.last_prices[clean_symbol] = values['last_price']
+                    if 'lp_time' in values: self.last_times[clean_symbol] = values['lp_time']
+                    if 'volume' in values: self.last_volumes[clean_symbol] = float(values['volume'])
 
-                        # Update and track latest cumulative volume
-                        new_vol = values.get('volume')
-                        if new_vol is not None:
-                            self.last_volumes[symbol] = float(new_vol)
+                    price = self.last_prices.get(clean_symbol)
+                    if price is not None:
+                        ts_ms = int(self.last_times.get(clean_symbol, time.time()) * 1000)
+                        current_cum_vol = self.last_volumes.get(clean_symbol)
 
-                        current_cum_vol = self.last_volumes.get(symbol)
+                        # Determine if it's an index or market feed
+                        feed_type = 'marketFF'
+                        if 'VIX' in hrn.upper() or ('NIFTY' in hrn.upper() and ' ' not in hrn):
+                            feed_type = 'indexFF'
 
                         feed_msg = {
                             'type': 'live_feed',
                             'feeds': {
                                 hrn: {
                                     'fullFeed': {
-                                        'indexFF' if 'VIX' in hrn or 'NIFTY' in hrn and ' ' not in hrn else 'marketFF': {
+                                        feed_type: {
                                             'ltpc': {
-                                                'ltp': str(values['lp']),
+                                                'ltp': str(price),
                                                 'ltt': str(ts_ms),
-                                                'ltq': '0' # Delta logic will be handled in data_engine
+                                                'ltq': '0'
                                             },
                                             'oi': str(values.get('open_interest', 0))
                                         }
@@ -136,8 +151,13 @@ class TradingViewWSS:
 
     def start(self):
         self.stop_event.clear()
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            "Origin": "https://www.tradingview.com"
+        }
         self.ws = websocket.WebSocketApp(
             "wss://data.tradingview.com/socket.io/websocket",
+            header=headers,
             on_open=self.on_open,
             on_message=self.on_message,
             on_error=self.on_error,

@@ -72,6 +72,7 @@ def on_message(message: Union[Dict, str]):
 
         for inst_key, feed_datum in feeds_map.items():
             hrn = symbol_mapper.get_hrn(inst_key)
+            logger.debug(f"Processing tick for {inst_key} (HRN: {hrn})")
             feed_datum['instrumentKey'] = hrn
             feed_datum['date'] = today_str
             hrn_feeds[hrn] = feed_datum
@@ -116,7 +117,8 @@ def subscribe_instrument(instrument_key: str):
     wss = start_tv_wss(on_message)
     # Map common HRNs to WSS symbols
     mapping = {'NIFTY': 'NSE:NIFTY', 'BANKNIFTY': 'NSE:BANKNIFTY', 'FINNIFTY': 'NSE:CNXFINANCE'}
-    wss.subscribe([mapping.get(instrument_key, instrument_key)])
+    target = mapping.get(instrument_key, instrument_key).upper()
+    wss.subscribe([target])
 
 def start_websocket_thread(token: str, keys: List[str]):
     from external.tv_live_wss import start_tv_wss
