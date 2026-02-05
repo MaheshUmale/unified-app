@@ -207,6 +207,25 @@ async def handle_set_speed(sid, data):
 async def health_check():
     return {"status": "healthy", "service": "ProTrade API"}
 
+@fastapi_app.get("/api/tv/search")
+async def tv_search(text: str = Query(..., min_length=1)):
+    """Proxies TradingView symbol search requests."""
+    import requests
+    url = f"https://symbol-search.tradingview.com/symbol_search/v3/?text={text}&hl=1&exchange=&lang=en&search_type=undefined&domain=production&sort_by_country=IN&promo=true"
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'application/json, text/plain, */*',
+        'Referer': 'https://in.tradingview.com/',
+        'Origin': 'https://in.tradingview.com'
+    }
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        logger.error(f"TradingView search proxy error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch search results from TradingView")
+
 def get_live_report_data() -> Dict[str, Any]:
     """
     Queries LocalDB for all trade signals generated today and aggregates them into a report.
@@ -564,8 +583,13 @@ async def get_upstox_option_chain(instrument_key: str, expiry_date: str):
 async def get_trendlyne_expiry(symbol: str):
     """Fetch expiry dates from Trendlyne."""
     try:
-        logger.info(f"Fetching Trendlyne expiry for symbol: {symbol}")
-        stock_id = trendlyne_service.get_stock_id_for_symbol(symbol)
+        clean_key = unquote(symbol)
+        hrn_symbol = symbol_mapper.get_symbol(clean_key)
+        if hrn_symbol == "UNKNOWN":
+            hrn_symbol = clean_key.split(':')[-1] if ':' in clean_key else clean_key
+
+        logger.info(f"Fetching Trendlyne expiry for symbol: {hrn_symbol}")
+        stock_id = trendlyne_service.get_stock_id_for_symbol(hrn_symbol)
         if not stock_id:
             logger.warning(f"Stock ID not found for {symbol}")
             return []
@@ -633,11 +657,20 @@ async def get_trendlyne_option_buildup(symbol: str, expiry: str, strike: int, op
 async def get_historical_pcr(symbol: str, date: Optional[str] = None):
     """Fetch historical PCR and Spot data for analytics."""
     try:
+        clean_key = unquote(symbol)
+        hrn_symbol = symbol_mapper.get_symbol(clean_key)
+        if hrn_symbol == "UNKNOWN":
+            # If search for RELIANCE, it might return NSE:RELIANCE
+            if ':' in clean_key:
+                hrn_symbol = clean_key.split(':')[-1]
+            else:
+                hrn_symbol = clean_key
+
         # Fetch today's OI data
         today_str = date or datetime.now().strftime("%Y-%m-%d")
 
         sql = "SELECT CAST(date AS VARCHAR) as date_str, timestamp, call_oi, put_oi, source FROM oi_data WHERE symbol = ? AND date = ? ORDER BY timestamp ASC"
-        rows = db.query(sql, (symbol, today_str))
+        rows = db.query(sql, (hrn_symbol, today_str))
 
         results_map = {}
         for doc in rows:

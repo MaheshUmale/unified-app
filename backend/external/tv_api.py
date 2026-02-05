@@ -65,11 +65,15 @@ class TradingViewAPI:
         try:
             logger.info(f"1) Fetching {symbol_or_hrn}")
             if not symbol_or_hrn: return None
-            if symbol_or_hrn.startswith('NSE:'):
-                symbol_or_hrn = symbol_or_hrn[4:]
 
             tv_symbol = symbol_or_hrn
             tv_exchange = 'NSE'
+
+            if ':' in symbol_or_hrn:
+                parts = symbol_or_hrn.split(':')
+                tv_exchange = parts[0]
+                tv_symbol = parts[1]
+                symbol_or_hrn = tv_symbol # for later checks
 
             # 1. Handle explicit mapping
             if symbol_or_hrn in self.symbol_map:

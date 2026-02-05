@@ -26,7 +26,8 @@ let charts = {
     index: null,
     ce: null,
     pe: null,
-    pcr: null
+    pcr: null,
+    oi: null
 };
 
 // --- Initialization ---
@@ -36,6 +37,7 @@ function init() {
     charts.ce = echarts.init(document.getElementById('ceChart'));
     charts.pe = echarts.init(document.getElementById('peChart'));
     charts.pcr = echarts.init(document.getElementById('pcrChart'));
+    charts.oi = echarts.init(document.getElementById('oiChart'));
 
     window.addEventListener('resize', () => {
         Object.values(charts).forEach(c => c && c.resize());
@@ -50,25 +52,91 @@ function init() {
     fetchReplayDates();
     initFullscreen();
     initTabs();
+    initSearch();
+}
+
+function initSearch() {
+    const searchInput = document.getElementById('symbolSearch');
+    const resultsDiv = document.getElementById('searchResults');
+    let debounceTimer;
+
+    searchInput.addEventListener('input', (e) => {
+        clearTimeout(debounceTimer);
+        const text = e.target.value.trim();
+        if (text.length < 2) {
+            resultsDiv.classList.add('hidden');
+            return;
+        }
+
+        debounceTimer = setTimeout(async () => {
+            try {
+                const res = await fetch(`/api/tv/search?text=${encodeURIComponent(text)}`);
+                const data = await res.json();
+                if (data && data.symbols) {
+                    displaySearchResults(data.symbols);
+                }
+            } catch (err) {
+                console.error("Search failed:", err);
+            }
+        }, 300);
+    });
+
+    // Close results when clicking outside
+    document.addEventListener('click', (e) => {
+        if (!searchInput.contains(e.target) && !resultsDiv.contains(e.target)) {
+            resultsDiv.classList.add('hidden');
+        }
+    });
+}
+
+function displaySearchResults(symbols) {
+    const resultsDiv = document.getElementById('searchResults');
+    resultsDiv.innerHTML = '';
+
+    if (symbols.length === 0) {
+        resultsDiv.classList.add('hidden');
+        return;
+    }
+
+    symbols.forEach(s => {
+        const item = document.createElement('div');
+        item.className = 'px-3 py-2 hover:bg-gray-800 cursor-pointer border-b border-gray-800 last:border-0';
+        item.innerHTML = `
+            <div class="text-[10px] font-black text-blue-400">${s.symbol}</div>
+            <div class="text-[8px] text-gray-500 uppercase truncate">${s.description} | ${s.exchange}</div>
+        `;
+        item.addEventListener('click', () => {
+            const fullSymbol = s.exchange ? `${s.exchange}:${s.symbol}` : s.symbol;
+            document.getElementById('symbolSearch').value = s.symbol;
+            resultsDiv.classList.add('hidden');
+            switchIndex(fullSymbol);
+        });
+        resultsDiv.appendChild(item);
+    });
+    resultsDiv.classList.remove('hidden');
 }
 
 function initTabs() {
     const tabIndexBtn = document.getElementById('tabIndexBtn');
     const tabOptionsBtn = document.getElementById('tabOptionsBtn');
+    const tabOiBtn = document.getElementById('tabOiBtn');
     const tabIndexContent = document.getElementById('tabIndexContent');
     const tabOptionsContent = document.getElementById('tabOptionsContent');
+    const tabOiContent = document.getElementById('tabOiContent');
+
+    const resetTabs = () => {
+        [tabIndexContent, tabOptionsContent, tabOiContent].forEach(c => c.classList.add('hidden'));
+        [tabIndexBtn, tabOptionsBtn, tabOiBtn].forEach(b => {
+            b.classList.remove('bg-blue-600', 'text-white');
+            b.classList.add('bg-gray-900', 'text-gray-400');
+        });
+    };
 
     tabIndexBtn.addEventListener('click', () => {
+        resetTabs();
         tabIndexContent.classList.remove('hidden');
-        tabOptionsContent.classList.add('hidden');
-
         tabIndexBtn.classList.add('bg-blue-600', 'text-white');
         tabIndexBtn.classList.remove('bg-gray-900', 'text-gray-400');
-
-        tabOptionsBtn.classList.add('bg-gray-900', 'text-gray-400');
-        tabOptionsBtn.classList.remove('bg-blue-600', 'text-white');
-
-        // Resize charts when they become visible
         setTimeout(() => {
             charts.index && charts.index.resize();
             charts.pcr && charts.pcr.resize();
@@ -76,19 +144,23 @@ function initTabs() {
     });
 
     tabOptionsBtn.addEventListener('click', () => {
+        resetTabs();
         tabOptionsContent.classList.remove('hidden');
-        tabIndexContent.classList.add('hidden');
-
         tabOptionsBtn.classList.add('bg-blue-600', 'text-white');
         tabOptionsBtn.classList.remove('bg-gray-900', 'text-gray-400');
-
-        tabIndexBtn.classList.add('bg-gray-900', 'text-gray-400');
-        tabIndexBtn.classList.remove('bg-blue-600', 'text-white');
-
-        // Resize charts when they become visible
         setTimeout(() => {
             charts.ce && charts.ce.resize();
             charts.pe && charts.pe.resize();
+        }, 50);
+    });
+
+    tabOiBtn.addEventListener('click', () => {
+        resetTabs();
+        tabOiContent.classList.remove('hidden');
+        tabOiBtn.classList.add('bg-blue-600', 'text-white');
+        tabOiBtn.classList.remove('bg-gray-900', 'text-gray-400');
+        setTimeout(() => {
+            charts.oi && charts.oi.resize();
         }, 50);
     });
 }
@@ -134,6 +206,7 @@ async function loadInitialData() {
             renderChart(charts.index, 'INDEX', indexData, { mtf5: mtf5Data, mtf15: mtf15Data });
         }
         renderPcrChart();
+        renderOiChart();
 
         if (expiryDate && currentAtm > 0) {
             await loadOptionsData();
@@ -213,10 +286,16 @@ function initSocket() {
 
     socket.on('oi_update', (msg) => {
         if (msg.symbol === currentIndex) {
-            pcrData.push({ timestamp: msg.timestamp, pcr: msg.pcr });
+            pcrData.push({
+                timestamp: msg.timestamp,
+                pcr: msg.pcr,
+                call_oi: msg.call_oi,
+                put_oi: msg.put_oi
+            });
             if (pcrData.length > 1000) pcrData.shift();
             document.getElementById('pcrInfo').innerText = `PCR: ${msg.pcr.toFixed(2)}`;
             renderPcrChart();
+            renderOiChart();
         }
     });
 
@@ -565,6 +644,79 @@ function mapMTFTo1M(data1m, dataMTF, mtfRes) {
         }
     });
     return { supp, rest };
+}
+
+function renderOiChart() {
+    if (!charts.oi || !pcrData.length) return;
+
+    // Preserve zoom state
+    let start = 70;
+    let end = 100;
+    const currentOption = charts.oi.getOption();
+    if (currentOption && currentOption.dataZoom) {
+        const xZoom = currentOption.dataZoom.find(dz => dz.xAxisIndex && dz.xAxisIndex.includes(0));
+        if (xZoom) {
+            start = xZoom.start;
+            end = xZoom.end;
+        }
+    }
+
+    const timeLabels = pcrData.map(d => new Date(d.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+
+    const options = {
+        backgroundColor: 'transparent',
+        animation: false,
+        tooltip: {
+            trigger: 'axis', axisPointer: { type: 'cross' },
+            backgroundColor: '#111827', borderColor: '#374151',
+            textStyle: { color: '#e5e7eb', fontSize: 10 }
+        },
+        legend: {
+            data: ['Call OI', 'Put OI'],
+            textStyle: { color: '#9ca3af', fontSize: 10 },
+            top: 0
+        },
+        dataZoom: [
+            { type: 'inside', xAxisIndex: [0], start: start, end: end },
+            { type: 'slider', bottom: 0, height: 16, start: start, end: end }
+        ],
+        grid: { top: 40, left: 10, right: 60, bottom: 40, containLabel: true },
+        xAxis: {
+            type: 'category',
+            data: timeLabels,
+            axisLine: { lineStyle: { color: '#374151' } },
+            axisLabel: { color: '#6b7280', fontSize: 9 }
+        },
+        yAxis: {
+            scale: true,
+            position: 'right',
+            splitLine: { lineStyle: { color: '#111827' } },
+            axisLabel: {
+                color: '#6b7280',
+                fontSize: 9,
+                formatter: (value) => (value / 1000000).toFixed(1) + 'M'
+            }
+        },
+        series: [
+            {
+                name: 'Call OI',
+                type: 'line',
+                data: pcrData.map(d => d.call_oi),
+                smooth: true,
+                showSymbol: false,
+                lineStyle: { color: '#ef4444', width: 2 }
+            },
+            {
+                name: 'Put OI',
+                type: 'line',
+                data: pcrData.map(d => d.put_oi),
+                smooth: true,
+                showSymbol: false,
+                lineStyle: { color: '#22c55e', width: 2 }
+            }
+        ]
+    };
+    charts.oi.setOption(options);
 }
 
 function renderPcrChart() {
