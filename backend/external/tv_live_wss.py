@@ -52,6 +52,7 @@ class TradingViewWSS:
             self._subscribe_symbols(new_symbols)
 
     def _subscribe_symbols(self, symbols):
+        if not symbols: return
         for symbol in symbols:
             self._send_message("quote_add_symbols", [self.quote_session, symbol, {"flags": ["force_permission"]}])
         logger.info(f"Subscribed to {len(symbols)} symbols on TV WSS")
