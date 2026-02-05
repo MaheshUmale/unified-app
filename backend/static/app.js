@@ -26,7 +26,6 @@ let charts = {
     index: null,
     ce: null,
     pe: null,
-    pcr: null,
     oi: null
 };
 
@@ -36,7 +35,6 @@ function init() {
     charts.index = echarts.init(document.getElementById('indexChart'));
     charts.ce = echarts.init(document.getElementById('ceChart'));
     charts.pe = echarts.init(document.getElementById('peChart'));
-    charts.pcr = echarts.init(document.getElementById('pcrChart'));
     charts.oi = echarts.init(document.getElementById('oiChart'));
 
     window.addEventListener('resize', () => {
@@ -140,7 +138,6 @@ function initTabs() {
         tabIndexBtn.classList.remove('bg-gray-900', 'text-gray-400');
         setTimeout(() => {
             charts.index && charts.index.resize();
-            charts.pcr && charts.pcr.resize();
         }, 50);
     });
 
@@ -161,7 +158,10 @@ function initTabs() {
         tabOiBtn.classList.add('bg-blue-600', 'text-white');
         tabOiBtn.classList.remove('bg-gray-900', 'text-gray-400');
         setTimeout(() => {
-            charts.oi && charts.oi.resize();
+            if (charts.oi) {
+                charts.oi.resize();
+                renderOiChart();
+            }
         }, 50);
     });
 }
@@ -206,7 +206,6 @@ async function loadInitialData() {
             updateAtmStrike(last.close);
             renderChart(charts.index, 'INDEX', indexData, { mtf5: mtf5Data, mtf15: mtf15Data });
         }
-        renderPcrChart();
         renderOiChart();
 
         if (expiryDate && currentAtm > 0) {
@@ -295,7 +294,6 @@ function initSocket() {
             });
             if (pcrData.length > 1000) pcrData.shift();
             document.getElementById('pcrInfo').innerText = `PCR: ${msg.pcr.toFixed(2)}`;
-            renderPcrChart();
             renderOiChart();
         }
     });
@@ -648,7 +646,16 @@ function mapMTFTo1M(data1m, dataMTF, mtfRes) {
 }
 
 function renderOiChart() {
-    if (!charts.oi || !pcrData.length) return;
+    if (!charts.oi) return;
+
+    if (!pcrData.length) {
+        charts.oi.setOption({
+            backgroundColor: 'transparent',
+            title: { text: 'NO OI DATA AVAILABLE', left: 'center', top: 'center', textStyle: { color: '#4b5563', fontSize: 12 } },
+            series: []
+        }, true);
+        return;
+    }
 
     // Preserve zoom state
     let start = 70;
@@ -720,82 +727,6 @@ function renderOiChart() {
     charts.oi.setOption(options);
 }
 
-function renderPcrChart() {
-    if (!charts.pcr || !pcrData.length) return;
-
-    // Preserve zoom state
-    let start = 0;
-    let end = 100;
-    let yStart = 0;
-    let yEnd = 100;
-    const currentOption = charts.pcr.getOption();
-    if (currentOption && currentOption.dataZoom) {
-        const xZoom = currentOption.dataZoom.find(dz => dz.xAxisIndex && dz.xAxisIndex.includes(0));
-        if (xZoom) {
-            start = xZoom.start;
-            end = xZoom.end;
-        }
-        const yZoom = currentOption.dataZoom.find(dz => dz.yAxisIndex && dz.yAxisIndex.includes(0));
-        if (yZoom) {
-            yStart = yZoom.start;
-            yEnd = yZoom.end;
-        }
-    }
-
-    const options = {
-        backgroundColor: 'transparent',
-        animation: false,
-        dataZoom: [
-            {
-                type: 'inside',
-                xAxisIndex: [0],
-                start: start,
-                end: end
-            },
-            {
-                type: 'inside',
-                yAxisIndex: [0],
-                filterMode: 'empty',
-                start: yStart,
-                end: yEnd
-            },
-            {
-                type: 'slider',
-                bottom: 0,
-                height: 16,
-                start: start,
-                end: end
-            }
-        ],
-        grid: { top: 10, left: 10, right: 50, bottom: 30, containLabel: true },
-        xAxis: {
-            type: 'category',
-            data: pcrData.map(d => new Date(d.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })),
-            axisLine: { lineStyle: { color: '#374151' } },
-            axisLabel: { color: '#6b7280', fontSize: 9 }
-        },
-        yAxis: {
-            scale: true,
-            position: 'right',
-            splitLine: { lineStyle: { color: '#111827' } },
-            axisLabel: { color: '#6b7280', fontSize: 9 }
-        },
-        series: [{
-            type: 'line',
-            data: pcrData.map(d => d.pcr),
-            smooth: true,
-            showSymbol: false,
-            lineStyle: { color: '#8b5cf6', width: 2 },
-            areaStyle: {
-                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                    { offset: 0, color: 'rgba(139, 92, 246, 0.3)' },
-                    { offset: 1, color: 'rgba(139, 92, 246, 0)' }
-                ])
-            }
-        }]
-    };
-    charts.pcr.setOption(options);
-}
 
 // --- Helpers ---
 
