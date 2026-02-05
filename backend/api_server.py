@@ -660,12 +660,6 @@ async def get_historical_pcr(symbol: str, date: Optional[str] = None):
     try:
         clean_key = unquote(symbol)
         hrn_symbol = symbol_mapper.get_symbol(clean_key)
-        if hrn_symbol == "UNKNOWN":
-            # If search for RELIANCE, it might return NSE:RELIANCE
-            if ':' in clean_key:
-                hrn_symbol = clean_key.split(':')[-1]
-            else:
-                hrn_symbol = clean_key
 
         # Fetch today's OI data
         today_str = date or datetime.now().strftime("%Y-%m-%d")
@@ -696,12 +690,12 @@ async def get_historical_pcr(symbol: str, date: Optional[str] = None):
         # If no data for today, try getting last 10 points and trigger a backfill
         if not results:
             # Trigger Trendlyne backfill in background
-            logger.info(f"No PCR data for {symbol} today. Triggering Trendlyne backfill...")
+            logger.info(f"No PCR data for {hrn_symbol} today. Triggering Trendlyne backfill...")
             import threading
-            threading.Thread(target=trendlyne_service.perform_backfill, args=(symbol,), kwargs={'interval_minutes': 5}, daemon=True).start()
+            threading.Thread(target=trendlyne_service.perform_backfill, args=(hrn_symbol,), kwargs={'interval_minutes': 5}, daemon=True).start()
 
             fallback_sql = "SELECT CAST(date AS VARCHAR) as date_str, timestamp, call_oi, put_oi, price FROM oi_data WHERE symbol = ? ORDER BY date DESC, timestamp DESC LIMIT 10"
-            fallback_rows = db.query(fallback_sql, (symbol,))
+            fallback_rows = db.query(fallback_sql, (hrn_symbol,))
             for doc in fallback_rows[::-1]:
                 call_oi = doc.get('call_oi', 0)
                 put_oi = doc.get('put_oi', 0)

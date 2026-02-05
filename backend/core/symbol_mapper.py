@@ -126,20 +126,23 @@ class SymbolMapper:
         """Extracts the base symbol (NIFTY, BANKNIFTY, FINNIFTY) from a key or HRN."""
         if not key_or_hrn: return ""
 
-        target = key_or_hrn.upper()
+        target = key_or_hrn.upper().replace(':', '|').strip()
+
+        # 1. Handle Indices
         if "NIFTY BANK" in target or "BANKNIFTY" in target:
             return "BANKNIFTY"
         if "FIN SERVICE" in target or "FINNIFTY" in target:
             return "FINNIFTY"
         if "NIFTY" in target:
             return "NIFTY"
+        if "INDIA VIX" in target or "INDIAVIX" in target:
+            return "INDIA VIX"
 
-        # Try resolving if it might be a raw key
-        if "|" in key_or_hrn or ":" in key_or_hrn:
-            hrn = self.get_hrn(key_or_hrn)
-            if hrn and hrn != key_or_hrn:
-                return self.get_symbol(hrn)
+        # 2. Handle technical keys with prefixes (e.g., NSE|RELIANCE)
+        if "|" in target:
+            return target.split("|")[-1]
 
-        return "UNKNOWN"
+        # 3. Handle HRN formats (e.g., RELIANCE 26 FEB 2026 CALL 2500)
+        return target.split(" ")[0]
 
 symbol_mapper = SymbolMapper()

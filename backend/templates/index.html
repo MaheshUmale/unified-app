@@ -112,12 +112,40 @@
         </div>
 
         <div id="tabOiContent" class="hidden flex-1 flex flex-col gap-1 overflow-hidden">
-            <div class="flex-1 glass-panel rounded-lg p-0 relative overflow-hidden border-orange-900/30 chart-container" data-chart="oi">
-                <div class="absolute top-2 left-2 z-10 bg-orange-600/40 px-2 py-0.5 rounded text-[9px] font-black text-white uppercase tracking-tighter">CALL VS PUT OI</div>
+            <div class="h-[60%] glass-panel rounded-lg p-0 relative overflow-hidden border-orange-900/30 chart-container" data-chart="oi">
+                <div class="absolute top-2 left-2 z-10 bg-orange-600/40 px-2 py-0.5 rounded text-[9px] font-black text-white uppercase tracking-tighter">OI DIFF VS PRICE</div>
                 <button class="maximize-btn absolute top-2 right-2 z-10 text-gray-600 hover:text-white transition-colors">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
                 </button>
                 <div id="oiChart" class="w-full h-full"></div>
+            </div>
+            <div class="h-[40%] glass-panel rounded-lg p-2 overflow-hidden border-white/5 flex flex-col">
+                <div class="flex items-center justify-between mb-2 px-2">
+                    <span class="text-[10px] font-black text-gray-400 uppercase tracking-tighter italic">5-MIN OI BUILDUP ANALYSIS</span>
+                    <div class="flex gap-4 text-[8px] font-bold">
+                        <span class="text-green-500">LB: LONG BUILDUP</span>
+                        <span class="text-red-500">SB: SHORT BUILDUP</span>
+                        <span class="text-blue-500">SC: SHORT COVERING</span>
+                        <span class="text-orange-500">LU: LONG UNWINDING</span>
+                    </div>
+                </div>
+                <div class="flex-1 overflow-y-auto custom-scrollbar">
+                    <table class="w-full text-[10px] font-mono-data border-collapse">
+                        <thead class="sticky top-0 bg-gray-900 text-gray-500 uppercase text-[8px] tracking-widest border-b border-gray-800">
+                            <tr>
+                                <th class="py-2 px-3 text-left">TIME</th>
+                                <th class="py-2 px-3 text-right">PRICE</th>
+                                <th class="py-2 px-3 text-right">CHG</th>
+                                <th class="py-2 px-3 text-right">TOTAL OI</th>
+                                <th class="py-2 px-3 text-right">OI CHG</th>
+                                <th class="py-2 px-3 text-center">BUILDUP</th>
+                            </tr>
+                        </thead>
+                        <tbody id="buildupBody" class="divide-y divide-gray-800/30">
+                            <!-- Rows injected by app.js -->
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </main>
