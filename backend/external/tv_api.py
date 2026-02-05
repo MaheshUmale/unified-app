@@ -102,8 +102,20 @@ class TradingViewAPI:
                 if data and 'ohlc' in data:
                     candles = []
                     for row in data['ohlc']:
+                        # Ensure we have a unix timestamp or ISO string that can be parsed
+                        ts = row['datetime']
+                        if isinstance(ts, (int, float)):
+                            pass # already unix
+                        else:
+                            # If it's a string, try to parse it.
+                            # Streamer usually returns timestamps or ISO
+                            try:
+                                ts = int(datetime.fromisoformat(ts.replace('Z', '+00:00')).timestamp())
+                            except:
+                                pass
+
                         candles.append([
-                            row['datetime'],
+                            ts,
                             float(row['open']), float(row['high']), float(row['low']), float(row['close']),
                             float(row['volume'])
                         ])
@@ -126,8 +138,18 @@ class TradingViewAPI:
                 if df is not None and not df.empty:
                     candles = []
                     for ts, row in df.iterrows():
+                        # tvDatafeed returns naive datetime in exchange timezone (usually IST for NSE)
+                        # We need to treat it as IST and get UTC timestamp
+                        import pytz
+                        ist = pytz.timezone('Asia/Kolkata')
+                        try:
+                            ts_ist = ist.localize(ts) if ts.tzinfo is None else ts.astimezone(ist)
+                            unix_ts = int(ts_ist.timestamp())
+                        except:
+                            unix_ts = int(ts.timestamp())
+
                         candles.append([
-                            ts.isoformat(),
+                            unix_ts,
                             float(row['open']), float(row['high']), float(row['low']), float(row['close']),
                             float(row['volume'])
                         ])

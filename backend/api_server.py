@@ -48,7 +48,7 @@ async def lifespan(app: FastAPI):
         logger.error(f"Error flushing tick buffers: {e}")
 
 fastapi_app = FastAPI(title="ProTrade API", lifespan=lifespan)
-sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
+sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*', ping_timeout=60, ping_interval=25)
 main_loop = None
 
 fastapi_app.add_middleware(
