@@ -25,6 +25,7 @@ class LocalDB:
     _instance = None
     _singleton_lock = threading.Lock()
     _execute_lock = threading.Lock()
+    _batch_count = 0
 
     def __new__(cls):
         with cls._singleton_lock:
@@ -38,6 +39,10 @@ class LocalDB:
         # Note: We use the main connection for DDL.
         # For actual usage, we could use cursors or just lock.
         self.conn = duckdb.connect(DB_PATH)
+
+        # Performance Tuning
+        self.conn.execute("SET memory_limit = '1GB'")
+        self.conn.execute("SET threads = 4")
 
         # Enable JSON extension
         self.conn.execute("INSTALL json; LOAD json;")
@@ -54,8 +59,7 @@ class LocalDB:
                 full_feed JSON
             )
         """)
-        # We don't necessarily need a traditional index in DuckDB for replay if we sort on disk,
-        # but partitions or sorting helps. For now, simple tables.
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_ticks_key_ts ON ticks (instrumentKey, ts_ms)")
 
         # 2. OI Data table
         self.conn.execute("""
@@ -70,6 +74,7 @@ class LocalDB:
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_oi_symbol_date ON oi_data (symbol, date)")
 
         # 3. Metadata table
         self.conn.execute("""
@@ -127,6 +132,7 @@ class LocalDB:
                 updated_at TIMESTAMP
             )
         """)
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_strike_oi_key_date ON strike_oi_data (instrument_key, date)")
 
         logger.info(f"Local DuckDB initialized at {DB_PATH}")
 
@@ -163,6 +169,12 @@ class LocalDB:
         df = pd.DataFrame(data)
         with self._execute_lock:
             self.conn.execute("INSERT INTO ticks SELECT * FROM df")
+
+            # Periodic Checkpoint to manage WAL and ensure durability
+            self._batch_count += 1
+            if self._batch_count >= 10:
+                self.conn.execute("CHECKPOINT")
+                self._batch_count = 0
 
     def insert_oi(self, symbol: str, date: str, timestamp: str, call_oi: float, put_oi: float, price: float, source: str):
         with self._execute_lock:
