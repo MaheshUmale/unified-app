@@ -161,6 +161,7 @@ function initTabs() {
             if (charts.oi) {
                 charts.oi.resize();
                 renderOiChart();
+                renderBuildupTable();
             }
         }, 50);
     });
@@ -296,6 +297,7 @@ function initSocket() {
             if (pcrData.length > 1000) pcrData.shift();
             document.getElementById('pcrInfo').innerText = `PCR: ${msg.pcr.toFixed(2)}`;
             renderOiChart();
+            renderBuildupTable();
         }
     });
 
@@ -671,6 +673,7 @@ function renderOiChart() {
     }
 
     const timeLabels = pcrData.map(d => new Date(d.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+    const diffData = pcrData.map(d => d.put_oi - d.call_oi);
 
     const options = {
         backgroundColor: 'transparent',
@@ -681,7 +684,7 @@ function renderOiChart() {
             textStyle: { color: '#e5e7eb', fontSize: 10 }
         },
         legend: {
-            data: ['Call OI', 'Put OI', 'Spot Price'],
+            data: ['PE - CE DIFF', 'Spot Price'],
             textStyle: { color: '#9ca3af', fontSize: 10 },
             top: 0
         },
@@ -698,9 +701,9 @@ function renderOiChart() {
         },
         yAxis: [
             {
-                name: 'OI',
+                name: 'DIFF',
                 scale: true,
-                position: 'right',
+                position: 'left',
                 splitLine: { lineStyle: { color: '#111827' } },
                 axisLabel: {
                     color: '#6b7280',
@@ -711,29 +714,26 @@ function renderOiChart() {
             {
                 name: 'Price',
                 scale: true,
-                position: 'left',
+                position: 'right',
                 splitLine: { show: false },
                 axisLabel: { color: '#9ca3af', fontSize: 9 }
             }
         ],
         series: [
             {
-                name: 'Call OI',
+                name: 'PE - CE DIFF',
                 type: 'line',
                 yAxisIndex: 0,
-                data: pcrData.map(d => d.call_oi),
+                data: diffData,
                 smooth: true,
                 showSymbol: false,
-                lineStyle: { color: '#ef4444', width: 1.5, opacity: 0.8 }
-            },
-            {
-                name: 'Put OI',
-                type: 'line',
-                yAxisIndex: 0,
-                data: pcrData.map(d => d.put_oi),
-                smooth: true,
-                showSymbol: false,
-                lineStyle: { color: '#22c55e', width: 1.5, opacity: 0.8 }
+                areaStyle: {
+                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        { offset: 0, color: 'rgba(59, 130, 246, 0.2)' },
+                        { offset: 1, color: 'rgba(59, 130, 246, 0)' }
+                    ])
+                },
+                lineStyle: { color: '#3b82f6', width: 2 }
             },
             {
                 name: 'Spot Price',
@@ -742,11 +742,81 @@ function renderOiChart() {
                 data: pcrData.map(d => d.price),
                 smooth: true,
                 showSymbol: false,
-                lineStyle: { color: '#3b82f6', width: 2 }
+                lineStyle: { color: '#ffffff', width: 1, type: 'dashed', opacity: 0.6 }
             }
         ]
     };
     charts.oi.setOption(options);
+}
+
+function renderBuildupTable() {
+    const body = document.getElementById('buildupBody');
+    if (!body || !pcrData.length) return;
+
+    // Aggregate into 5-minute buckets
+    const buckets = [];
+    let currentBucket = null;
+
+    pcrData.forEach(d => {
+        const date = new Date(d.timestamp);
+        const minutes = date.getMinutes();
+        const bucketStart = new Date(date);
+        bucketStart.setMinutes(Math.floor(minutes / 5) * 5, 0, 0);
+        const bucketKey = bucketStart.getTime();
+
+        if (!currentBucket || currentBucket.key !== bucketKey) {
+            currentBucket = {
+                key: bucketKey,
+                time: bucketStart.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                openPrice: d.price,
+                closePrice: d.price,
+                openOI: d.call_oi + d.put_oi,
+                closeOI: d.call_oi + d.put_oi
+            };
+            buckets.push(currentBucket);
+        } else {
+            currentBucket.closePrice = d.price;
+            currentBucket.closeOI = d.call_oi + d.put_oi;
+        }
+    });
+
+    // Calculate changes and buildup
+    const buildupData = buckets.map((b, i) => {
+        const prev = i > 0 ? buckets[i-1] : null;
+        const priceChg = prev ? b.closePrice - prev.closePrice : 0;
+        const oiChg = prev ? b.closeOI - prev.closeOI : 0;
+
+        let type = "Neutral";
+        let color = "text-gray-500";
+        let label = "---";
+
+        if (priceChg > 0 && oiChg > 0) { type = "Long Buildup"; color = "text-green-500"; label = "LB"; }
+        else if (priceChg < 0 && oiChg > 0) { type = "Short Buildup"; color = "text-red-500"; label = "SB"; }
+        else if (priceChg < 0 && oiChg < 0) { type = "Long Unwinding"; color = "text-orange-500"; label = "LU"; }
+        else if (priceChg > 0 && oiChg < 0) { type = "Short Covering"; color = "text-blue-500"; label = "SC"; }
+
+        return { ...b, priceChg, oiChg, type, color, label };
+    });
+
+    // Render rows (reverse to show latest first)
+    body.innerHTML = buildupData.reverse().map(d => `
+        <tr class="hover:bg-white/5 transition-colors">
+            <td class="py-2 px-3 text-gray-400">${d.time}</td>
+            <td class="py-2 px-3 text-right font-black text-white">${d.closePrice.toFixed(2)}</td>
+            <td class="py-2 px-3 text-right font-bold ${d.priceChg >= 0 ? 'text-green-500' : 'text-red-500'}">
+                ${d.priceChg >= 0 ? '+' : ''}${d.priceChg.toFixed(2)}
+            </td>
+            <td class="py-2 px-3 text-right text-gray-400">${(d.closeOI / 1000000).toFixed(2)}M</td>
+            <td class="py-2 px-3 text-right font-bold ${d.oiChg >= 0 ? 'text-green-500' : 'text-red-500'}">
+                ${d.oiChg >= 0 ? '+' : ''}${(d.oiChg / 1000).toFixed(0)}K
+            </td>
+            <td class="py-2 px-3 text-center">
+                <span class="px-2 py-0.5 rounded-full bg-gray-900 border border-white/5 font-black text-[8px] ${d.color}">
+                    ${d.label}
+                </span>
+            </td>
+        </tr>
+    `).join('');
 }
 
 
