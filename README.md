@@ -1,15 +1,19 @@
 # PRODESK Simplified Terminal
 
-A minimal, high-performance trading terminal featuring TradingView charting and real-time WebSocket data.
+A minimal, high-performance trading terminal featuring TradingView charting, real-time WebSocket data, and candle-by-candle replay.
 
 ## Features
 
 - **Minimal UI**: Clean interface with only a search bar and a full-screen chart.
 - **TradingView Charts**: Powered by TradingView Lightweight Charts (v4.1.1) for professional-grade charting with native zoom and pan.
+- **Zoom Controls**: Dedicated (+), (-), and RESET buttons for easy timescale management.
+- **Candle-by-Candle Replay**:
+  - Enter Replay mode to analyze historical price action.
+  - **Select Start**: Click anywhere on the chart to set the starting point for replay.
+  - **Playback**: Use Play/Pause, Next, and Previous buttons to step through candles one by one.
 - **Real-time Data**: Live quote streaming via TradingView WebSocket (WSS) protocol.
 - **Universal Search**: Search for any symbol across exchanges supported by TradingView.
 - **Efficient Backend**: Built with FastAPI and Socket.IO for low-latency data delivery.
-- **Local Persistence**: DuckDB for efficient storage of market metadata and ticks.
 
 ## Architecture
 
@@ -37,7 +41,7 @@ A minimal, high-performance trading terminal featuring TradingView charting and 
 
 ### Configuration
 
-Optional: Set TradingView credentials in environment variables for authenticated access (allows more symbols/higher limits):
+Optional: Set TradingView credentials in environment variables for authenticated access:
 ```bash
 export TV_USERNAME='your_username'
 export TV_PASSWORD='your_password'
@@ -55,6 +59,10 @@ The terminal will be available at `http://localhost:5051`.
 
 ## Usage
 
-1. **Search**: Use the centered search bar at the top to find any symbol (e.g., `NSE:RELIANCE`, `NIFTY`, `COINBASE:BTCUSD`).
-2. **Chart**: The chart will automatically load historical data and begin receiving live updates via WebSocket.
-3. **Controls**: Use the mouse wheel to zoom and click-drag the time scale to move back/forward in time.
+1. **Search**: Use the centered search bar at the top to find any symbol.
+2. **Zoom**: Use the (+) and (-) buttons on the top right to zoom the chart.
+3. **Replay**:
+   - Click the **REPLAY** button.
+   - Click a candle on the chart to set the start point.
+   - Use the controls to play or step through candles.
+   - Click **EXIT** to return to live mode.

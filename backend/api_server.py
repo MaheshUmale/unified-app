@@ -14,9 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from config import LOGGING_CONFIG, INITIAL_INSTRUMENTS
-from db.local_db import db
 from core import data_engine
-from core.symbol_mapper import symbol_mapper
 from external.tv_api import tv_api
 from datetime import datetime
 from urllib.parse import unquote
