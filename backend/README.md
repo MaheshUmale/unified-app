@@ -22,8 +22,6 @@ The decision-making heart of the platform.
 - **`data_engine.py`**: Orchestrates data flow, bar building, and strategy dispatching.
 - **`pcr_logic.py`**: Core engine for PCR calculation and market sentiment analysis.
 - **`strategies/`**: Contains quantitative trading strategies like `CandleCrossStrategy` and `ATMOptionBuyingStrategy`.
-- **`risk_controller.py`**: Enforces position limits and daily drawdown protection.
-- **`position_manager.py`**: Tracks live P&L and active positions.
 - **`replay_engine.py`**: Synchronized historical data replayer for strategy simulation.
 
 ### 4. UI/API Layer (`api_server.py`)
