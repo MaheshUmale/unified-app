@@ -79,8 +79,8 @@ class TradingViewAPI:
 
             if ':' in symbol_or_hrn:
                 parts = symbol_or_hrn.split(':')
-                tv_exchange = parts[0]
-                tv_symbol = parts[1]
+                tv_exchange = parts[0].upper()
+                tv_symbol = parts[1].upper()
                 symbol_or_hrn = tv_symbol # for later checks
 
             # 1. Handle explicit mapping

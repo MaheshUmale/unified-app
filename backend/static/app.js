@@ -207,8 +207,10 @@ function initSocket() {
 
 function handleTickUpdate(quotes) {
     const entries = Object.entries(quotes);
+    const currentNorm = normalizeSymbol(currentSymbol);
     for (const [key, quote] of entries) {
-        if (normalizeSymbol(key) === normalizeSymbol(currentSymbol)) {
+        const tickNorm = normalizeSymbol(key);
+        if (tickNorm === currentNorm) {
             updateRealtimeCandle(quote);
             break;
         }

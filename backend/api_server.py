@@ -3,11 +3,10 @@ ProTrade Simplified API Server
 Handles essential REST endpoints and Socket.IO real-time streaming for the charting terminal.
 """
 import os
-import json
 import asyncio
 import logging
 from logging.config import dictConfig
-from typing import List, Dict, Any, Optional
+from typing import Any, Optional
 import socketio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query, Request
