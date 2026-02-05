@@ -496,6 +496,7 @@ async def trigger_trendlyne_backfill(
         logger.error(f"Trendlyne backfill error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
+@fastapi_app.get("/api/tv/intraday/{instrument_key}")
 @fastapi_app.get("/api/upstox/intraday/{instrument_key}")
 async def get_upstox_intraday(instrument_key: str, date: Optional[str] = None, interval: str = '1'):
     """Fetch intraday candles from DB backfill or TradingView. instrument_key can be HRN."""

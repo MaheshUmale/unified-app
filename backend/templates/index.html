@@ -3,162 +3,54 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PRODESK | Integrated Terminal</title>
+    <title>PRODESK | TradingView Chart</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
     <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&family=JetBrains+Mono:wght@700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&display=swap');
         body { font-family: 'Inter', sans-serif; background-color: #000; color: #d1d5db; overflow: hidden; }
-        .font-mono-data { font-family: 'JetBrains+Mono', monospace; }
         .glass-panel { background: rgba(17, 24, 39, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.05); }
         .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #374151; border-radius: 10px; }
         .loading-bar { height: 2px; background: linear-gradient(to right, #3b82f6, #60a5fa); animation: loading 2s infinite; }
         @keyframes loading { 0% { width: 0; } 50% { width: 100%; } 100% { width: 0; } }
-        .fullscreen-chart { position: fixed !important; top: 0 !important; left: 0 !important; width: 100vw !important; height: 100vh !important; z-index: 1000 !important; background: #000 !important; padding: 1rem !important; }
     </style>
 </head>
 <body class="h-full flex flex-col">
     <div id="loading" class="hidden absolute top-0 left-0 w-full z-[100] loading-bar"></div>
 
-    <header class="min-h-14 py-2 glass-panel border-b border-white/5 sticky top-0 z-50 px-4 md:px-6 flex flex-wrap items-center justify-between gap-4">
-        <div class="flex items-center gap-4 md:gap-8">
+    <header class="h-14 py-2 glass-panel border-b border-white/5 sticky top-0 z-50 px-4 md:px-6 flex items-center justify-between">
+        <div class="flex items-center gap-4">
             <div class="flex flex-col">
                 <span class="text-lg md:text-xl font-black text-white tracking-tighter italic leading-none uppercase">PRO<span class="text-blue-500">DESK</span></span>
-                <span class="text-[7px] md:text-[8px] text-gray-600 font-bold tracking-[0.4em] uppercase">Integrated Terminal</span>
             </div>
             <div class="h-8 w-[1px] bg-gray-800 mx-1"></div>
-            <select id="indexSelect" class="bg-gray-900 border border-gray-800 rounded px-2 md:px-3 py-1 text-[10px] md:text-xs font-bold text-blue-400 outline-none focus:ring-1 focus:ring-blue-500 transition-all">
-                <option value="NIFTY">NIFTY 50</option>
-                <option value="BANKNIFTY">BANK NIFTY</option>
-                <option value="FINNIFTY">FIN NIFTY</option>
-            </select>
-            <div class="relative group ml-2">
-                <input type="text" id="symbolSearch" placeholder="SEARCH SYMBOL..." class="bg-gray-900 border border-gray-800 rounded px-3 py-1 text-[10px] md:text-xs font-bold text-gray-300 outline-none focus:ring-1 focus:ring-blue-500 transition-all w-32 md:w-48">
+            <div class="relative group">
+                <input type="text" id="symbolSearch" placeholder="SEARCH SYMBOL..." class="bg-gray-900 border border-gray-800 rounded px-3 py-1 text-[10px] md:text-xs font-bold text-gray-300 outline-none focus:ring-1 focus:ring-blue-500 transition-all w-48 md:w-64">
                 <div id="searchResults" class="hidden absolute top-full left-0 w-full bg-gray-900 border border-gray-800 rounded-b mt-1 z-[100] max-h-60 overflow-y-auto custom-scrollbar">
-                    <!-- Search results will be injected here -->
                 </div>
             </div>
         </div>
-
-        <div class="flex flex-wrap items-center gap-4 md:gap-6">
-            <div id="replayControls" class="flex items-center gap-2 md:gap-3 bg-gray-900/50 p-1 rounded-lg border border-white/5">
-                <select id="replayDateSelect" class="bg-transparent text-[9px] md:text-[10px] font-bold text-gray-400 outline-none cursor-pointer px-1 md:px-2">
-                    <option value="">Current Session</option>
+        <div class="flex items-center gap-4">
+            <div id="replayControls" class="flex items-center gap-2 bg-gray-900/50 p-1 rounded border border-white/5">
+                <select id="replayDateSelect" class="bg-transparent text-[10px] font-bold text-gray-400 outline-none cursor-pointer px-2">
+                    <option value="">Live Session</option>
                 </select>
-                <button id="replayBtn" class="bg-blue-600 hover:bg-blue-700 p-1 md:p-1.5 rounded transition-colors disabled:opacity-50">
+                <button id="replayBtn" class="bg-blue-600 hover:bg-blue-700 p-1 rounded transition-colors disabled:opacity-50">
                     <svg class="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20"><path d="M4.5 3.5v13L16.5 10l-12-6.5z"/></svg>
                 </button>
             </div>
-            <div class="hidden md:block h-8 w-[1px] bg-gray-800 mx-1"></div>
-            <div class="flex items-center gap-4 md:gap-6">
-                <div class="flex flex-col items-end">
-                    <span class="text-[7px] md:text-[8px] text-gray-600 font-bold uppercase tracking-widest">SPOT</span>
-                    <span id="spotPrice" class="text-white font-black font-mono-data text-xs md:text-sm">---</span>
-                </div>
-                <div class="flex flex-col items-end">
-                    <span class="text-[7px] md:text-[8px] text-gray-600 font-bold uppercase tracking-widest">ATM</span>
-                    <span id="atmStrike" class="text-blue-500 font-black font-mono-data text-xs md:text-sm">---</span>
-                </div>
-            </div>
+            <div class="h-8 w-[1px] bg-gray-800 mx-1"></div>
+            <span id="socketStatus" class="flex items-center gap-1 text-[8px] font-mono text-gray-600 uppercase tracking-widest"><div class="w-1.5 h-1.5 bg-gray-600 rounded-full"></div> DISCONNECTED</span>
         </div>
     </header>
 
-    <main class="flex-1 p-1 flex flex-col overflow-hidden bg-black">
-        <!-- Tab Navigation -->
-        <div class="flex gap-1 mb-1 px-1">
-            <button id="tabIndexBtn" class="flex-1 py-2 rounded-t-lg bg-blue-600 text-white text-[9px] md:text-[10px] font-black uppercase tracking-tighter transition-all">
-                INDEX SPOT
-            </button>
-            <button id="tabOptionsBtn" class="flex-1 py-2 rounded-t-lg bg-gray-900 text-gray-400 text-[9px] md:text-[10px] font-black uppercase tracking-tighter transition-all">
-                ATM CE & PE CHARTS
-            </button>
-            <button id="tabOiBtn" class="flex-1 py-2 rounded-t-lg bg-gray-900 text-gray-400 text-[9px] md:text-[10px] font-black uppercase tracking-tighter transition-all">
-                OI ANALYSIS
-            </button>
-        </div>
-
-        <!-- Tab Content -->
-        <div id="tabIndexContent" class="flex-1 flex flex-col gap-1 overflow-hidden">
-            <div class="flex-1 glass-panel rounded-lg p-0 relative overflow-hidden border-blue-900/30 chart-container" data-chart="index">
-                <div class="absolute top-2 left-2 z-10 flex gap-2">
-                    <div class="bg-blue-600/40 px-2 py-0.5 rounded text-[9px] font-black text-white uppercase tracking-tighter">INDEX SPOT</div>
-                    <div id="indexTfLabel" class="bg-gray-800/80 px-2 py-0.5 rounded text-[9px] font-bold text-gray-400">1M + MTF</div>
-                </div>
-                <button class="maximize-btn absolute top-2 right-2 z-10 text-gray-600 hover:text-white transition-colors">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
-                </button>
-                <div id="indexChart" class="w-full h-full"></div>
-            </div>
-        </div>
-
-        <div id="tabOptionsContent" class="hidden flex-1 flex flex-col gap-1 overflow-hidden">
-            <div class="flex-1 glass-panel rounded-lg p-0 relative overflow-hidden border-green-900/30 chart-container" data-chart="ce">
-                <div class="absolute top-2 left-2 z-10 bg-green-600/40 px-2 py-0.5 rounded text-[9px] font-black text-white uppercase tracking-tighter">ATM CE</div>
-                <button class="maximize-btn absolute top-2 right-2 z-10 text-gray-600 hover:text-white transition-colors">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
-                </button>
-                <div id="ceChart" class="w-full h-full"></div>
-            </div>
-            <div class="flex-1 glass-panel rounded-lg p-0 relative overflow-hidden border-red-900/30 chart-container" data-chart="pe">
-                <div class="absolute top-2 left-2 z-10 bg-red-600/40 px-2 py-0.5 rounded text-[9px] font-black text-white uppercase tracking-tighter">ATM PE</div>
-                <button class="maximize-btn absolute top-2 right-2 z-10 text-gray-600 hover:text-white transition-colors">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
-                </button>
-                <div id="peChart" class="w-full h-full"></div>
-            </div>
-        </div>
-
-        <div id="tabOiContent" class="hidden flex-1 flex flex-col gap-1 overflow-hidden">
-            <div class="h-[60%] glass-panel rounded-lg p-0 relative overflow-hidden border-orange-900/30 chart-container" data-chart="oi">
-                <div class="absolute top-2 left-2 z-10 bg-orange-600/40 px-2 py-0.5 rounded text-[9px] font-black text-white uppercase tracking-tighter">OI DIFF VS PRICE</div>
-                <button class="maximize-btn absolute top-2 right-2 z-10 text-gray-600 hover:text-white transition-colors">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
-                </button>
-                <div id="oiChart" class="w-full h-full"></div>
-            </div>
-            <div class="h-[40%] glass-panel rounded-lg p-2 overflow-hidden border-white/5 flex flex-col">
-                <div class="flex items-center justify-between mb-2 px-2">
-                    <span class="text-[10px] font-black text-gray-400 uppercase tracking-tighter italic">5-MIN OI BUILDUP ANALYSIS</span>
-                    <div class="flex gap-4 text-[8px] font-bold">
-                        <span class="text-green-500">LB: LONG BUILDUP</span>
-                        <span class="text-red-500">SB: SHORT BUILDUP</span>
-                        <span class="text-blue-500">SC: SHORT COVERING</span>
-                        <span class="text-orange-500">LU: LONG UNWINDING</span>
-                    </div>
-                </div>
-                <div class="flex-1 overflow-y-auto custom-scrollbar">
-                    <table class="w-full text-[10px] font-mono-data border-collapse">
-                        <thead class="sticky top-0 bg-gray-900 text-gray-500 uppercase text-[8px] tracking-widest border-b border-gray-800">
-                            <tr>
-                                <th class="py-2 px-3 text-left">TIME</th>
-                                <th class="py-2 px-3 text-right">PRICE</th>
-                                <th class="py-2 px-3 text-right">CHG</th>
-                                <th class="py-2 px-3 text-right">TOTAL OI</th>
-                                <th class="py-2 px-3 text-right">OI CHG</th>
-                                <th class="py-2 px-3 text-center">BUILDUP</th>
-                            </tr>
-                        </thead>
-                        <tbody id="buildupBody" class="divide-y divide-gray-800/30">
-                            <!-- Rows injected by app.js -->
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
+    <main class="flex-1 p-0.5 flex flex-col overflow-hidden bg-black">
+        <div id="mainChart" class="flex-1 w-full h-full"></div>
     </main>
 
-    <footer class="h-6 glass-panel border-t border-white/5 flex items-center justify-between px-6 text-[8px] font-mono text-gray-600 uppercase tracking-[0.2em]">
-        <div class="flex gap-4 items-center">
-            <span id="socketStatus" class="flex items-center gap-1"><div class="w-1.5 h-1.5 bg-gray-600 rounded-full"></div> DISCONNECTED</span>
-            <span id="pcrInfo" class="border-l border-gray-800 pl-4">PCR: ---</span>
-        </div>
-        <div>PRODESK V5.0 SECURE TAP</div>
-    </footer>
-
-    <script src="/static/indicators.js"></script>
     <script src="/static/app.js"></script>
 </body>
 </html>

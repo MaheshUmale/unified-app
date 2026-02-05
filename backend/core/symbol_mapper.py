@@ -59,7 +59,11 @@ class SymbolMapper:
                 return hrn
 
         # Fallback to simple normalization if no metadata
-        return key.replace('|', ' ').replace('NSE INDEX', '').strip()
+        if '|' in key:
+            parts = key.split('|')
+            if len(parts) == 2 and parts[0] == 'NSE':
+                return parts[1] # Return just RELIANCE for NSE|RELIANCE
+        return key.replace('|', ':').replace('NSE INDEX', '').strip()
 
     def _generate_hrn(self, instrument_key: str, meta: Dict[str, Any]) -> str:
         """
