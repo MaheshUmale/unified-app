@@ -85,6 +85,7 @@ class TradingViewWSS:
                 if data.get("m") == "qsd" and len(data["p"]) > 1:
                     quote_data = data["p"][1]
                     symbol = quote_data["n"]
+                    logger.info(f"TV WSS Raw Symbol: {symbol}")
                     values = quote_data.get("v", {})
 
                     hrn = self.symbol_map.get(symbol, symbol)

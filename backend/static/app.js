@@ -1,56 +1,98 @@
 /**
- * PRODESK Main Application
- * Handles Socket.IO connection, data orchestration, and ECharts rendering.
+ * PRODESK Simplified Application
+ * Handles Socket.IO connection and TradingView Lightweight Charts rendering.
  */
 
 const socket = io();
 
 // UI State
-let currentIndex = 'NIFTY';
-let currentAtm = 0;
-let expiryDate = '';
+let currentSymbol = 'NSE:NIFTY';
+let mainChart = null;
+let candleSeries = null;
+let volumeSeries = null;
+let lastCandle = null;
 let isReplay = false;
 let replayDate = '';
-
-// Data Buffers
-let indexData = [];
-let ceData = [];
-let peData = [];
-let pcrData = [];
-let mtf5Data = [];
-let mtf15Data = [];
-let atmKeys = { ce: '', pe: '' };
-
-// Charts
-let charts = {
-    index: null,
-    ce: null,
-    pe: null,
-    oi: null
-};
 
 // --- Initialization ---
 
 function init() {
-    charts.index = echarts.init(document.getElementById('indexChart'));
-    charts.ce = echarts.init(document.getElementById('ceChart'));
-    charts.pe = echarts.init(document.getElementById('peChart'));
-    charts.oi = echarts.init(document.getElementById('oiChart'));
+    const chartContainer = document.getElementById('mainChart');
+    if (chartContainer) {
+        mainChart = LightweightCharts.createChart(chartContainer, {
+            width: chartContainer.clientWidth,
+            height: chartContainer.clientHeight,
+            layout: {
+                background: { type: 'solid', color: '#000000' },
+                textColor: '#d1d5db',
+            },
+            grid: {
+                vertLines: { color: '#111827' },
+                horzLines: { color: '#111827' },
+            },
+            crosshair: {
+                mode: LightweightCharts.CrosshairMode.Normal,
+            },
+            rightPriceScale: {
+                borderColor: '#1f2937',
+            },
+            timeScale: {
+                borderColor: '#1f2937',
+                timeVisible: true,
+                secondsVisible: false,
+            },
+        });
 
-    window.addEventListener('resize', () => {
-        Object.values(charts).forEach(c => c && c.resize());
-    });
+        // Compatibility for different versions of Lightweight Charts
+        candleSeries = mainChart.addCandlestickSeries ? mainChart.addCandlestickSeries({
+            upColor: '#22c55e',
+            downColor: '#ef4444',
+            borderVisible: false,
+            wickUpColor: '#22c55e',
+            wickDownColor: '#ef4444',
+        }) : mainChart.addSeries(LightweightCharts.CandlestickSeries, {
+            upColor: '#22c55e',
+            downColor: '#ef4444',
+            borderVisible: false,
+            wickUpColor: '#22c55e',
+            wickDownColor: '#ef4444',
+        });
 
-    document.getElementById('indexSelect').addEventListener('change', (e) => {
-        switchIndex(e.target.value);
-    });
+        volumeSeries = mainChart.addHistogramSeries ? mainChart.addHistogramSeries({
+            color: '#3b82f6',
+            lineWidth: 2,
+            priceFormat: {
+                type: 'volume',
+            },
+            overlay: true,
+            scaleMargins: {
+                top: 0.8,
+                bottom: 0,
+            },
+        }) : mainChart.addSeries(LightweightCharts.HistogramSeries, {
+            color: '#3b82f6',
+            lineWidth: 2,
+            priceFormat: {
+                type: 'volume',
+            },
+            overlay: true,
+            scaleMargins: {
+                top: 0.8,
+                bottom: 0,
+            },
+        });
 
-    loadInitialData();
+        window.addEventListener('resize', () => {
+            mainChart.resize(chartContainer.clientWidth, chartContainer.clientHeight);
+        });
+    }
+
     initSocket();
-    fetchReplayDates();
-    initFullscreen();
-    initTabs();
     initSearch();
+    fetchReplayDates();
+
+    // Initial load
+    switchSymbol(currentSymbol);
 }
 
 function initSearch() {
@@ -79,7 +121,6 @@ function initSearch() {
         }, 300);
     });
 
-    // Close results when clicking outside
     document.addEventListener('click', (e) => {
         if (!searchInput.contains(e.target) && !resultsDiv.contains(e.target)) {
             resultsDiv.classList.add('hidden');
@@ -108,148 +149,55 @@ function displaySearchResults(symbols) {
             const fullSymbol = s.exchange ? `${s.exchange}:${cleanSymbol}` : cleanSymbol;
             document.getElementById('symbolSearch').value = cleanSymbol;
             resultsDiv.classList.add('hidden');
-            switchIndex(fullSymbol);
+            switchSymbol(fullSymbol);
         });
         resultsDiv.appendChild(item);
     });
     resultsDiv.classList.remove('hidden');
 }
 
-function initTabs() {
-    const tabIndexBtn = document.getElementById('tabIndexBtn');
-    const tabOptionsBtn = document.getElementById('tabOptionsBtn');
-    const tabOiBtn = document.getElementById('tabOiBtn');
-    const tabIndexContent = document.getElementById('tabIndexContent');
-    const tabOptionsContent = document.getElementById('tabOptionsContent');
-    const tabOiContent = document.getElementById('tabOiContent');
+async function switchSymbol(symbol) {
+    currentSymbol = symbol;
+    lastCandle = null;
 
-    const resetTabs = () => {
-        [tabIndexContent, tabOptionsContent, tabOiContent].forEach(c => c.classList.add('hidden'));
-        [tabIndexBtn, tabOptionsBtn, tabOiBtn].forEach(b => {
-            b.classList.remove('bg-blue-600', 'text-white');
-            b.classList.add('bg-gray-900', 'text-gray-400');
-        });
-    };
-
-    tabIndexBtn.addEventListener('click', () => {
-        resetTabs();
-        tabIndexContent.classList.remove('hidden');
-        tabIndexBtn.classList.add('bg-blue-600', 'text-white');
-        tabIndexBtn.classList.remove('bg-gray-900', 'text-gray-400');
-        setTimeout(() => {
-            charts.index && charts.index.resize();
-        }, 50);
-    });
-
-    tabOptionsBtn.addEventListener('click', () => {
-        resetTabs();
-        tabOptionsContent.classList.remove('hidden');
-        tabOptionsBtn.classList.add('bg-blue-600', 'text-white');
-        tabOptionsBtn.classList.remove('bg-gray-900', 'text-gray-400');
-        setTimeout(() => {
-            charts.ce && charts.ce.resize();
-            charts.pe && charts.pe.resize();
-        }, 50);
-    });
-
-    tabOiBtn.addEventListener('click', () => {
-        resetTabs();
-        tabOiContent.classList.remove('hidden');
-        tabOiBtn.classList.add('bg-blue-600', 'text-white');
-        tabOiBtn.classList.remove('bg-gray-900', 'text-gray-400');
-        setTimeout(() => {
-            if (charts.oi) {
-                charts.oi.resize();
-                renderOiChart();
-                renderBuildupTable();
-            }
-        }, 50);
-    });
-}
-
-function initFullscreen() {
-    document.querySelectorAll('.maximize-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const container = btn.closest('.chart-container');
-            const chartKey = container.dataset.chart;
-            container.classList.toggle('fullscreen-chart');
-            // Small delay to allow CSS transition if any, though fixed position is instant
-            setTimeout(() => {
-                if (charts[chartKey]) charts[chartKey].resize();
-            }, 50);
-        });
-    });
-}
-
-async function loadInitialData() {
     setLoading(true);
     try {
-        // 1. Fetch Expiry
-        const expRes = await fetch(`/api/trendlyne/expiry/${currentIndex}`);
-        const expiries = await expRes.json();
-        if (expiries && expiries.length > 0) expiryDate = expiries[0].date;
+        const candles = await fetchIntraday(currentSymbol);
+        if (candles && candles.length > 0) {
+            const chartData = candles.map(c => ({
+                time: Math.floor(new Date(c.timestamp).getTime() / 1000),
+                open: c.open,
+                high: c.high,
+                low: c.low,
+                close: c.close
+            })).sort((a, b) => a.time - b.time);
 
-        // 2. Load Index & MTF
-        const [i1m, i5m, i15m, pcr] = await Promise.all([
-            fetchIntraday(currentIndex, '1'),
-            fetchIntraday(currentIndex, '5'),
-            fetchIntraday(currentIndex, '15'),
-            fetchHistoricalPcr(currentIndex)
-        ]);
+            const volData = candles.map(c => ({
+                time: Math.floor(new Date(c.timestamp).getTime() / 1000),
+                value: c.volume,
+                color: c.close >= c.open ? 'rgba(34, 197, 94, 0.5)' : 'rgba(239, 68, 68, 0.5)'
+            })).sort((a, b) => a.time - b.time);
 
-        indexData = i1m;
-        mtf5Data = i5m;
-        mtf15Data = i15m;
-        pcrData = pcr;
+            candleSeries.setData(chartData);
+            volumeSeries.setData(volData);
 
-        if (indexData.length > 0) {
-            const last = indexData[indexData.length - 1];
-            updateAtmStrike(last.close);
-            renderChart(charts.index, 'INDEX', indexData, { mtf5: mtf5Data, mtf15: mtf15Data });
+            lastCandle = chartData[chartData.length - 1];
+            lastCandle.volume = candles[candles.length - 1].volume;
+        } else {
+            candleSeries.setData([]);
+            volumeSeries.setData([]);
         }
-        renderOiChart();
 
-        if (expiryDate && currentAtm > 0) {
-            await loadOptionsData();
-            syncIndexVolume();
-            renderChart(charts.index, 'INDEX', indexData, { mtf5: mtf5Data, mtf15: mtf15Data });
-        }
+        socket.emit('subscribe', { instrumentKeys: [currentSymbol] });
     } catch (e) {
-        console.error("Init Data Fail:", e);
+        console.error("Switch symbol failed:", e);
     } finally {
         setLoading(false);
     }
 }
 
-async function loadOptionsData() {
-    try {
-        const chainRes = await fetch(`/api/upstox/option_chain/${encodeURIComponent(currentIndex)}/${expiryDate}`);
-        const chain = await chainRes.json();
-        const atmItem = chain.find(i => i.strike_price === currentAtm);
-        if (atmItem) {
-            atmKeys.ce = atmItem.call_options.instrument_key;
-            atmKeys.pe = atmItem.put_options.instrument_key;
-
-            const [ceCandles, peCandles] = await Promise.all([
-                fetchIntraday(atmKeys.ce),
-                fetchIntraday(atmKeys.pe)
-            ]);
-            ceData = ceCandles;
-            peData = peCandles;
-
-            renderChart(charts.ce, 'ATM CE', ceData);
-            renderChart(charts.pe, 'ATM PE', peData);
-
-            // Subscribe to options via socket
-            socket.emit('subscribe', { instrumentKeys: [currentIndex, atmKeys.ce, atmKeys.pe] });
-        }
-    } catch (e) {
-        console.error("Load Options Fail:", e);
-    }
-}
-
 async function fetchIntraday(key, interval = '1') {
-    let url = `/api/upstox/intraday/${encodeURIComponent(key)}?interval=${interval}`;
+    let url = `/api/tv/intraday/${encodeURIComponent(key)}?interval=${interval}`;
     if (isReplay && replayDate) url += `&date=${replayDate}`;
     const res = await fetch(url);
     const data = await res.json();
@@ -261,23 +209,20 @@ async function fetchIntraday(key, interval = '1') {
     return [];
 }
 
-async function fetchHistoricalPcr(symbol) {
-    let url = `/api/analytics/pcr/${symbol}`;
-    if (isReplay && replayDate) url += `?date=${replayDate}`;
-    const res = await fetch(url);
-    return await res.json();
-}
-
-// --- Socket Handlers ---
-
 function initSocket() {
     socket.on('connect', () => {
-        document.getElementById('socketStatus').innerHTML = '<div class="w-1.5 h-1.5 bg-green-500 rounded-full"></div> CONNECTED';
-        socket.emit('subscribe', { instrumentKeys: [currentIndex] });
+        const statusDom = document.getElementById('socketStatus');
+        if (statusDom) {
+            statusDom.innerHTML = '<div class="w-1.5 h-1.5 bg-green-500 rounded-full"></div> CONNECTED';
+        }
+        socket.emit('subscribe', { instrumentKeys: [currentSymbol] });
     });
 
     socket.on('disconnect', () => {
-        document.getElementById('socketStatus').innerHTML = '<div class="w-1.5 h-1.5 bg-red-500 rounded-full"></div> DISCONNECTED';
+        const statusDom = document.getElementById('socketStatus');
+        if (statusDom) {
+            statusDom.innerHTML = '<div class="w-1.5 h-1.5 bg-red-500 rounded-full"></div> DISCONNECTED';
+        }
     });
 
     socket.on('raw_tick', (data) => {
@@ -285,602 +230,122 @@ function initSocket() {
         handleTickUpdate(rawData);
     });
 
-    socket.on('oi_update', (msg) => {
-        if (normalizeSymbol(msg.symbol) === normalizeSymbol(currentIndex)) {
-            pcrData.push({
-                timestamp: msg.timestamp,
-                pcr: msg.pcr,
-                call_oi: msg.call_oi,
-                put_oi: msg.put_oi,
-                price: msg.price
-            });
-            if (pcrData.length > 1000) pcrData.shift();
-            document.getElementById('pcrInfo').innerText = `PCR: ${msg.pcr.toFixed(2)}`;
-            renderOiChart();
-            renderBuildupTable();
-        }
-    });
-
     socket.on('replay_status', (status) => {
         isReplay = !!status.active;
         replayDate = status.date || '';
         if (status.is_new) {
-            indexData = []; ceData = []; peData = []; pcrData = [];
+             candleSeries.setData([]);
+             volumeSeries.setData([]);
+             lastCandle = null;
         }
     });
 }
 
 function handleTickUpdate(quotes) {
-    let indexUpdated = false, ceUpdated = false, peUpdated = false;
-
-    if (quotes[currentIndex] && quotes[currentIndex].last_price) {
-        indexData = updateCandle(indexData, quotes[currentIndex]);
-        mtf5Data = updateCandleMTF(mtf5Data, quotes[currentIndex], 5);
-        mtf15Data = updateCandleMTF(mtf15Data, quotes[currentIndex], 15);
-        indexUpdated = true;
-        document.getElementById('spotPrice').innerText = quotes[currentIndex].last_price.toFixed(2);
-        updateAtmStrike(quotes[currentIndex].last_price);
+    const entries = Object.entries(quotes);
+    for (const [key, quote] of entries) {
+        if (normalizeSymbol(key) === normalizeSymbol(currentSymbol)) {
+            updateRealtimeCandle(quote);
+            break;
+        }
     }
-    if (atmKeys.ce && quotes[atmKeys.ce] && quotes[atmKeys.ce].last_price) {
-        ceData = updateCandle(ceData, quotes[atmKeys.ce]);
-        ceUpdated = true;
-    }
-    if (atmKeys.pe && quotes[atmKeys.pe] && quotes[atmKeys.pe].last_price) {
-        peData = updateCandle(peData, quotes[atmKeys.pe]);
-        peUpdated = true;
-    }
-
-    // Sync Index Volume as sum of ATM CE + PE
-    if (ceUpdated || peUpdated) {
-        syncIndexVolume();
-        indexUpdated = true; // Force re-render of index chart to show new volume
-    }
-
-    if (indexUpdated) renderChart(charts.index, 'INDEX', indexData, { mtf5: mtf5Data, mtf15: mtf15Data });
-    if (ceUpdated) renderChart(charts.ce, 'ATM CE', ceData);
-    if (peUpdated) renderChart(charts.pe, 'ATM PE', peData);
 }
 
-function syncIndexVolume() {
-    if (!indexData.length) return;
-    const ceMap = new Map(ceData.map(d => [d.timestamp, d.volume]));
-    const peMap = new Map(peData.map(d => [d.timestamp, d.volume]));
+function updateRealtimeCandle(quote) {
+    if (!candleSeries) return;
 
-    indexData.forEach(d => {
-        const cv = ceMap.get(d.timestamp) || 0;
-        const pv = peMap.get(d.timestamp) || 0;
-        d.volume = cv + pv;
-    });
-}
-
-function updateCandleMTF(prev, quote, minutes) {
-    const tickTime = new Date(quote.ts_ms);
-    const intervalMs = minutes * 60 * 1000;
-    const tickInterval = new Date(Math.floor(tickTime.getTime() / intervalMs) * intervalMs);
+    const tickTime = Math.floor(quote.ts_ms / 1000);
+    const candleTime = tickTime - (tickTime % 60); // 1-min alignment
+    const price = quote.last_price;
     const ltq = quote.ltq || 0;
 
-    if (!prev.length) {
-        return [{
-            timestamp: tickInterval.toISOString(),
-            open: quote.last_price, high: quote.last_price, low: quote.last_price, close: quote.last_price, volume: ltq
-        }];
-    }
-
-    const last = { ...prev[prev.length - 1] };
-    const lastTime = new Date(last.timestamp);
-
-    if (tickInterval.getTime() > lastTime.getTime()) {
-        return [...prev.slice(-100), {
-            timestamp: tickInterval.toISOString(),
-            open: quote.last_price, high: quote.last_price, low: quote.last_price, close: quote.last_price, volume: ltq
-        }];
+    if (!lastCandle || candleTime > lastCandle.time) {
+        lastCandle = {
+            time: candleTime,
+            open: price,
+            high: price,
+            low: price,
+            close: price,
+            volume: ltq
+        };
     } else {
-        last.close = quote.last_price;
-        last.high = Math.max(last.high, quote.last_price);
-        last.low = Math.min(last.low, quote.last_price);
-        last.volume += ltq;
-        return [...prev.slice(0, -1), last];
-    }
-}
-
-function updateCandle(prev, quote) {
-    const tickTime = new Date(quote.ts_ms);
-    const tickMinute = new Date(tickTime.setSeconds(0, 0, 0));
-    const ltq = quote.ltq || 0;
-
-    if (!prev.length) {
-        return [{
-            timestamp: tickMinute.toISOString(),
-            open: quote.last_price, high: quote.last_price, low: quote.last_price, close: quote.last_price, volume: ltq
-        }];
+        lastCandle.close = price;
+        lastCandle.high = Math.max(lastCandle.high, price);
+        lastCandle.low = Math.min(lastCandle.low, price);
+        lastCandle.volume += ltq;
     }
 
-    const last = { ...prev[prev.length - 1] };
-    const lastMinute = new Date(new Date(last.timestamp).setSeconds(0, 0, 0));
-
-    if (tickMinute.getTime() > lastMinute.getTime()) {
-        return [...prev.slice(-499), {
-            timestamp: tickMinute.toISOString(),
-            open: quote.last_price, high: quote.last_price, low: quote.last_price, close: quote.last_price, volume: ltq
-        }];
-    } else {
-        last.close = quote.last_price;
-        last.high = Math.max(last.high, quote.last_price);
-        last.low = Math.min(last.low, quote.last_price);
-        last.volume += ltq;
-        return [...prev.slice(0, -1), last];
-    }
-}
-
-// --- Rendering ---
-
-function renderChart(chart, title, data, mtf = {}) {
-    if (!chart || !data.length) return;
-
-    // Preserve zoom state
-    let start = 70;
-    let end = 100;
-    let yStart = 0;
-    let yEnd = 100;
-    const currentOption = chart.getOption();
-    if (currentOption && currentOption.dataZoom) {
-        const xZoom = currentOption.dataZoom.find(dz => dz.xAxisIndex && dz.xAxisIndex.includes(0));
-        if (xZoom) {
-            start = xZoom.start;
-            end = xZoom.end;
-        }
-        const yZoom = currentOption.dataZoom.find(dz => dz.yAxisIndex && dz.yAxisIndex.includes(0));
-        if (yZoom) {
-            yStart = yZoom.start;
-            yEnd = yZoom.end;
-        }
-    }
-
-    // 1. Indicators Logic
-    const volumes = data.map(d => d.volume);
-    const avgVol20 = Indicators.sma(volumes, 20);
-    const colors = data.map((d, i) => Indicators.getBarColor(d.open, d.close, d.volume, avgVol20[i]));
-    const bubbles = Indicators.getBubbleData(data, 100, 2.5, 0.75);
-    const evwma = Indicators.evwma(data.map(d => d.close), volumes, 5);
-
-    let cumPV = 0, cumV = 0;
-    const vwap = data.map(d => {
-        const typical = (d.high + d.low + d.close) / 3;
-        cumPV += typical * (d.volume || 0);
-        cumV += (d.volume || 0);
-        return cumV > 0 ? cumPV / cumV : typical;
+    candleSeries.update(lastCandle);
+    volumeSeries.update({
+        time: lastCandle.time,
+        value: lastCandle.volume,
+        color: lastCandle.close >= lastCandle.open ? 'rgba(34, 197, 94, 0.5)' : 'rgba(239, 68, 68, 0.5)'
     });
-
-    const dataWithVwap = data.map((d, i) => ({ ...d, vwap: vwap[i] }));
-    const dynPivot = Indicators.dynamicPivot(dataWithVwap, 20, 10);
-    const highs = data.map(d => d.high);
-    const lows = data.map(d => d.low);
-    const swings = Indicators.swingDetection(highs, lows, 5, 2);
-    const mtfData = Indicators.getMTFData(data); // 1m MTF (S/R Lines)
-
-    // BgColor Logic (Swing Breaks)
-    const areas = [];
-    data.forEach((d, i) => {
-        const isAbove = d.close > swings.lastSH[i];
-        const isBelow = d.close < swings.lastSL[i];
-        if (isAbove || isBelow) {
-            areas.push({
-                xAxis: i,
-                itemStyle: { color: isAbove ? 'rgba(34, 197, 94, 0.05)' : 'rgba(239, 68, 68, 0.05)' }
-            });
-        }
-    });
-
-    // 2. MTF Dots Logic
-    let mtf2Dots = [], mtf3Dots = [];
-    if (mtf.mtf5) {
-        const d5 = Indicators.getMTFData(mtf.mtf5);
-        // Map 5m S/R to 1m timeline
-        mtf2Dots = mapMTFTo1M(data, mtf.mtf5, d5);
-    }
-    if (mtf.mtf15) {
-        const d15 = Indicators.getMTFData(mtf.mtf15);
-        mtf3Dots = mapMTFTo1M(data, mtf.mtf15, d15);
-    }
-
-    const timeLabels = data.map(d => new Date(d.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-
-    const options = {
-        backgroundColor: 'transparent',
-        animation: false,
-        tooltip: {
-            trigger: 'axis', axisPointer: { type: 'cross' },
-            backgroundColor: '#111827', borderColor: '#374151',
-            textStyle: { color: '#e5e7eb', fontSize: 10 }
-        },
-        axisPointer: { link: { xAxisIndex: 'all' } },
-        dataZoom: [
-            {
-                type: 'inside',
-                xAxisIndex: [0, 1],
-                start: start,
-                end: end
-            },
-            {
-                type: 'inside',
-                yAxisIndex: [0],
-                filterMode: 'empty',
-                start: yStart,
-                end: yEnd
-            },
-            {
-                type: 'slider',
-                xAxisIndex: [0, 1],
-                top: '92%', height: 16, borderColor: 'transparent',
-                textStyle: { color: '#4b5563', fontSize: 8 },
-                handleSize: '80%',
-                start: start,
-                end: end
-            }
-        ],
-        grid: [
-            { top: 10, left: 5, right: 45, height: '60%', containLabel: true },
-            { top: '72%', left: 5, right: 45, height: '18%', containLabel: true }
-        ],
-        xAxis: [
-            {
-                type: 'category', gridIndex: 0, data: timeLabels,
-                axisLine: { lineStyle: { color: '#1f2937' } },
-                axisLabel: { show: false }
-            },
-            {
-                type: 'category', gridIndex: 1, data: timeLabels,
-                axisLine: { lineStyle: { color: '#1f2937' } },
-                axisLabel: { color: '#4b5563', fontSize: 8 }
-            }
-        ],
-        yAxis: [
-            {
-                scale: true, position: 'right', gridIndex: 0,
-                splitLine: { lineStyle: { color: '#111827' } },
-                axisLabel: { color: '#6b7280', fontSize: 9 },
-                boundaryGap: ['5%', '5%']
-            },
-            {
-                scale: false, min: 0, position: 'right', gridIndex: 1,
-                splitLine: { show: false },
-                axisLabel: { show: false }
-            }
-        ],
-        series: [
-            {
-                type: 'candlestick', xAxisIndex: 0, yAxisIndex: 0,
-                markArea: {
-                    silent: true,
-                    data: areas.map(a => [{ xAxis: a.xAxis }, { xAxis: a.xAxis + 1, itemStyle: a.itemStyle }])
-                },
-                data: data.map((d, i) => ({
-                    value: [d.open, d.close, d.low, d.high],
-                    itemStyle: {
-                        color: colors[i],
-                        color0: colors[i],
-                        borderColor: colors[i],
-                        borderColor0: colors[i]
-                    }
-                }))
-            },
-            {
-                name: 'Volume', type: 'bar', xAxisIndex: 1, yAxisIndex: 1,
-                data: volumes.map((v, i) => ({
-                    value: v,
-                    itemStyle: { color: colors[i], opacity: 0.8 }
-                }))
-            },
-            {
-                name: 'EVWMA', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: evwma, showSymbol: false,
-                lineStyle: { width: 1, color: '#3b82f6', opacity: 0.8 }
-            },
-            {
-                name: 'DynPivot', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: dynPivot, showSymbol: false,
-                lineStyle: { width: 1, color: '#ef4444', opacity: 0.8 }
-            },
-            {
-                name: 'SwingHigh', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: swings.lastSH, showSymbol: false,
-                lineStyle: { width: 1, type: 'dotted', color: '#f87171', opacity: 0.5 }
-            },
-            {
-                name: 'SwingLow', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: swings.lastSL, showSymbol: false,
-                lineStyle: { width: 1, type: 'dotted', color: '#4ade80', opacity: 0.5 }
-            },
-            {
-                type: 'scatter', xAxisIndex: 0, yAxisIndex: 0, data: mtf2Dots.supp, symbol: 'circle', symbolSize: 4,
-                itemStyle: { color: 'rgba(59, 130, 246, 0.6)' }
-            },
-            {
-                type: 'scatter', xAxisIndex: 0, yAxisIndex: 0, data: mtf2Dots.rest, symbol: 'circle', symbolSize: 4,
-                itemStyle: { color: 'rgba(249, 115, 22, 0.6)' }
-            },
-            {
-                type: 'scatter', xAxisIndex: 0, yAxisIndex: 0, data: mtf3Dots.supp, symbol: 'diamond', symbolSize: 6,
-                itemStyle: { color: 'rgba(59, 130, 246, 0.9)' }
-            },
-            {
-                type: 'scatter', xAxisIndex: 0, yAxisIndex: 0, data: mtf3Dots.rest, symbol: 'diamond', symbolSize: 6,
-                itemStyle: { color: 'rgba(249, 115, 22, 0.9)' }
-            },
-            {
-                type: 'scatter', xAxisIndex: 0, yAxisIndex: 0,
-                data: bubbles.map(b => [b.index, b.isUp ? data[b.index].low : data[b.index].high]),
-                symbolSize: (v, p) => {
-                    const b = bubbles.find(x => x.index === p.dataIndex);
-                    return b ? b.size * 5 : 0;
-                },
-                itemStyle: {
-                    color: (p) => {
-                        const b = bubbles.find(x => x.index === p.dataIndex);
-                        return b && b.isUp ? 'rgba(59, 130, 246, 0.4)' : 'rgba(239, 68, 68, 0.4)';
-                    }
-                }
-            }
-        ],
-        markLine: {
-            symbol: 'none',
-            data: mtfData.lines.map(l => ({
-                yAxis: l.price,
-                lineStyle: { color: l.isUp ? 'rgba(59, 130, 246, 0.3)' : 'rgba(239, 68, 68, 0.3)', width: l.step >= 8 ? 2 : 1 }
-            }))
-        }
-    };
-
-    chart.setOption(options);
 }
-
-function mapMTFTo1M(data1m, dataMTF, mtfRes) {
-    const supp = [], rest = [];
-    data1m.forEach((d, i) => {
-        const ts = new Date(d.timestamp).getTime();
-        // Find latest MTF candle BEFORE or AT this timestamp
-        let latestIdx = -1;
-        for (let j = 0; j < dataMTF.length; j++) {
-            if (new Date(dataMTF[j].timestamp).getTime() <= ts) latestIdx = j;
-            else break;
-        }
-        if (latestIdx !== -1) {
-            if (mtfRes.supp[latestIdx]) supp.push([i, mtfRes.supp[latestIdx]]);
-            if (mtfRes.rest[latestIdx]) rest.push([i, mtfRes.rest[latestIdx]]);
-        }
-    });
-    return { supp, rest };
-}
-
-function renderOiChart() {
-    if (!charts.oi) return;
-
-    if (!pcrData.length) {
-        charts.oi.setOption({
-            backgroundColor: 'transparent',
-            title: { text: 'FETCHING DATA / BACKFILLING...', left: 'center', top: 'center', textStyle: { color: '#3b82f6', fontSize: 10, fontWeight: 'bold' } },
-            series: []
-        }, true);
-        return;
-    }
-
-    // Preserve zoom state
-    let start = 70;
-    let end = 100;
-    const currentOption = charts.oi.getOption();
-    if (currentOption && currentOption.dataZoom) {
-        const xZoom = currentOption.dataZoom.find(dz => dz.xAxisIndex && dz.xAxisIndex.includes(0));
-        if (xZoom) {
-            start = xZoom.start;
-            end = xZoom.end;
-        }
-    }
-
-    const timeLabels = pcrData.map(d => new Date(d.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-    const diffData = pcrData.map(d => d.put_oi - d.call_oi);
-
-    const options = {
-        backgroundColor: 'transparent',
-        animation: false,
-        tooltip: {
-            trigger: 'axis', axisPointer: { type: 'cross' },
-            backgroundColor: '#111827', borderColor: '#374151',
-            textStyle: { color: '#e5e7eb', fontSize: 10 }
-        },
-        legend: {
-            data: ['PE - CE DIFF', 'Spot Price'],
-            textStyle: { color: '#9ca3af', fontSize: 10 },
-            top: 0
-        },
-        dataZoom: [
-            { type: 'inside', xAxisIndex: [0], start: start, end: end },
-            { type: 'slider', bottom: 0, height: 16, start: start, end: end }
-        ],
-        grid: { top: 40, left: 10, right: 60, bottom: 40, containLabel: true },
-        xAxis: {
-            type: 'category',
-            data: timeLabels,
-            axisLine: { lineStyle: { color: '#374151' } },
-            axisLabel: { color: '#6b7280', fontSize: 9 }
-        },
-        yAxis: [
-            {
-                name: 'DIFF',
-                scale: true,
-                position: 'left',
-                splitLine: { lineStyle: { color: '#111827' } },
-                axisLabel: {
-                    color: '#6b7280',
-                    fontSize: 9,
-                    formatter: (value) => (value / 1000000).toFixed(1) + 'M'
-                }
-            },
-            {
-                name: 'Price',
-                scale: true,
-                position: 'right',
-                splitLine: { show: false },
-                axisLabel: { color: '#9ca3af', fontSize: 9 }
-            }
-        ],
-        series: [
-            {
-                name: 'PE - CE DIFF',
-                type: 'line',
-                yAxisIndex: 0,
-                data: diffData,
-                smooth: true,
-                showSymbol: false,
-                areaStyle: {
-                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                        { offset: 0, color: 'rgba(59, 130, 246, 0.2)' },
-                        { offset: 1, color: 'rgba(59, 130, 246, 0)' }
-                    ])
-                },
-                lineStyle: { color: '#3b82f6', width: 2 }
-            },
-            {
-                name: 'Spot Price',
-                type: 'line',
-                yAxisIndex: 1,
-                data: pcrData.map(d => d.price),
-                smooth: true,
-                showSymbol: false,
-                lineStyle: { color: '#ffffff', width: 1, type: 'dashed', opacity: 0.6 }
-            }
-        ]
-    };
-    charts.oi.setOption(options);
-}
-
-function renderBuildupTable() {
-    const body = document.getElementById('buildupBody');
-    if (!body || !pcrData.length) return;
-
-    // Aggregate into 5-minute buckets
-    const buckets = [];
-    let currentBucket = null;
-
-    pcrData.forEach(d => {
-        const date = new Date(d.timestamp);
-        const minutes = date.getMinutes();
-        const bucketStart = new Date(date);
-        bucketStart.setMinutes(Math.floor(minutes / 5) * 5, 0, 0);
-        const bucketKey = bucketStart.getTime();
-
-        if (!currentBucket || currentBucket.key !== bucketKey) {
-            currentBucket = {
-                key: bucketKey,
-                time: bucketStart.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                openPrice: d.price,
-                closePrice: d.price,
-                openOI: d.call_oi + d.put_oi,
-                closeOI: d.call_oi + d.put_oi
-            };
-            buckets.push(currentBucket);
-        } else {
-            currentBucket.closePrice = d.price;
-            currentBucket.closeOI = d.call_oi + d.put_oi;
-        }
-    });
-
-    // Calculate changes and buildup
-    const buildupData = buckets.map((b, i) => {
-        const prev = i > 0 ? buckets[i-1] : null;
-        const priceChg = prev ? b.closePrice - prev.closePrice : 0;
-        const oiChg = prev ? b.closeOI - prev.closeOI : 0;
-
-        let type = "Neutral";
-        let color = "text-gray-500";
-        let label = "---";
-
-        if (priceChg > 0 && oiChg > 0) { type = "Long Buildup"; color = "text-green-500"; label = "LB"; }
-        else if (priceChg < 0 && oiChg > 0) { type = "Short Buildup"; color = "text-red-500"; label = "SB"; }
-        else if (priceChg < 0 && oiChg < 0) { type = "Long Unwinding"; color = "text-orange-500"; label = "LU"; }
-        else if (priceChg > 0 && oiChg < 0) { type = "Short Covering"; color = "text-blue-500"; label = "SC"; }
-
-        return { ...b, priceChg, oiChg, type, color, label };
-    });
-
-    // Render rows (reverse to show latest first)
-    body.innerHTML = buildupData.reverse().map(d => `
-        <tr class="hover:bg-white/5 transition-colors">
-            <td class="py-2 px-3 text-gray-400">${d.time}</td>
-            <td class="py-2 px-3 text-right font-black text-white">${d.closePrice.toFixed(2)}</td>
-            <td class="py-2 px-3 text-right font-bold ${d.priceChg >= 0 ? 'text-green-500' : 'text-red-500'}">
-                ${d.priceChg >= 0 ? '+' : ''}${d.priceChg.toFixed(2)}
-            </td>
-            <td class="py-2 px-3 text-right text-gray-400">${(d.closeOI / 1000000).toFixed(2)}M</td>
-            <td class="py-2 px-3 text-right font-bold ${d.oiChg >= 0 ? 'text-green-500' : 'text-red-500'}">
-                ${d.oiChg >= 0 ? '+' : ''}${(d.oiChg / 1000).toFixed(0)}K
-            </td>
-            <td class="py-2 px-3 text-center">
-                <span class="px-2 py-0.5 rounded-full bg-gray-900 border border-white/5 font-black text-[8px] ${d.color}">
-                    ${d.label}
-                </span>
-            </td>
-        </tr>
-    `).join('');
-}
-
-
-// --- Helpers ---
 
 function normalizeSymbol(sym) {
     if (!sym) return "";
     let s = sym.toUpperCase().trim();
     if (s.includes(':')) s = s.split(':')[1];
     if (s.includes('|')) s = s.split('|')[1];
+
     if (s === "NIFTY 50") return "NIFTY";
     if (s === "BANK NIFTY") return "BANKNIFTY";
     if (s === "FIN NIFTY") return "FINNIFTY";
-    return s.split(' ')[0]; // Handle HRNs
+    if (s === "CNXFINANCE") return "FINNIFTY";
+
+    return s.split(' ')[0];
 }
 
 function setLoading(show) {
-    document.getElementById('loading').classList.toggle('hidden', !show);
-}
-
-function updateAtmStrike(price) {
-    const step = (currentIndex === 'NIFTY' || currentIndex.includes('NIFTY 50')) ? 50 : 100;
-    currentAtm = Math.round(price / step) * step;
-    document.getElementById('atmStrike').innerText = currentAtm;
-}
-
-function switchIndex(val) {
-    currentIndex = val;
-    currentAtm = 0;
-    indexData = []; ceData = []; peData = []; pcrData = [];
-    atmKeys = { ce: '', pe: '' };
-    renderOiChart();
-    loadInitialData();
+    const loadingDom = document.getElementById('loading');
+    if (loadingDom) {
+        loadingDom.classList.toggle('hidden', !show);
+    }
 }
 
 async function fetchReplayDates() {
-    const res = await fetch('/api/replay/dates');
-    const dates = await res.json();
-    const select = document.getElementById('replayDateSelect');
-    dates.forEach(d => {
-        const opt = document.createElement('option');
-        opt.value = d;
-        opt.innerText = d;
-        select.appendChild(opt);
-    });
+    try {
+        const res = await fetch('/api/replay/dates');
+        const dates = await res.json();
+        const select = document.getElementById('replayDateSelect');
+        if (!select) return;
 
-    select.addEventListener('change', (e) => {
-        if (e.target.value) {
-            isReplay = true;
-            replayDate = e.target.value;
-            switchIndex(currentIndex);
-        } else {
-            isReplay = false;
-            replayDate = '';
-            socket.emit('stop_replay', {});
-            switchIndex(currentIndex);
+        dates.forEach(d => {
+            const opt = document.createElement('option');
+            opt.value = d;
+            opt.innerText = d;
+            select.appendChild(opt);
+        });
+
+        select.addEventListener('change', (e) => {
+            if (e.target.value) {
+                isReplay = true;
+                replayDate = e.target.value;
+                switchSymbol(currentSymbol);
+            } else {
+                isReplay = false;
+                replayDate = '';
+                socket.emit('stop_replay', {});
+                switchSymbol(currentSymbol);
+            }
+        });
+    } catch (e) {
+        console.error("Fetch replay dates failed:", e);
+    }
+}
+
+const replayBtn = document.getElementById('replayBtn');
+if (replayBtn) {
+    replayBtn.addEventListener('click', () => {
+        if (isReplay && replayDate) {
+            socket.emit('start_replay', { date: replayDate, instrument_keys: [currentSymbol], speed: 10.0 });
         }
     });
 }
 
-document.getElementById('replayBtn').addEventListener('click', () => {
-    if (isReplay && replayDate) {
-        socket.emit('start_replay', { date: replayDate, instrument_keys: [currentIndex], speed: 2.0 });
-    }
-});
-
-init();
+try {
+    init();
+} catch (e) {
+    console.error("Initialization failed:", e);
+}
