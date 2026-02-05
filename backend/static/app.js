@@ -290,7 +290,8 @@ function initSocket() {
                 timestamp: msg.timestamp,
                 pcr: msg.pcr,
                 call_oi: msg.call_oi,
-                put_oi: msg.put_oi
+                put_oi: msg.put_oi,
+                price: msg.price
             });
             if (pcrData.length > 1000) pcrData.shift();
             document.getElementById('pcrInfo').innerText = `PCR: ${msg.pcr.toFixed(2)}`;
@@ -680,7 +681,7 @@ function renderOiChart() {
             textStyle: { color: '#e5e7eb', fontSize: 10 }
         },
         legend: {
-            data: ['Call OI', 'Put OI'],
+            data: ['Call OI', 'Put OI', 'Spot Price'],
             textStyle: { color: '#9ca3af', fontSize: 10 },
             top: 0
         },
@@ -695,32 +696,53 @@ function renderOiChart() {
             axisLine: { lineStyle: { color: '#374151' } },
             axisLabel: { color: '#6b7280', fontSize: 9 }
         },
-        yAxis: {
-            scale: true,
-            position: 'right',
-            splitLine: { lineStyle: { color: '#111827' } },
-            axisLabel: {
-                color: '#6b7280',
-                fontSize: 9,
-                formatter: (value) => (value / 1000000).toFixed(1) + 'M'
+        yAxis: [
+            {
+                name: 'OI',
+                scale: true,
+                position: 'right',
+                splitLine: { lineStyle: { color: '#111827' } },
+                axisLabel: {
+                    color: '#6b7280',
+                    fontSize: 9,
+                    formatter: (value) => (value / 1000000).toFixed(1) + 'M'
+                }
+            },
+            {
+                name: 'Price',
+                scale: true,
+                position: 'left',
+                splitLine: { show: false },
+                axisLabel: { color: '#9ca3af', fontSize: 9 }
             }
-        },
+        ],
         series: [
             {
                 name: 'Call OI',
                 type: 'line',
+                yAxisIndex: 0,
                 data: pcrData.map(d => d.call_oi),
                 smooth: true,
                 showSymbol: false,
-                lineStyle: { color: '#ef4444', width: 2 }
+                lineStyle: { color: '#ef4444', width: 1.5, opacity: 0.8 }
             },
             {
                 name: 'Put OI',
                 type: 'line',
+                yAxisIndex: 0,
                 data: pcrData.map(d => d.put_oi),
                 smooth: true,
                 showSymbol: false,
-                lineStyle: { color: '#22c55e', width: 2 }
+                lineStyle: { color: '#22c55e', width: 1.5, opacity: 0.8 }
+            },
+            {
+                name: 'Spot Price',
+                type: 'line',
+                yAxisIndex: 1,
+                data: pcrData.map(d => d.price),
+                smooth: true,
+                showSymbol: false,
+                lineStyle: { color: '#3b82f6', width: 2 }
             }
         ]
     };

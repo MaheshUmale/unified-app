@@ -209,8 +209,8 @@ async def health_check():
 
 @fastapi_app.get("/api/tv/search")
 async def tv_search(text: str = Query(..., min_length=1)):
-    """Proxies TradingView symbol search requests."""
-    import requests
+    """Proxies TradingView symbol search requests using async httpx."""
+    import httpx
     url = f"https://symbol-search.tradingview.com/symbol_search/v3/?text={text}&hl=1&exchange=&lang=en&search_type=undefined&domain=production&sort_by_country=IN&promo=true"
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -219,9 +219,10 @@ async def tv_search(text: str = Query(..., min_length=1)):
         'Origin': 'https://in.tradingview.com'
     }
     try:
-        response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()
-        return response.json()
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, headers=headers, timeout=10.0)
+            response.raise_for_status()
+            return response.json()
     except Exception as e:
         logger.error(f"TradingView search proxy error: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch search results from TradingView")
@@ -669,7 +670,7 @@ async def get_historical_pcr(symbol: str, date: Optional[str] = None):
         # Fetch today's OI data
         today_str = date or datetime.now().strftime("%Y-%m-%d")
 
-        sql = "SELECT CAST(date AS VARCHAR) as date_str, timestamp, call_oi, put_oi, source FROM oi_data WHERE symbol = ? AND date = ? ORDER BY timestamp ASC"
+        sql = "SELECT CAST(date AS VARCHAR) as date_str, timestamp, call_oi, put_oi, price, source FROM oi_data WHERE symbol = ? AND date = ? ORDER BY timestamp ASC"
         rows = db.query(sql, (hrn_symbol, today_str))
 
         results_map = {}
@@ -678,6 +679,7 @@ async def get_historical_pcr(symbol: str, date: Optional[str] = None):
             call_oi = doc.get('call_oi', 0)
             put_oi = doc.get('put_oi', 0)
             pcr = round(put_oi / call_oi, 2) if call_oi > 0 else 0
+            price = doc.get('price', 0)
             source = doc.get('source', 'unknown')
 
             if ts not in results_map or source in ['trendlyne', 'trendlyne_backfill']:
@@ -685,7 +687,8 @@ async def get_historical_pcr(symbol: str, date: Optional[str] = None):
                     'timestamp': ts,
                     'pcr': pcr,
                     'call_oi': call_oi,
-                    'put_oi': put_oi
+                    'put_oi': put_oi,
+                    'price': price
                 }
 
         results = sorted(results_map.values(), key=lambda x: x['timestamp'])
@@ -697,7 +700,7 @@ async def get_historical_pcr(symbol: str, date: Optional[str] = None):
             import threading
             threading.Thread(target=trendlyne_service.perform_backfill, args=(symbol,), kwargs={'interval_minutes': 5}, daemon=True).start()
 
-            fallback_sql = "SELECT CAST(date AS VARCHAR) as date_str, timestamp, call_oi, put_oi FROM oi_data WHERE symbol = ? ORDER BY date DESC, timestamp DESC LIMIT 10"
+            fallback_sql = "SELECT CAST(date AS VARCHAR) as date_str, timestamp, call_oi, put_oi, price FROM oi_data WHERE symbol = ? ORDER BY date DESC, timestamp DESC LIMIT 10"
             fallback_rows = db.query(fallback_sql, (symbol,))
             for doc in fallback_rows[::-1]:
                 call_oi = doc.get('call_oi', 0)
@@ -707,7 +710,8 @@ async def get_historical_pcr(symbol: str, date: Optional[str] = None):
                     'timestamp': f"{doc['date_str']}T{doc['timestamp']}:00",
                     'pcr': pcr,
                     'call_oi': call_oi,
-                    'put_oi': put_oi
+                    'put_oi': put_oi,
+                    'price': doc.get('price', 0)
                 })
 
         return results
