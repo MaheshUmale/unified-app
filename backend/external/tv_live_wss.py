@@ -73,12 +73,14 @@ class TradingViewWSS:
         if isinstance(message, bytes):
             message = message.decode('utf-8')
 
-        logger.debug(f"RAW TV WSS: {message[:100]}...")
+        # logger.debug(f"RAW TV WSS: {message[:100]}...")
 
-        # Heartbeat check
+        # Heartbeat check - TV WSS sends ~m~<len>~m~~h~<num>
         if "~h~" in message:
             try:
+                # Reply with the exact same heartbeat message
                 ws.send(message)
+                logger.debug(f"TV WSS Heartbeat responded: {message}")
             except Exception as e:
                 logger.error(f"Error sending heartbeat: {e}")
             return
@@ -163,7 +165,15 @@ class TradingViewWSS:
             on_error=self.on_error,
             on_close=self.on_close
         )
-        self.thread = threading.Thread(target=self.ws.run_forever, kwargs={"skip_utf8_validation": True}, daemon=True)
+        self.thread = threading.Thread(
+            target=self.ws.run_forever,
+            kwargs={
+                "skip_utf8_validation": True,
+                "ping_interval": 20,
+                "ping_timeout": 10
+            },
+            daemon=True
+        )
         self.thread.start()
 
     def stop(self):

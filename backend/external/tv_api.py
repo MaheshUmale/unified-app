@@ -77,11 +77,15 @@ class TradingViewAPI:
 
             # Try Streamer first
             try:
+                tf = f"{interval_min}m"
+                if interval_min == 'D': tf = '1d'
+                elif interval_min == 'W': tf = '1w'
+
                 with contextlib.redirect_stdout(io.StringIO()):
                     stream_gen = self.streamer.stream(
                         exchange=tv_exchange,
                         symbol=tv_symbol,
-                        timeframe=f"{interval_min}m",
+                        timeframe=tf,
                         numb_price_candles=n_bars
                     )
 
@@ -98,8 +102,20 @@ class TradingViewAPI:
                 if data and 'ohlc' in data:
                     candles = []
                     for row in data['ohlc']:
+                        # Ensure we have a unix timestamp or ISO string that can be parsed
+                        ts = row['datetime']
+                        if isinstance(ts, (int, float)):
+                            pass # already unix
+                        else:
+                            # If it's a string, try to parse it.
+                            # Streamer usually returns timestamps or ISO
+                            try:
+                                ts = int(datetime.fromisoformat(ts.replace('Z', '+00:00')).timestamp())
+                            except:
+                                pass
+
                         candles.append([
-                            row['datetime'],
+                            ts,
                             float(row['open']), float(row['high']), float(row['low']), float(row['close']),
                             float(row['volume'])
                         ])
@@ -113,13 +129,27 @@ class TradingViewAPI:
                 tv_interval = Interval.in_1_minute
                 if interval_min == '5': tv_interval = Interval.in_5_minute
                 elif interval_min == '15': tv_interval = Interval.in_15_minute
+                elif interval_min == '30': tv_interval = Interval.in_30_minute
+                elif interval_min == '60': tv_interval = Interval.in_1_hour
+                elif interval_min == 'D': tv_interval = Interval.in_daily
+                elif interval_min == 'W': tv_interval = Interval.in_weekly
 
                 df = self.tv.get_hist(symbol=tv_symbol, exchange=tv_exchange, interval=tv_interval, n_bars=n_bars)
                 if df is not None and not df.empty:
                     candles = []
                     for ts, row in df.iterrows():
+                        # tvDatafeed returns naive datetime in exchange timezone (usually IST for NSE)
+                        # We need to treat it as IST and get UTC timestamp
+                        import pytz
+                        ist = pytz.timezone('Asia/Kolkata')
+                        try:
+                            ts_ist = ist.localize(ts) if ts.tzinfo is None else ts.astimezone(ist)
+                            unix_ts = int(ts_ist.timestamp())
+                        except:
+                            unix_ts = int(ts.timestamp())
+
                         candles.append([
-                            ts.isoformat(),
+                            unix_ts,
                             float(row['open']), float(row['high']), float(row['low']), float(row['close']),
                             float(row['volume'])
                         ])

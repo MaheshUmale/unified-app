@@ -26,99 +26,58 @@
 <body class="h-full flex flex-col">
     <div id="loading" class="hidden absolute top-0 left-0 w-full z-[100] loading-bar"></div>
 
-    <header class="h-14 py-2 glass-panel border-b border-white/5 sticky top-0 z-50 px-4 md:px-6 flex items-center justify-between">
-        <div class="flex-1 flex justify-start">
-            <span class="text-sm font-black text-white italic tracking-tighter uppercase">PRO<span class="text-blue-500">DESK</span></span>
-        </div>
+    <header class="h-14 py-2 glass-panel border-b border-white/5 sticky top-0 z-50 px-4 md:px-6 flex items-center">
+        <div class="flex items-center gap-6 w-full">
+            <span class="text-sm font-black text-white italic tracking-tighter uppercase shrink-0">PRO<span class="text-blue-500">DESK</span></span>
 
-        <div class="relative group">
-            <input type="text" id="symbolSearch" placeholder="SEARCH SYMBOL (e.g. NSE:RELIANCE, NIFTY)..." class="bg-gray-900 border border-gray-800 rounded px-4 py-1.5 text-xs font-bold text-gray-200 outline-none focus:ring-1 focus:ring-blue-500 transition-all w-64 md:w-80 text-center">
-            <div id="searchResults" class="hidden absolute top-full left-0 w-full bg-gray-900 border border-gray-800 rounded-b mt-1 z-[100] max-h-60 overflow-y-auto custom-scrollbar">
-            </div>
-        </div>
-
-        <div class="flex-1 flex justify-end gap-2">
-            <div id="normalControls" class="flex items-center gap-2">
-                <button id="settingsBtn" class="p-1 hover:bg-gray-800 rounded text-gray-400 hover:text-white transition-colors" title="Settings">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-                </button>
-                <button id="replayModeBtn" class="text-[10px] font-bold px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded text-white transition-colors">REPLAY</button>
-                <div class="flex items-center gap-1 bg-gray-900/50 p-1 rounded border border-white/5">
-                    <button id="zoomOutBtn" class="hover:bg-gray-800 p-1 rounded text-gray-400 hover:text-white transition-colors" title="Zoom Out">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/></svg>
-                    </button>
-                    <button id="zoomInBtn" class="hover:bg-gray-800 p-1 rounded text-gray-400 hover:text-white transition-colors" title="Zoom In">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-                    </button>
-                    <button id="resetZoomBtn" class="text-[10px] font-bold px-2 py-1 hover:bg-gray-800 rounded text-gray-400 hover:text-white transition-colors" title="Reset Zoom">RESET</button>
+            <div class="relative flex-1 max-w-2xl">
+                <input type="text" id="symbolSearch" placeholder="SEARCH SYMBOL (e.g. NSE:RELIANCE, BTCUSD)..." class="bg-gray-900 border border-gray-800 rounded-full px-6 py-2 text-sm font-bold text-gray-200 outline-none focus:ring-2 focus:ring-blue-500 transition-all w-full">
+                <div id="searchResults" class="hidden absolute top-full left-0 w-full bg-gray-900 border border-gray-800 rounded-xl mt-2 z-[100] max-h-80 overflow-y-auto custom-scrollbar shadow-2xl">
                 </div>
             </div>
 
-            <div id="replayControls" class="hidden flex items-center gap-2 bg-blue-900/20 p-1 rounded border border-blue-500/30">
-                <span id="replayStatus" class="text-[9px] font-black text-blue-400 px-2 uppercase tracking-tighter">SELECT START POINT</span>
-                <div class="h-4 w-[1px] bg-blue-500/30 mx-1"></div>
-                <button id="replayPrevBtn" class="hover:bg-blue-500/20 p-1 rounded text-blue-400 disabled:opacity-30" title="Previous Candle" disabled>
-                    <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M8.445 14.832A1 1 0 0010 14v-2.798l5.445 3.63A1 1 0 0017 14V6a1 1 0 00-1.555-.832L10 8.798V6a1 1 0 00-1.555-.832l-6 4a1 1 0 000 1.664l6 4z"/></svg>
-                </button>
-                <button id="replayPlayBtn" class="hover:bg-blue-500/20 p-1 rounded text-blue-400 disabled:opacity-30" title="Play/Pause" disabled>
-                    <svg id="playIcon" class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M4.5 3.5v13L16.5 10l-12-6.5z"/></svg>
-                    <svg id="pauseIcon" class="hidden w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
-                </button>
-                <button id="replayNextBtn" class="hover:bg-blue-500/20 p-1 rounded text-blue-400 disabled:opacity-30" title="Next Candle" disabled>
-                    <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M11.555 14.832l6-4a1 1 0 000-1.664l-6-4A1 1 0 0010 6v2.798L4.555 5.168A1 1 0 003 6v8a1 1 0 001.555.832L10 11.202V14a1 1 0 001.555.832z"/></svg>
-                </button>
-                <div class="h-4 w-[1px] bg-blue-500/30 mx-1"></div>
-                <button id="exitReplayBtn" class="text-[9px] font-bold px-2 py-1 hover:bg-red-900/40 rounded text-red-400 transition-colors">EXIT</button>
+            <div id="timeframeSelector" class="flex items-center gap-1 bg-gray-900/50 p-1 rounded-full border border-white/5 shrink-0">
+                <button data-interval="1" class="tf-btn active px-3 py-1 text-[11px] font-bold rounded-full transition-all">1m</button>
+                <button data-interval="5" class="tf-btn px-3 py-1 text-[11px] font-bold rounded-full transition-all">5m</button>
+                <button data-interval="15" class="tf-btn px-3 py-1 text-[11px] font-bold rounded-full transition-all">15m</button>
+                <button data-interval="60" class="tf-btn px-3 py-1 text-[11px] font-bold rounded-full transition-all">1h</button>
+                <button data-interval="D" class="tf-btn px-3 py-1 text-[11px] font-bold rounded-full transition-all">1d</button>
+            </div>
+
+            <div class="flex items-center gap-2 shrink-0">
+                <div id="normalControls" class="flex items-center gap-2">
+                    <button id="replayModeBtn" class="text-[10px] font-bold px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded-full text-white transition-colors">REPLAY</button>
+                    <div class="flex items-center gap-1 bg-gray-900/50 p-1 rounded-full border border-white/5">
+                        <button id="zoomOutBtn" class="hover:bg-gray-800 p-1 rounded-full text-gray-400 hover:text-white transition-colors" title="Zoom Out">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/></svg>
+                        </button>
+                        <button id="zoomInBtn" class="hover:bg-gray-800 p-1 rounded-full text-gray-400 hover:text-white transition-colors" title="Zoom In">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                        </button>
+                        <button id="resetZoomBtn" class="text-[10px] font-bold px-3 py-1 hover:bg-gray-800 rounded-full text-gray-400 hover:text-white transition-colors">RESET</button>
+                    </div>
+                </div>
+
+                <div id="replayControls" class="hidden flex items-center gap-2 bg-blue-900/20 p-1 rounded-full border border-blue-500/30">
+                    <span id="replayStatus" class="text-[9px] font-black text-blue-400 px-2 uppercase tracking-tighter">SELECT START POINT</span>
+                    <button id="replayPrevBtn" class="hover:bg-blue-500/20 p-1 rounded-full text-blue-400 disabled:opacity-30" disabled>
+                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M8.445 14.832A1 1 0 0010 14v-2.798l5.445 3.63A1 1 0 0017 14V6a1 1 0 00-1.555-.832L10 8.798V6a1 1 0 00-1.555-.832l-6 4a1 1 0 000 1.664l6 4z"/></svg>
+                    </button>
+                    <button id="replayPlayBtn" class="hover:bg-blue-500/20 p-1 rounded-full text-blue-400 disabled:opacity-30" disabled>
+                        <svg id="playIcon" class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M4.5 3.5v13L16.5 10l-12-6.5z"/></svg>
+                        <svg id="pauseIcon" class="hidden w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+                    </button>
+                    <button id="replayNextBtn" class="hover:bg-blue-500/20 p-1 rounded-full text-blue-400 disabled:opacity-30" disabled>
+                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M11.555 14.832l6-4a1 1 0 000-1.664l-6-4A1 1 0 0010 6v2.798L4.555 5.168A1 1 0 003 6v8a1 1 0 001.555.832L10 11.202V14a1 1 0 001.555.832z"/></svg>
+                    </button>
+                    <button id="exitReplayBtn" class="text-[9px] font-bold px-3 py-1 hover:bg-red-900/40 rounded-full text-red-400 transition-colors">EXIT</button>
+                </div>
             </div>
         </div>
     </header>
 
     <main class="flex-1 p-0 flex flex-col overflow-hidden bg-black relative">
         <div id="mainChart" class="flex-1 w-full h-full"></div>
-
-        <!-- Settings Panel -->
-        <div id="settingsPanel" class="hidden absolute top-2 right-2 w-64 glass-panel border border-white/10 rounded-lg p-4 z-[100] shadow-2xl">
-            <div class="flex items-center justify-between mb-4">
-                <h3 class="text-xs font-black text-white uppercase tracking-wider">Settings</h3>
-                <button id="closeSettingsBtn" class="text-gray-500 hover:text-white">&times;</button>
-            </div>
-
-            <div class="space-y-4">
-                <div class="flex items-center justify-between">
-                    <span class="text-[10px] font-bold text-gray-400 uppercase">Theme</span>
-                    <button id="themeToggleBtn" class="text-[9px] font-black px-2 py-1 bg-gray-800 rounded hover:bg-gray-700 transition-colors">DARK MODE</button>
-                </div>
-
-                <div class="h-[1px] bg-white/5"></div>
-
-                <div class="space-y-2">
-                    <label class="flex items-center justify-between cursor-pointer group">
-                        <span class="text-[10px] font-bold text-gray-400 group-hover:text-gray-200 transition-colors uppercase">Colored Candles</span>
-                        <input type="checkbox" id="checkColoredCandles" checked class="w-3 h-3 rounded bg-gray-900 border-gray-700 text-blue-600 focus:ring-blue-500">
-                    </label>
-                    <label class="flex items-center justify-between cursor-pointer group">
-                        <span class="text-[10px] font-bold text-gray-400 group-hover:text-gray-200 transition-colors uppercase">Volume Bubbles</span>
-                        <input type="checkbox" id="checkBubbles" checked class="w-3 h-3 rounded bg-gray-900 border-gray-700 text-blue-600 focus:ring-blue-500">
-                    </label>
-                    <label class="flex items-center justify-between cursor-pointer group">
-                        <span class="text-[10px] font-bold text-gray-400 group-hover:text-gray-200 transition-colors uppercase">MTF S/R Dots</span>
-                        <input type="checkbox" id="checkSRDots" checked class="w-3 h-3 rounded bg-gray-900 border-gray-700 text-blue-600 focus:ring-blue-500">
-                    </label>
-                    <label class="flex items-center justify-between cursor-pointer group">
-                        <span class="text-[10px] font-bold text-gray-400 group-hover:text-gray-200 transition-colors uppercase">Dynamic Pivot</span>
-                        <input type="checkbox" id="checkDynPivot" checked class="w-3 h-3 rounded bg-gray-900 border-gray-700 text-blue-600 focus:ring-blue-500">
-                    </label>
-                    <label class="flex items-center justify-between cursor-pointer group">
-                        <span class="text-[10px] font-bold text-gray-400 group-hover:text-gray-200 transition-colors uppercase">EVWMA Line</span>
-                        <input type="checkbox" id="checkEVWMA" checked class="w-3 h-3 rounded bg-gray-900 border-gray-700 text-blue-600 focus:ring-blue-500">
-                    </label>
-                    <label class="flex items-center justify-between cursor-pointer group">
-                        <span class="text-[10px] font-bold text-gray-400 group-hover:text-gray-200 transition-colors uppercase">Swing Breaks</span>
-                        <input type="checkbox" id="checkSwings" checked class="w-3 h-3 rounded bg-gray-900 border-gray-700 text-blue-600 focus:ring-blue-500">
-                    </label>
-                </div>
-            </div>
-        </div>
     </main>
 
     <script src="/static/app.js?v=3"></script>
