@@ -6,6 +6,36 @@ import os
 import contextlib
 import io
 
+from datetime import datetime
+import re
+
+def convert_hrn_to_symbol(symbol_or_hrn):
+    # Match pattern: "NIFTY 03 FEB 2026 CALL 25300"
+    pattern = r"(NIFTY|BANKNIFTY|FINNIFTY)\s+(\d{1,2})\s+([A-Z]{3})\s+(\d{4})\s+(CALL|PUT)\s+(\d+)"
+    match = re.search(pattern, symbol_or_hrn.upper())
+    
+    if match:
+        base, day, month_str, year, opt_type, strike = match.groups()
+        
+        # Convert month name (FEB) to number (02)
+        # %d %b %Y matches '03 FEB 2026'
+        dt = datetime.strptime(f"{day} {month_str} {year}", "%d %b %Y")
+        
+        # Format parts: YY (26), MM (02), DD (03)
+        yy = dt.strftime("%y")
+        mm = dt.strftime("%m")
+        dd = dt.strftime("%d")
+        
+        # Map CALL -> C and PUT -> P
+        cp = "C" if opt_type == "CALL" else "P"
+        
+        return f"{base}{yy}{mm}{dd}{cp}{strike}"
+    
+    return symbol_or_hrn
+
+
+
+
 logger = logging.getLogger(__name__)
 
 class TradingViewAPI:
@@ -33,6 +63,11 @@ class TradingViewAPI:
         interval_min: '1', '5', '15'
         """
         try:
+            logger.info(f"1) Fetching {symbol_or_hrn}")
+            if not symbol_or_hrn: return None
+            if symbol_or_hrn.startswith('NSE:'):
+                symbol_or_hrn = symbol_or_hrn[4:]
+
             tv_symbol = symbol_or_hrn
             tv_exchange = 'NSE'
 
@@ -42,11 +77,15 @@ class TradingViewAPI:
                 tv_symbol = meta['symbol']
                 tv_exchange = meta['exchange']
             # 2. Handle HRNs for options: "NIFTY 03 FEB 2026 CALL 25300"
+            #convert it to "NIFTY<YYMMDD><C/P><Strike>"
+            # Usage in your loop
             elif any(x in symbol_or_hrn.upper() for x in ['CALL', 'PUT']):
-                if 'NIFTY' in symbol_or_hrn.upper() and '50' not in symbol_or_hrn:
-                    tv_symbol = symbol_or_hrn.upper().replace('NIFTY', 'NIFTY 50')
-                else:
-                    tv_symbol = symbol_or_hrn.upper()
+                tv_symbol = convert_hrn_to_symbol(symbol_or_hrn)
+
+                # if 'NIFTY' in symbol_or_hrn.upper() and '50' not in symbol_or_hrn:
+                #     tv_symbol = symbol_or_hrn.upper().replace('NIFTY', 'NIFTY 50')
+                # else:
+                #     tv_symbol = symbol_or_hrn.upper()
             elif 'NIFTY' in symbol_or_hrn.upper():
                 tv_symbol = 'NIFTY'
             elif 'BANK' in symbol_or_hrn.upper():
@@ -75,6 +114,8 @@ class TradingViewAPI:
                         ])
                     return candles[::-1] # Newest first
             except Exception as e:
+                import traceback
+                traceback.print_exc()
                 logger.warning(f"Streamer failed for {tv_symbol}, falling back to tvDatafeed: {e}")
 
             # Fallback to tvDatafeed

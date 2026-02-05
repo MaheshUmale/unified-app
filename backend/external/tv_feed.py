@@ -106,6 +106,7 @@ class TradingViewFeed:
 
                             # We need to construct the HRN correctly.
                             # res['target_expiry'] is YYYYMMDD
+                           # NIFTY 10 FEB 2026 CALL 25900  ==>  NSE:NIFTY260210C25900
                             expiry_dt = datetime.strptime(str(res['target_expiry']), '%Y%m%d')
                             expiry_str = expiry_dt.strftime('%d %b %Y').upper()
 

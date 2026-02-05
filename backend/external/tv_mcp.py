@@ -32,6 +32,7 @@ def fetch_option_chain_data(
             logger.warning(f"Failed to parse TV_COOKIE: {e}")
 
     try:
+        print("Fetching option chain data from TradingView...")
         url = "https://scanner.tradingview.com/options/scan2?label-product=symbols-options"
 
         # Build filter
@@ -90,6 +91,7 @@ def get_current_spot_price(symbol: str, exchange: str) -> Dict[str, Any]:
     Get current spot price of underlying symbol.
     """
     try:
+        print("Fetching current spot price...")
         url = "https://scanner.tradingview.com/global/scan2?label-product=options-overlay"
 
         payload = {

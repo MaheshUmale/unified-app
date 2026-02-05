@@ -122,8 +122,8 @@ def fetch_and_save_oi_snapshot(symbol: str, stock_id: int, expiry_date_str: str,
         oi_data = body.get('oiData', {})
         input_data = body.get('inputData', {})
 
-        oi_collection = get_oi_collection()
-        stocks_collection = get_stocks_collection()
+        # oi_collection = get_oi_collection()
+        # stocks_collection = get_stocks_collection()
 
         current_date_str = input_data.get('tradingDate', date.today().strftime("%Y-%m-%d"))
         expiry_str = input_data.get('expDateList', [expiry_date_str])[0]

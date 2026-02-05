@@ -2,7 +2,7 @@
 __pycache__/
 *.py[codz]
 *$py.class
-
+*.db*
 # C extensions
 *.so
 
@@ -84,4 +84,4 @@ backend/backtest_reports/*.html
 backend/backtest_logs/*.log
 *.jsonl
 *.db
-server_log.txt
+*.txt

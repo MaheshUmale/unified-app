@@ -201,8 +201,8 @@ def on_message(message: Union[Dict, bytes, str]):
         logging.info(f"WSS: Market Info Received. Status: {info.get('segmentStatus', 'Unknown')}")
 
     feeds_map = data.get('feeds', {})
-    if feeds_map:
-        logger.info(f"WSS: Received ticks for {list(feeds_map.keys())}")
+    # if feeds_map:
+    #     logger.info(f"WSS: Received ticks for {list(feeds_map.keys())}")
 
     if feeds_map:
         current_time = datetime.now()
