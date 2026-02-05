@@ -31,9 +31,21 @@
             <span class="text-sm font-black text-white italic tracking-tighter uppercase">PRO<span class="text-blue-500">DESK</span></span>
         </div>
 
-        <div class="relative group">
-            <input type="text" id="symbolSearch" placeholder="SEARCH SYMBOL (e.g. NSE:RELIANCE, NIFTY)..." class="bg-gray-900 border border-gray-800 rounded px-4 py-1.5 text-xs font-bold text-gray-200 outline-none focus:ring-1 focus:ring-blue-500 transition-all w-64 md:w-80 text-center">
-            <div id="searchResults" class="hidden absolute top-full left-0 w-full bg-gray-900 border border-gray-800 rounded-b mt-1 z-[100] max-h-60 overflow-y-auto custom-scrollbar">
+        <div class="flex items-center gap-3">
+            <div class="relative group">
+                <input type="text" id="symbolSearch" placeholder="SEARCH SYMBOL (e.g. NSE:RELIANCE, NIFTY)..." class="bg-gray-900 border border-gray-800 rounded px-4 py-1.5 text-xs font-bold text-gray-200 outline-none focus:ring-1 focus:ring-blue-500 transition-all w-64 md:w-80 text-center">
+                <div id="searchResults" class="hidden absolute top-full left-0 w-full bg-gray-900 border border-gray-800 rounded-b mt-1 z-[100] max-h-60 overflow-y-auto custom-scrollbar">
+                </div>
+            </div>
+
+            <div class="h-6 w-[1px] bg-white/10 mx-1"></div>
+
+            <div id="timeframeSelector" class="flex items-center gap-1 bg-gray-900/50 p-0.5 rounded border border-white/5">
+                <button data-interval="1" class="tf-btn active px-2 py-1 text-[10px] font-bold rounded transition-all">1m</button>
+                <button data-interval="5" class="tf-btn px-2 py-1 text-[10px] font-bold rounded transition-all">5m</button>
+                <button data-interval="15" class="tf-btn px-2 py-1 text-[10px] font-bold rounded transition-all">15m</button>
+                <button data-interval="60" class="tf-btn px-2 py-1 text-[10px] font-bold rounded transition-all">1h</button>
+                <button data-interval="D" class="tf-btn px-2 py-1 text-[10px] font-bold rounded transition-all">1d</button>
             </div>
         </div>
 

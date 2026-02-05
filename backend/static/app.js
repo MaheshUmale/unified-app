@@ -7,6 +7,7 @@ const socket = io();
 
 // UI State
 let currentSymbol = 'NSE:NIFTY';
+let currentInterval = '1';
 let mainChart = null;
 let candleSeries = null;
 let volumeSeries = null;
@@ -48,6 +49,7 @@ const Settings = {
 
 function init() {
     Settings.load();
+    initTimeframeUI();
     const chartContainer = document.getElementById('mainChart');
     if (chartContainer) {
         mainChart = LightweightCharts.createChart(chartContainer, {
@@ -62,7 +64,14 @@ function init() {
                 horzLines: { color: '#111827' },
             },
             crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-            rightPriceScale: { borderColor: '#1f2937', autoScale: true },
+            rightPriceScale: {
+                borderColor: '#1f2937',
+                autoScale: true,
+                scaleMargins: {
+                    top: 0.1,
+                    bottom: 0.1,
+                },
+            },
             timeScale: { borderColor: '#1f2937', timeVisible: true, secondsVisible: false },
         });
 
@@ -85,14 +94,16 @@ function init() {
             visible: false,
         });
 
-        // Initialize indicator series
-        evwmaSeries = mainChart.addLineSeries({ color: '#10b981', lineWidth: 2, title: 'EVWMA' });
-        dynPivotSeries = mainChart.addLineSeries({ color: '#3b82f6', lineWidth: 2, title: 'DynPivot' });
-        swingHighSeries = mainChart.addLineSeries({ color: '#ef4444', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dotted });
-        swingLowSeries = mainChart.addLineSeries({ color: '#3b82f6', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dotted });
+        // Initialize indicator series with autoscaleInfoProvider to ignore them for Y-axis scaling
+        const indicatorOptions = { autoscaleInfoProvider: () => null };
 
-        srSuppSeries = mainChart.addLineSeries({ color: '#3b82f6', lineWidth: 2, lineStyle: LightweightCharts.LineStyle.SparseDotted });
-        srRestSeries = mainChart.addLineSeries({ color: '#f59e0b', lineWidth: 2, lineStyle: LightweightCharts.LineStyle.SparseDotted });
+        evwmaSeries = mainChart.addLineSeries({ color: '#10b981', lineWidth: 2, title: 'EVWMA', ...indicatorOptions });
+        dynPivotSeries = mainChart.addLineSeries({ color: '#3b82f6', lineWidth: 2, title: 'DynPivot', ...indicatorOptions });
+        swingHighSeries = mainChart.addLineSeries({ color: '#ef4444', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dotted, ...indicatorOptions });
+        swingLowSeries = mainChart.addLineSeries({ color: '#3b82f6', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dotted, ...indicatorOptions });
+
+        srSuppSeries = mainChart.addLineSeries({ color: '#3b82f6', lineWidth: 2, lineStyle: LightweightCharts.LineStyle.SparseDotted, ...indicatorOptions });
+        srRestSeries = mainChart.addLineSeries({ color: '#f59e0b', lineWidth: 2, lineStyle: LightweightCharts.LineStyle.SparseDotted, ...indicatorOptions });
 
         window.addEventListener('resize', () => {
             mainChart.resize(chartContainer.clientWidth, chartContainer.clientHeight);
@@ -119,6 +130,21 @@ function init() {
     initSettingsUI();
     applyTheme();
     switchSymbol(currentSymbol);
+}
+
+function initTimeframeUI() {
+    const btns = document.querySelectorAll('.tf-btn');
+    btns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            if (btn.dataset.interval === currentInterval) return;
+
+            btns.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            currentInterval = btn.dataset.interval;
+            switchSymbol(currentSymbol);
+        });
+    });
 }
 
 function initSettingsUI() {
@@ -230,7 +256,7 @@ async function switchSymbol(symbol) {
     lastCandle = null;
     setLoading(true);
     try {
-        const candles = await fetchIntraday(currentSymbol);
+        const candles = await fetchIntraday(currentSymbol, currentInterval);
         console.log(`Fetched ${candles ? candles.length : 0} candles for ${currentSymbol}`);
         if (candles && candles.length > 0) {
             const chartData = candles.map(c => ({
@@ -248,7 +274,13 @@ async function switchSymbol(symbol) {
                 lastCandle = chartData[chartData.length - 1];
                 lastCandle.volume = candles[candles.length - 1].volume;
             } else document.getElementById('exitReplayBtn').click();
-            mainChart.timeScale().fitContent();
+
+            // Set visible range to last 100 bars instead of fitContent
+            const lastIndex = chartData.length - 1;
+            mainChart.timeScale().setVisibleLogicalRange({
+                from: lastIndex - 100,
+                to: lastIndex + 5,
+            });
         } else {
             console.warn("No candles returned, generating mock data for demo.");
             generateMockData();
@@ -308,8 +340,13 @@ function handleTickUpdate(quotes) {
 
 function updateRealtimeCandle(quote) {
     if (!candleSeries || isReplayMode) return;
+
+    // Map interval to duration in seconds
+    const intervalMap = { '1': 60, '5': 300, '15': 900, '30': 1800, '60': 3600, 'D': 86400, 'W': 604800 };
+    const duration = intervalMap[currentInterval] || 60;
+
     const tickTime = Math.floor(quote.ts_ms / 1000);
-    const candleTime = tickTime - (tickTime % 60);
+    const candleTime = tickTime - (tickTime % duration);
     const price = quote.last_price;
     const ltq = quote.ltq || 0;
 
@@ -378,14 +415,22 @@ const Indicators = {
             return up ? '#03b30933' : '#d3010133';
         });
 
-        // 2. EVWMA (Length 5)
-        const evwma = []; let prevEv = candles[0]?.close || 0;
+        // 2. EVWMA (Length 5) - Fixed to handle zero volume and initial bars
+        const evwma = [];
+        let prevEv = candles[0]?.close || null;
         const evLen = 5;
         for (let i = 0; i < candles.length; i++) {
             let sumV = 0;
             for (let j = Math.max(0, i - evLen + 1); j <= i; j++) sumV += vols[j];
-            prevEv = (prevEv * (sumV - vols[i]) / (sumV || 1)) + (vols[i] * candles[i].close / (sumV || 1));
-            evwma.push({ time: candles[i].time, value: prevEv });
+
+            if (sumV > 0 && vols[i] > 0) {
+                if (prevEv === null) prevEv = candles[i].close;
+                prevEv = (prevEv * (sumV - vols[i]) / sumV) + (vols[i] * candles[i].close / sumV);
+            }
+
+            if (prevEv !== null) {
+                evwma.push({ time: candles[i].time, value: prevEv });
+            }
         }
 
         // 3. Dynamic Pivot (Force 20, Pivot 10)

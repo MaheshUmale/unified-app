@@ -77,11 +77,15 @@ class TradingViewAPI:
 
             # Try Streamer first
             try:
+                tf = f"{interval_min}m"
+                if interval_min == 'D': tf = '1d'
+                elif interval_min == 'W': tf = '1w'
+
                 with contextlib.redirect_stdout(io.StringIO()):
                     stream_gen = self.streamer.stream(
                         exchange=tv_exchange,
                         symbol=tv_symbol,
-                        timeframe=f"{interval_min}m",
+                        timeframe=tf,
                         numb_price_candles=n_bars
                     )
 
@@ -113,6 +117,10 @@ class TradingViewAPI:
                 tv_interval = Interval.in_1_minute
                 if interval_min == '5': tv_interval = Interval.in_5_minute
                 elif interval_min == '15': tv_interval = Interval.in_15_minute
+                elif interval_min == '30': tv_interval = Interval.in_30_minute
+                elif interval_min == '60': tv_interval = Interval.in_1_hour
+                elif interval_min == 'D': tv_interval = Interval.in_daily
+                elif interval_min == 'W': tv_interval = Interval.in_weekly
 
                 df = self.tv.get_hist(symbol=tv_symbol, exchange=tv_exchange, interval=tv_interval, n_bars=n_bars)
                 if df is not None and not df.empty:
