@@ -13,6 +13,14 @@ A minimal, high-performance trading terminal featuring TradingView charting, rea
   - **Playback**: Use Play/Pause, Next, and Previous buttons to step through candles one by one.
 - **Real-time Data**: Live quote streaming via TradingView WebSocket (WSS) protocol.
 - **Universal Search**: Search for any symbol across exchanges supported by TradingView.
+- **Advanced Technical Indicators**:
+    - **Colored Candles**: Volume-based candle coloring for trend and strength analysis.
+    - **Volume Bubbles**: Visualizes significant volume spikes directly on price action.
+    - **MTF S/R Dots**: Support and Resistance levels derived from high-volume bars.
+    - **Dynamic Pivot**: Real-time trend detection using Force/Pivot logic.
+    - **EVWMA**: Elastic Volume Weighted Moving Average.
+    - **Swing Breaks**: Automated Swing High/Low detection.
+- **Customizable Themes**: Toggle between professional Dark and Light themes.
 - **Efficient Backend**: Built with FastAPI and Socket.IO for low-latency data delivery.
 
 ## Architecture
