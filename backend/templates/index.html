@@ -21,36 +21,18 @@
 <body class="h-full flex flex-col">
     <div id="loading" class="hidden absolute top-0 left-0 w-full z-[100] loading-bar"></div>
 
-    <header class="h-14 py-2 glass-panel border-b border-white/5 sticky top-0 z-50 px-4 md:px-6 flex items-center justify-between">
-        <div class="flex items-center gap-4">
-            <div class="flex flex-col">
-                <span class="text-lg md:text-xl font-black text-white tracking-tighter italic leading-none uppercase">PRO<span class="text-blue-500">DESK</span></span>
+    <header class="h-14 py-2 glass-panel border-b border-white/5 sticky top-0 z-50 px-4 md:px-6 flex items-center justify-center">
+        <div class="relative group">
+            <input type="text" id="symbolSearch" placeholder="SEARCH SYMBOL (e.g. NSE:RELIANCE, NIFTY)..." class="bg-gray-900 border border-gray-800 rounded px-4 py-1.5 text-xs font-bold text-gray-200 outline-none focus:ring-1 focus:ring-blue-500 transition-all w-64 md:w-96 text-center">
+            <div id="searchResults" class="hidden absolute top-full left-0 w-full bg-gray-900 border border-gray-800 rounded-b mt-1 z-[100] max-h-60 overflow-y-auto custom-scrollbar">
             </div>
-            <div class="h-8 w-[1px] bg-gray-800 mx-1"></div>
-            <div class="relative group">
-                <input type="text" id="symbolSearch" placeholder="SEARCH SYMBOL..." class="bg-gray-900 border border-gray-800 rounded px-3 py-1 text-[10px] md:text-xs font-bold text-gray-300 outline-none focus:ring-1 focus:ring-blue-500 transition-all w-48 md:w-64">
-                <div id="searchResults" class="hidden absolute top-full left-0 w-full bg-gray-900 border border-gray-800 rounded-b mt-1 z-[100] max-h-60 overflow-y-auto custom-scrollbar">
-                </div>
-            </div>
-        </div>
-        <div class="flex items-center gap-4">
-            <div id="replayControls" class="flex items-center gap-2 bg-gray-900/50 p-1 rounded border border-white/5">
-                <select id="replayDateSelect" class="bg-transparent text-[10px] font-bold text-gray-400 outline-none cursor-pointer px-2">
-                    <option value="">Live Session</option>
-                </select>
-                <button id="replayBtn" class="bg-blue-600 hover:bg-blue-700 p-1 rounded transition-colors disabled:opacity-50">
-                    <svg class="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20"><path d="M4.5 3.5v13L16.5 10l-12-6.5z"/></svg>
-                </button>
-            </div>
-            <div class="h-8 w-[1px] bg-gray-800 mx-1"></div>
-            <span id="socketStatus" class="flex items-center gap-1 text-[8px] font-mono text-gray-600 uppercase tracking-widest"><div class="w-1.5 h-1.5 bg-gray-600 rounded-full"></div> DISCONNECTED</span>
         </div>
     </header>
 
-    <main class="flex-1 p-0.5 flex flex-col overflow-hidden bg-black">
+    <main class="flex-1 p-0 flex flex-col overflow-hidden bg-black">
         <div id="mainChart" class="flex-1 w-full h-full"></div>
     </main>
 
-    <script src="/static/app.js?v=2"></script>
+    <script src="/static/app.js?v=3"></script>
 </body>
 </html>
