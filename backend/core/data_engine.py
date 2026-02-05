@@ -72,7 +72,6 @@ def on_message(message: Union[Dict, str]):
 
         for inst_key, feed_datum in feeds_map.items():
             hrn = symbol_mapper.get_hrn(inst_key)
-            logger.debug(f"Processing tick for {inst_key} (HRN: {hrn})")
             feed_datum['instrumentKey'] = hrn
             feed_datum['date'] = today_str
             hrn_feeds[hrn] = feed_datum

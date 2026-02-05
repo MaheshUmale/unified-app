@@ -201,7 +201,6 @@ function initSocket() {
 
     socket.on('raw_tick', (data) => {
         const rawData = typeof data === 'string' ? JSON.parse(data) : data;
-        console.log("Tick received:", rawData);
         handleTickUpdate(rawData);
     });
 }
