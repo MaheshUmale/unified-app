@@ -22,6 +22,7 @@ class TradingViewWSS:
             'NSE:CNXFINANCE': 'FINNIFTY',
             'NSE:INDIAVIX': 'INDIA VIX'
         }
+        self.last_volumes = {} # track cumulative volume per symbol
         self.stop_event = threading.Event()
         self.thread = None
 
@@ -91,6 +92,13 @@ class TradingViewWSS:
                     if 'lp' in values:
                         ts_ms = int(values.get('lp_time', time.time()) * 1000)
 
+                        # Update and track latest cumulative volume
+                        new_vol = values.get('volume')
+                        if new_vol is not None:
+                            self.last_volumes[symbol] = float(new_vol)
+
+                        current_cum_vol = self.last_volumes.get(symbol)
+
                         feed_msg = {
                             'type': 'live_feed',
                             'feeds': {
@@ -100,12 +108,12 @@ class TradingViewWSS:
                                             'ltpc': {
                                                 'ltp': str(values['lp']),
                                                 'ltt': str(ts_ms),
-                                                'ltq': '0'
+                                                'ltq': '0' # Delta logic will be handled in data_engine
                                             },
                                             'oi': str(values.get('open_interest', 0))
                                         }
                                     },
-                                    'tv_volume': float(values.get('volume', 0)),
+                                    'tv_volume': current_cum_vol,
                                     'source': 'tradingview_wss'
                                 }
                             }

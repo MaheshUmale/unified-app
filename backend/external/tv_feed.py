@@ -129,7 +129,7 @@ class TradingViewFeed:
                                         'ltpc': {
                                             'ltp': str(opt['close'] or 0),
                                             'ltt': str(ts_ms),
-                                            'ltq': str(opt['volume'] or 0)
+                                            'ltq': '0' # Delta logic will be handled in data_engine
                                         },
                                         'oi': str(opt['oi'] or 0),
                                         'iv': str(opt['iv'] or 0),
@@ -141,6 +141,7 @@ class TradingViewFeed:
                                         }
                                     }
                                 },
+                                'tv_volume': float(opt['volume'] or 0),
                                 'source': 'tradingview_scanner'
                             }
 

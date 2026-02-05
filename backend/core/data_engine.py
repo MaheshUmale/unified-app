@@ -56,6 +56,7 @@ latest_prices = {} # instrument_key -> price
 instrument_metadata = {} # instrument_key -> {'symbol': str, 'type': 'CE'|'PE'|'FUT'|'INDEX', 'expiry': 'YYYY-MM-DD'}
 pcr_running_totals = {} # symbol -> {'CE': total_oi, 'PE': total_oi, 'last_save': timestamp}
 current_expiries = {} # symbol -> 'YYYY-MM-DD'
+latest_total_volumes = {} # hrn -> last_seen_total_volume
 
 # Batching for DuckDB
 TICK_BATCH_SIZE = 100
@@ -316,9 +317,24 @@ def on_message(message: Union[Dict, bytes, str]):
                     latest_prices[inst_key] = price
                     latest_prices[hrn] = price
 
-                # Explicitly capture last traded quantity for volume aggregation
-                if ltpc.get('ltq'):
-                    feed_datum['ltq'] = int(ltpc['ltq'])
+                # VOLUME LOGIC: Prefer explicit ltq, otherwise calculate from tv_volume (cumulative)
+                explicit_ltq = int(ltpc.get('ltq', 0))
+
+                if explicit_ltq > 0:
+                    feed_datum['ltq'] = explicit_ltq
+                elif feed_datum.get('tv_volume') is not None:
+                    curr_total_vol = float(feed_datum['tv_volume'])
+                    # If this is the first time we see volume for this symbol, delta is 0
+                    if hrn not in latest_total_volumes:
+                        latest_total_volumes[hrn] = curr_total_vol
+                        feed_datum['ltq'] = 0
+                    else:
+                        last_total_vol = latest_total_volumes[hrn]
+                        delta_vol = max(0, curr_total_vol - last_total_vol)
+                        latest_total_volumes[hrn] = curr_total_vol
+                        feed_datum['ltq'] = int(delta_vol)
+                    # Also update ltpc for consistency and process_footprint_tick
+                    if ltpc: ltpc['ltq'] = str(int(delta_vol))
                 else:
                     feed_datum['ltq'] = 0
 
@@ -420,12 +436,8 @@ def process_footprint_tick(instrument_key: str, data_datum: Dict[str, Any]):
         aggregated_bar['low'] = min(aggregated_bar['low'], trade_price)
         aggregated_bar['close'] = trade_price
 
-        # Handle index volume from TradingView
-        tv_vol = data_datum.get('tv_volume')
-        if tv_vol is not None:
-            aggregated_bar['volume'] = float(tv_vol)
-        else:
-            aggregated_bar['volume'] += trade_qty
+        # Volume is always incremental using trade_qty (which is now correctly calculated as delta if needed)
+        aggregated_bar['volume'] += trade_qty
 
         aggregated_bar['oi'] = latest_oi.get(instrument_key, aggregated_bar.get('oi', 0))
 
