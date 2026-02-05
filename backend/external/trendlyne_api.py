@@ -45,22 +45,26 @@ class TrendlyneSession:
 def get_stock_id_for_symbol(symbol: str) -> Optional[int]:
     """
     Automatically lookup the Trendlyne stock ID for a given symbol.
+    Strips technical prefixes like 'NSE:' before searching.
 
     Args:
-        symbol (str): The trading symbol (e.g., 'NIFTY').
+        symbol (str): The trading symbol (e.g., 'NSE:RELIANCE').
 
     Returns:
         Optional[int]: The stock ID if found, otherwise None.
     """
-    if symbol in STOCK_ID_CACHE:
-        return STOCK_ID_CACHE[symbol]
+    # Strip prefix if any
+    clean_symbol = symbol.split(':')[-1].split('|')[-1].upper()
+
+    if clean_symbol in STOCK_ID_CACHE:
+        return STOCK_ID_CACHE[clean_symbol]
 
     session = TrendlyneSession.get_session()
     search_url = "https://smartoptions.trendlyne.com/phoenix/api/search-contract-stock/"
-    params = {'query': symbol.lower()}
+    params = {'query': clean_symbol.lower()}
 
     try:
-        logger.info(f"Looking up Trendlyne stock ID for {symbol}...")
+        logger.info(f"Looking up Trendlyne stock ID for {clean_symbol}...")
         response = session.get(search_url, params=params, timeout=10)
         response.raise_for_status()
         data = response.json()
@@ -68,23 +72,24 @@ def get_stock_id_for_symbol(symbol: str) -> Optional[int]:
         if data and 'body' in data and 'data' in data['body'] and len(data['body']['data']) > 0:
             for item in data['body']['data']:
                 item_symbol = item.get('stock_code') or item.get('symbol')
-                if item_symbol and item_symbol.lower() == symbol.lower():
+                if item_symbol and item_symbol.lower() == clean_symbol.lower():
                     stock_id = item.get('stock_id') or item.get('stockId')
                     break
             else:
-                stock_id = None
+                # If no exact match, try first result if query was short
+                stock_id = data['body']['data'][0].get('stock_id') or data['body']['data'][0].get('stockId')
         else:
             stock_id = None
 
         if stock_id:
-            STOCK_ID_CACHE[symbol] = stock_id
-            logger.info(f"Found Trendlyne stock ID {stock_id} for {symbol}")
+            STOCK_ID_CACHE[clean_symbol] = stock_id
+            logger.info(f"Found Trendlyne stock ID {stock_id} for {clean_symbol}")
             return stock_id
-        logger.warning(f"Could not find Trendlyne stock ID for {symbol}")
+        logger.warning(f"Could not find Trendlyne stock ID for {clean_symbol}")
         return None
 
     except Exception as e:
-        logger.error(f"Error looking up {symbol} on Trendlyne: {e}")
+        logger.error(f"Error looking up {clean_symbol} on Trendlyne: {e}")
         return None
 
 def fetch_and_save_oi_snapshot(symbol: str, stock_id: int, expiry_date_str: str, timestamp_snapshot: str) -> bool:

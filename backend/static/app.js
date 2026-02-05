@@ -285,7 +285,7 @@ function initSocket() {
     });
 
     socket.on('oi_update', (msg) => {
-        if (msg.symbol === currentIndex) {
+        if (normalizeSymbol(msg.symbol) === normalizeSymbol(currentIndex)) {
             pcrData.push({
                 timestamp: msg.timestamp,
                 pcr: msg.pcr,
@@ -652,7 +652,7 @@ function renderOiChart() {
     if (!pcrData.length) {
         charts.oi.setOption({
             backgroundColor: 'transparent',
-            title: { text: 'NO OI DATA AVAILABLE', left: 'center', top: 'center', textStyle: { color: '#4b5563', fontSize: 12 } },
+            title: { text: 'FETCHING DATA / BACKFILLING...', left: 'center', top: 'center', textStyle: { color: '#3b82f6', fontSize: 10, fontWeight: 'bold' } },
             series: []
         }, true);
         return;
@@ -752,6 +752,17 @@ function renderOiChart() {
 
 // --- Helpers ---
 
+function normalizeSymbol(sym) {
+    if (!sym) return "";
+    let s = sym.toUpperCase().trim();
+    if (s.includes(':')) s = s.split(':')[1];
+    if (s.includes('|')) s = s.split('|')[1];
+    if (s === "NIFTY 50") return "NIFTY";
+    if (s === "BANK NIFTY") return "BANKNIFTY";
+    if (s === "FIN NIFTY") return "FINNIFTY";
+    return s.split(' ')[0]; // Handle HRNs
+}
+
 function setLoading(show) {
     document.getElementById('loading').classList.toggle('hidden', !show);
 }
@@ -767,6 +778,7 @@ function switchIndex(val) {
     currentAtm = 0;
     indexData = []; ceData = []; peData = []; pcrData = [];
     atmKeys = { ce: '', pe: '' };
+    renderOiChart();
     loadInitialData();
 }
 
