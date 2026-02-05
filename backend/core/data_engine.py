@@ -327,12 +327,15 @@ def on_message(message: Union[Dict, bytes, str]):
                     # If this is the first time we see volume for this symbol, delta is 0
                     if hrn not in latest_total_volumes:
                         latest_total_volumes[hrn] = curr_total_vol
-                        feed_datum['ltq'] = 0
+                        delta_vol = 0
                     else:
                         last_total_vol = latest_total_volumes[hrn]
                         delta_vol = max(0, curr_total_vol - last_total_vol)
                         latest_total_volumes[hrn] = curr_total_vol
-                        feed_datum['ltq'] = int(delta_vol)
+                        if delta_vol > 0 and hrn in ['NIFTY', 'BANKNIFTY', 'FINNIFTY']:
+                            logger.debug(f"Volume Delta for {hrn}: {delta_vol} (Cum: {curr_total_vol})")
+
+                    feed_datum['ltq'] = int(delta_vol)
                     # Also update ltpc for consistency and process_footprint_tick
                     if ltpc: ltpc['ltq'] = str(int(delta_vol))
                 else:
