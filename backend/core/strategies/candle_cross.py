@@ -1,6 +1,5 @@
 import sys
 import os
-from pymongo import MongoClient
 from typing import Dict, Any
 # Helper function (place outside or inside the class)
 from collections import deque
@@ -161,21 +160,15 @@ class CandleCrossStrategy(TradingBase):
         self.current_minute_candle: Dict[str, Any] = {'minute': None, 'open': None, 'high': None, 'low': None, 'close': None, 'volume': 0}
         self.pending_long_entry: Optional[Dict[str, Any]] = None
 
-        # NEW: History deque for backtesting indicator calculations
-        self.closes_history: Deque[float] = deque(maxlen=max(ema_len, pivot_len) * 2)
+        # Last calculated indicator values
+        self.ema: Optional[float] = None
+        self.evwma: Optional[float] = None
+        self.dyn_pivot: Optional[float] = None
 
-
-        # ... (rest of indicator initializations) ...
-        self.ema_len = ema_len
-        self.pivot_len = pivot_len # Ensure pivot_len is initialized
-        self.is_backtesting = is_backtesting
-
-        # State Initialization
-        self.current_minute_candle: Dict[str, Any] = {'minute': None, 'open': None, 'high': None, 'low': None, 'close': None, 'volume': 0}
-        self.pending_long_entry: Optional[Dict[str, Any]] = None
-
-        # NEW: History deque for backtesting indicator calculations
-        self.closes_history: Deque[float] = deque(maxlen=max(ema_len, pivot_len) * 2)
+        # Mock VWAP State
+        self.cum_vol = 0
+        self.cum_pv = 0.0
+        self.vwap: Optional[float] = None
     # ... (Utility and Indicator Calculation methods omitted for brevity) ...
 
 
@@ -528,87 +521,3 @@ class CandleCrossStrategy(TradingBase):
                 if self.position:
                     self._close_position(ts_game, closed_candle['close'], "Intraday Square-off (Backtest)")
                 self.pending_long_entry = None # Cancel any pending order
-    # --- Backtesting Data Entry Point (Using Candle Data) ---
-
-    # def backtest_data_feed(self, historical_candles: List[Dict[str, Any]]):
-    #     """
-    #     Processes a list of closed 1-minute historical candles for backtesting.
-    #     This simulates tick movement within each candle for order fulfillment.
-    #     """
-    #     self.is_backtesting = True
-
-    #     for candle in historical_candles:
-    #         ts_game = candle.get('time', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-    #         ts_epoch = candle.get('ts_epoch', time.time()) # Should be part of candle data
-    #         ltp_close = candle['close']
-
-    #         self.current_ts_epoch = ts_epoch
-    #         self.last_ltp = ltp_close
-
-    #         # 1. Calculate and Generate Signal (Runs only once per candle)
-    #         # We must simulate VWAP calculation during backtesting too, usually based on Volume and Close.
-    #         # Simplified VWAP update (assuming the candle data provides total volume/close for the minute)
-    #         self.cum_vol += candle.get('volume', 1)
-    #         self.cum_pv += (ltp_close * candle.get('volume', 1))
-    #         if self.cum_vol > 0:
-    #             self.vwap = self.cum_pv / self.cum_vol
-
-    #         self._process_closed_candle_logic(candle, ts_game, ts_epoch)
-
-    #         # 2. Check for Entry/Exit Fulfillment within this candle (Simulate Tick Monitoring)
-
-    #         # --- EXIT CHECK (Prioritized: SL/TP) ---
-    #         if self.position and self.position['side'] == 'LONG':
-    #             sl = self.position['stop_loss']
-    #             tp = self.position['take_profit']
-
-    #             # Check if SL was hit (price reached Low)
-    #             if candle['low'] <= sl:
-    #                 # Check if TP was also hit (price reached High). If so, assume SL hit first (Worst case).
-    #                 if candle['high'] >= tp:
-    #                     self.log_event(ts_game, "SIMULATION_WARNING", f"SL and TP hit within candle. Assuming SL: {sl}")
-    #                 self._close_position(ts_game, sl, "Simulated Stop Loss Hit")
-    #                 continue # Position closed
-
-    #             # Check if TP was hit (price reached High)
-    #             if candle['high'] >= tp:
-    #                 self._close_position(ts_game, tp, "Simulated Take Profit Hit")
-    #                 continue # Position closed
-
-    #             # Check for Trailing SL trigger (Trail condition is checked by _process_closed_candle_logic)
-    #             self._monitor_long_exit(ltp_close, ts_game) # Uses the closed candle Ltp to finalize state/exit
-
-    #         # --- ENTRY CHECK (Executed last) ---
-    #         if self.pending_long_entry:
-    #             entry_price = self.pending_long_entry['entry_price']
-
-    #             # Entry fulfilled if candle High reached the entry price
-    #             if candle['high'] >= entry_price:
-
-    #                 # We assume entry happened at the exact entry price, NOT the candle close.
-    #                 self.log_event(ts_game, "TRADE_ENTRY", f"LONG at {entry_price:.2f} (Simulated Trigger)")
-
-    #                 # Entry fills at `entry_price`
-    #                 self.position = {
-    #                     'side': 'LONG',
-    #                     'price': entry_price,
-    #                     'time': ts_game,
-    #                     'created_at': ts_epoch,
-    #                     'stop_loss': self.pending_long_entry['stop_loss'],
-    #                     'take_profit': self.pending_long_entry['take_profit'],
-    #                 }
-    #                 self.stats["TRADES_TAKEN"] += 1
-    #                 del self.pending_long_entry
-
-    #         # 3. Handle pending order expiration (not usually needed in candle-by-candle backtest, but for completeness)
-    #         else:
-    #              # If no entry was hit in the signal candle, it expires immediately at the start of the next candle.
-    #              pass
-
-    #     # Print final results
-    #     if self.stats['TRADES_TAKEN'] > 0:
-    #         print("\n--- Backtesting Results ---FOR ", self.instrument_key)
-    #         print(f"Total Trades: {self.stats['TRADES_TAKEN']}")
-    #         print(f"Total PNL (Points): {self.stats['PNL']:.2f}")
-    #     else:
-    #         print("\nNo trades were taken during backtesting for ", self.instrument_key)
