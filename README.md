@@ -17,7 +17,7 @@ A minimal, high-performance trading terminal featuring TradingView charting, rea
   - **Room-based Broadcasting**: Uses Socket.IO rooms named after symbol HRNs to ensure efficient, targeted data delivery.
 - **Advanced Visualization**:
   - **Markers & Shapes**: Dynamic rendering of volume bubbles and S/R dots using Lightweight Charts markers.
-  - **Bar Coloring**: Real-time candle color updates based on study-provided volume and trend metrics.
+  - **Bar Coloring**: Real-time candle color updates based on study-provided volume and trend metrics, with a built-in RVOL (Relative Volume) fallback for consistent trend analysis.
   - **Background Shading**: Highlighting of specific market conditions (e.g., breakout zones) via background colors.
   - **Smart Scaling**: Automatic Y-axis management to prevent low-value oscillators from compressing the price action.
 - **Universal Search**: Search for any symbol across exchanges supported by TradingView with an integrated proxy for metadata.

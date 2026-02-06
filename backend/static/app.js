@@ -238,8 +238,9 @@ async function switchSymbol(symbol) {
         if (candles && candles.length > 0) {
             const chartData = candles.map(c => ({
                 time: typeof c.timestamp === 'number' ? c.timestamp : Math.floor(new Date(c.timestamp).getTime() / 1000),
-                open: c.open, high: c.high, low: c.low, close: c.close
-            })).sort((a, b) => a.time - b.time);
+                open: Number(c.open), high: Number(c.high), low: Number(c.low), close: Number(c.close), volume: Number(c.volume)
+            })).filter(c => !isNaN(c.open) && c.open > 0)
+              .sort((a, b) => a.time - b.time);
             fullHistory.candles = chartData;
             lastCandle = chartData[chartData.length - 1];
         }
@@ -352,6 +353,7 @@ function handleTickUpdate(quotes) {
 let lastChartUpdateTime = 0;
 
 function tvColorToRGBA(color) {
+    if (color === null || color === undefined) return null;
     if (typeof color !== 'number') return color;
     // TradingView alpha is sometimes inverted or different.
     // We try to ensure it's at least partially visible if it's very transparent.
@@ -397,7 +399,8 @@ function handleChartUpdate(data) {
             const candles = data.ohlcv.map(v => ({
                 time: Math.floor(v[0]),
                 open: Number(v[1]), high: Number(v[2]), low: Number(v[3]), close: Number(v[4])
-            }));
+            })).filter(c => !isNaN(c.open) && c.open > 0);
+
             const vol = data.ohlcv.map(v => ({
                 time: Math.floor(v[0]), value: Number(v[5]),
                 color: Number(v[4]) >= Number(v[1]) ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'
@@ -524,20 +527,6 @@ function handleChartUpdate(data) {
                         autoscaleInfoProvider: () => ({ priceRange: null }),
                     };
 
-                    // For indicators on the main price scale, we only want them to scale
-                    // if they are actually within a reasonable range of the price.
-                    if (targetScale === 'right') {
-                        commonOptions.autoscaleInfoProvider = () => {
-                            if (!lastCandle) return null;
-                            return {
-                                priceRange: {
-                                    minValue: lastCandle.low * 0.8,
-                                    maxValue: lastCandle.high * 1.2,
-                                }
-                            };
-                        };
-                    }
-
                     if (plottype === 1 || plottype === 2) {
                         series = mainChart.addHistogramSeries({
                             ...commonOptions,
@@ -578,14 +567,21 @@ function handleChartUpdate(data) {
 
         // Apply Bar Colors
         if (Object.keys(barColors).length > 0) {
+            let changed = false;
             const updatedCandles = fullHistory.candles.map(c => {
-                if (barColors[c.time]) {
-                    return { ...c, color: barColors[c.time], wickColor: barColors[c.time], borderColor: barColors[c.time] };
+                if (barColors[c.time] !== undefined) {
+                    const newCol = barColors[c.time];
+                    if (c.color !== newCol) {
+                        changed = true;
+                        return { ...c, color: newCol, wickColor: newCol, borderColor: newCol };
+                    }
                 }
                 return c;
             });
-            candleSeries.setData(updatedCandles);
-            fullHistory.candles = updatedCandles;
+            if (changed) {
+                candleSeries.setData(updatedCandles);
+                fullHistory.candles = updatedCandles;
+            }
         }
 
         // Apply Background Colors
@@ -654,8 +650,9 @@ function updateRealtimeCandle(quote) {
         candleTime = tickTime - (tickTime % duration);
     }
 
-    const price = quote.last_price;
-    const ltq = quote.ltq || 0;
+    const price = Number(quote.last_price);
+    if (isNaN(price) || price <= 0) return;
+    const ltq = Number(quote.ltq || 0);
 
     if (!lastCandle || candleTime > lastCandle.time) {
         if (lastCandle) {
@@ -681,11 +678,72 @@ function updateRealtimeCandle(quote) {
 }
 
 
+function calculateSMA(data, period) {
+    const result = [];
+    for (let i = 0; i < data.length; i++) {
+        if (i < period - 1) {
+            result.push(null);
+            continue;
+        }
+        let sum = 0;
+        for (let j = 0; j < period; j++) {
+            sum += data[i - j];
+        }
+        result.push(sum / period);
+    }
+    return result;
+}
+
+function applyRvolColoring(candles) {
+    if (candles.length < 2) return candles;
+
+    const volumes = candles.map(c => c.volume || 0);
+    // Use smaller period if not enough data
+    const period = Math.min(20, candles.length);
+    const sma = calculateSMA(volumes, period);
+
+    return candles.map((c, i) => {
+        const s = sma[i];
+        if (!s || s === 0) return c;
+
+        const volumePercent = c.volume / s;
+        const isUp = c.close >= c.open;
+
+        let cCol;
+        if (volumePercent >= 3) {
+            cCol = isUp ? '#007504' : 'rgb(137, 1, 1)';
+        } else if (volumePercent >= 2) {
+            cCol = isUp ? 'rgb(3, 179, 9)' : '#d30101';
+        } else {
+            let opacity;
+            if (volumePercent >= 1.6) opacity = 0.9;
+            else if (volumePercent >= 1.2) opacity = 0.7;
+            else if (volumePercent >= 0.8) opacity = 0.4;
+            else if (volumePercent >= 0.5) opacity = 0.2;
+            else opacity = 0.1;
+
+            const r = isUp ? 3 : 211;
+            const g = isUp ? 179 : 1;
+            const b = isUp ? 9 : 1;
+            cCol = `rgba(${r}, ${g}, ${b}, ${opacity})`;
+        }
+
+        return { ...c, color: cCol, wickColor: cCol, borderColor: cCol };
+    });
+}
+
 function renderData() {
     if (fullHistory.candles.length === 0) return;
 
-    // Use a fresh copy to avoid mutation issues
-    candleSeries.setData([...fullHistory.candles].sort((a,b) => a.time - b.time));
+    // Apply RVOL coloring if candles don't already have explicit colors
+    let displayCandles = [...fullHistory.candles].sort((a,b) => a.time - b.time);
+    const hasExplicitColors = displayCandles.some(c => c.color && !c.color.startsWith('rgba(3, 179, 9'));
+
+    if (!hasExplicitColors) {
+        displayCandles = applyRvolColoring(displayCandles);
+    }
+
+    candleSeries.setData(displayCandles);
     volumeSeries.setData([...fullHistory.volume].sort((a,b) => a.time - b.time));
 
     // If we have markers, re-apply them
@@ -717,12 +775,21 @@ function setLoading(show) {
 function initZoomControls() {
     const btns = { in: 'zoomInBtn', out: 'zoomOutBtn', res: 'resetZoomBtn' };
     document.getElementById(btns.in).addEventListener('click', () => {
-        const ts = mainChart.timeScale(); ts.applyOptions({ barSpacing: ts.options().barSpacing * 1.2 });
+        mainChart.timeScale().zoomIn();
     });
     document.getElementById(btns.out).addEventListener('click', () => {
-        const ts = mainChart.timeScale(); ts.applyOptions({ barSpacing: ts.options().barSpacing * 0.8 });
+        mainChart.timeScale().zoomOut();
     });
-    document.getElementById(btns.res).addEventListener('click', () => mainChart.timeScale().fitContent());
+    document.getElementById(btns.res).addEventListener('click', () => {
+        mainChart.timeScale().reset();
+        const lastIndex = fullHistory.candles.length - 1;
+        if (lastIndex >= 0) {
+            mainChart.timeScale().setVisibleLogicalRange({
+                from: lastIndex - 100,
+                to: lastIndex + 5,
+            });
+        }
+    });
 }
 
 function initReplayControls() {
