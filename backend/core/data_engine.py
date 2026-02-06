@@ -67,11 +67,11 @@ def on_message(message: Union[Dict, str]):
     try:
         data = json.loads(message) if isinstance(message, str) else message
 
-        # Handle Chart/Indicator Updates
+        # Handle Chart/OHLCV Updates
         if data.get('type') == 'chart_update':
             hrn = data.get('instrumentKey')
-            logger.info(f"Routing chart_update for {hrn}")
-            emit_event('chart_update', data['data'], room=hrn)
+            if hrn:
+                emit_event('chart_update', data['data'], room=hrn)
             return
 
         feeds_map = data.get('feeds', {})
@@ -83,35 +83,33 @@ def on_message(message: Union[Dict, str]):
 
         for inst_key, feed_datum in feeds_map.items():
             hrn = symbol_mapper.get_hrn(inst_key)
-            feed_datum['instrumentKey'] = hrn
-            feed_datum['date'] = today_str
+            feed_datum.update({
+                'instrumentKey': hrn,
+                'date': today_str,
+                'last_price': float(feed_datum.get('last_price', 0)),
+                'source': feed_datum.get('source', 'tv_wss')
+            })
+
+            # Standardize Timestamp (Ensure milliseconds)
+            ts_val = feed_datum.get('ts_ms', int(time.time() * 1000))
+            if 0 < ts_val < 10000000000: ts_val *= 1000
+            feed_datum['ts_ms'] = ts_val
+
+            # Volume Logic (Delta calculation from cumulative volume)
+            delta_vol = 0
+            curr_vol = feed_datum.get('tv_volume')
+            if curr_vol is not None:
+                curr_vol = float(curr_vol)
+                if hrn in latest_total_volumes:
+                    delta_vol = max(0, curr_vol - latest_total_volumes[hrn])
+                latest_total_volumes[hrn] = curr_vol
+            feed_datum['ltq'] = int(delta_vol)
+
             hrn_feeds[hrn] = feed_datum
-
-            ff = feed_datum.get('fullFeed', {})
-            mff = ff.get('marketFF', {})
-            iff = ff.get('indexFF', {})
-            ltpc = iff.get('ltpc') or mff.get('ltpc')
-
-            if ltpc and ltpc.get('ltt'):
-                ts_val = int(ltpc['ltt'])
-                if 0 < ts_val < 10000000000: ts_val *= 1000
-                feed_datum['ts_ms'] = ts_val
-
-                if ltpc.get('ltp'):
-                    feed_datum['last_price'] = float(ltpc['ltp'])
-
-                # Volume Logic (Delta calculation)
-                delta_vol = 0
-                if feed_datum.get('tv_volume') is not None:
-                    curr_vol = float(feed_datum['tv_volume'])
-                    if hrn in latest_total_volumes:
-                        delta_vol = max(0, curr_vol - latest_total_volumes[hrn])
-                    latest_total_volumes[hrn] = curr_vol
-                feed_datum['ltq'] = int(delta_vol)
 
         # Throttled UI Emission
         now = time.time()
-        if now - last_emit_times.get('GLOBAL_TICK', 0) > 0.1:
+        if now - last_emit_times.get('GLOBAL_TICK', 0) > 0.05: # Increased frequency to 20Hz
             for hrn, feed in hrn_feeds.items():
                 emit_event('raw_tick', {hrn: feed}, room=hrn)
             last_emit_times['GLOBAL_TICK'] = now
@@ -128,7 +126,9 @@ def subscribe_instrument(instrument_key: str):
     wss = start_tv_wss(on_message)
     # Map common HRNs to WSS symbols
     mapping = {'NIFTY': 'NSE:NIFTY', 'BANKNIFTY': 'NSE:BANKNIFTY', 'FINNIFTY': 'NSE:CNXFINANCE'}
-    target = mapping.get(instrument_key, instrument_key).upper()
+    # Ensure uppercase for mapping lookup and WSS subscription
+    key_upper = instrument_key.upper()
+    target = mapping.get(key_upper, key_upper)
     wss.subscribe([target])
 
 def start_websocket_thread(token: str, keys: List[str]):
