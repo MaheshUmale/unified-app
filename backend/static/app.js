@@ -237,27 +237,31 @@ async function switchSymbol(symbol) {
 
         console.log(`Processed ${candles ? candles.length : 0} candles for ${currentSymbol}`);
 
+        if (candles && candles.length > 0) {
+            const chartData = candles.map(c => ({
+                time: typeof c.timestamp === 'number' ? c.timestamp : Math.floor(new Date(c.timestamp).getTime() / 1000),
+                open: c.open, high: c.high, low: c.low, close: c.close
+            })).sort((a, b) => a.time - b.time);
+            fullHistory.candles = chartData;
+            lastCandle = chartData[chartData.length - 1];
+        }
+
         // Handle historical indicators if present
         if (resData.indicators) {
             handleChartUpdate({ indicators: resData.indicators });
         }
 
         if (candles && candles.length > 0) {
-            const chartData = candles.map(c => ({
-                time: typeof c.timestamp === 'number' ? c.timestamp : Math.floor(new Date(c.timestamp).getTime() / 1000),
-                open: c.open, high: c.high, low: c.low, close: c.close
-            })).sort((a, b) => a.time - b.time);
             const volData = candles.map(c => ({
                 time: typeof c.timestamp === 'number' ? c.timestamp : Math.floor(new Date(c.timestamp).getTime() / 1000),
                 value: c.volume,
                 color: c.close >= c.open ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'
             })).sort((a, b) => a.time - b.time);
-            fullHistory.candles = chartData;
+
             fullHistory.volume = volData;
             if (!fullHistory.markers) fullHistory.markers = new Map();
 
             renderData();
-            lastCandle = chartData[chartData.length - 1];
             lastCandle.volume = candles[candles.length - 1].volume;
 
             // Set visible range to last 100 bars instead of fitContent
@@ -417,36 +421,44 @@ function handleChartUpdate(data) {
 
                 let series = indicatorSeries[key];
                 if (!series) {
-                    // Decide which price scale to use.
-                    // If it's price-based, it should be on 'right' but shouldn't compress the candles.
-                    // If it's an oscillator (small values), it should be on its own scale or hidden.
+                    // Determine if this is a price-based indicator or an oscillator (like z-score)
                     let targetScale = 'right';
-                    const isPriceBased = (lastCandle && Math.abs(val - lastCandle.close) / lastCandle.close < 0.5);
 
-                    if (!isPriceBased && val < 1000 && val > -1000) {
+                    // Use last candle or historical candles to estimate current price level
+                    const referencePrice = lastCandle ? lastCandle.close :
+                                         (fullHistory.candles.length > 0 ? fullHistory.candles[fullHistory.candles.length-1].close : null);
+
+                    // Heuristic: If value is small (< 1000) and far from current price, it's likely an oscillator.
+                    // Also check for specific keywords in title.
+                    const isOscillator = (val < 1000 && (!referencePrice || Math.abs(val - referencePrice) > referencePrice * 0.5));
+
+                    if (isOscillator && !title.toLowerCase().includes('pivot') && !title.toLowerCase().includes('vwap') && !title.toLowerCase().includes('ma')) {
                         targetScale = 'oscillator';
-                        if (!mainChart.priceScale(targetScale)) {
-                            mainChart.priceScale(targetScale).applyOptions({
-                                visible: false, // Keep oscillators hidden from Y-axis but visible on chart
-                            });
-                        }
+                        mainChart.priceScale(targetScale).applyOptions({
+                            visible: false, // Keep oscillators hidden from Y-axis
+                        });
                     }
 
                     const commonOptions = {
                         title: title,
                         priceScaleId: targetScale,
-                        autoscaleInfoProvider: () => null, // Let LWC decide, but we might clip
+                        // By default, return null for priceRange to exclude from auto-scaling.
+                        // This prevents oscillators on the main scale from squashing candles.
+                        autoscaleInfoProvider: () => ({ priceRange: null }),
                     };
 
-                    // For right-scale indicators that are NOT the main candles,
-                    // we want them to NOT affect the auto-scaling of the price axis if they go out of bounds.
+                    // For indicators on the main price scale, we only want them to scale
+                    // if they are actually within a reasonable range of the price.
                     if (targetScale === 'right') {
-                        commonOptions.autoscaleInfoProvider = () => ({
-                            priceRange: {
-                                minValue: lastCandle ? lastCandle.low * 0.9 : 0,
-                                maxValue: lastCandle ? lastCandle.high * 1.1 : 1e10,
-                            }
-                        });
+                        commonOptions.autoscaleInfoProvider = () => {
+                            if (!lastCandle) return null;
+                            return {
+                                priceRange: {
+                                    minValue: lastCandle.low * 0.8,
+                                    maxValue: lastCandle.high * 1.2,
+                                }
+                            };
+                        };
                     }
 
                     if (plottype === 1 || plottype === 2) {
