@@ -20,6 +20,7 @@ class ChartInstance {
         this.fullHistory = { candles: [], volume: [] };
         this.drawings = [];
         this.showIndicators = true;
+        this.hiddenPlots = new Set();
 
         // Replay State
         this.isReplayMode = false;
@@ -66,8 +67,12 @@ class ChartInstance {
                     this.stepReplay(0);
                     updateReplayUI(this);
                 }
-            } else if (param.price && window.event && window.event.shiftKey) {
-                this.addHorizontalLine(param.price);
+            } else if (param.price) {
+                const hlineBtn = document.getElementById('drawingToolBtn');
+                const isHlineActive = hlineBtn && hlineBtn.classList.contains('bg-blue-600');
+                if (isHlineActive || (window.event && window.event.shiftKey)) {
+                    this.addHorizontalLine(param.price);
+                }
             }
         });
 
@@ -243,33 +248,54 @@ class ChartInstance {
             Object.entries(row).forEach(([key, val]) => {
                 if (['timestamp', 'Bar_Color'].includes(key) || key.endsWith('_meta') || key.endsWith('_color')) return;
                 if (val === null || val === undefined) return;
-                const meta = row[`${key}_meta`];
-                const color = tvColorToRGBA(row[`${key}_color`] || (meta ? meta.color : null));
 
-                if (meta && (meta.title.includes('Bubble') || meta.title.includes('S') || meta.title.includes('R'))) {
-                    let shape = 'circle', position = 'inBar', text = '', size = 1;
-                    if (meta.title.includes('Bubble')) { position = 'aboveBar'; size = 2; }
-                    else if (meta.title.includes('S')) { position = 'belowBar'; shape = meta.title.includes('3') ? 'square' : 'circle'; size = meta.title.includes('3') ? 1 : meta.title.includes('2') ? 0.5 : 0.2; }
-                    else if (meta.title.includes('R')) { position = 'aboveBar'; shape = meta.title.includes('3') ? 'square' : 'circle'; size = meta.title.includes('3') ? 1 : meta.title.includes('2') ? 0.5 : 0.2; }
-                    markers.push({ time, position, color: color || '#3b82f6', shape, size, text });
+                const meta = row[`${key}_meta`];
+                const color = tvColorToRGBA(row[`${key}_color`] || (meta ? meta.color : null)) || '#3b82f6';
+
+                // Only treat as markers if explicitly a Bubble or identified marker type
+                // The image shows that Support/Resistance levels (S/R) are being forced to markers
+                // Let's only use markers for Bubble and things that aren't numeric levels if possible
+                // Actually, if it has a numeric value, it's better as a line or scatter segment.
+
+                if (meta && meta.title.includes('Bubble')) {
+                    markers.push({ time, position: 'aboveBar', color, shape: 'circle', size: 2, text: '' });
                 } else {
-                    if (!seriesUpdates[key]) seriesUpdates[key] = [];
-                    seriesUpdates[key].push({ time, value: val, color });
+                    if (!seriesUpdates[key]) seriesUpdates[key] = { points: [], meta, color };
+                    seriesUpdates[key].points.push({ time, value: val, color });
                 }
             });
         });
 
         if (markers.length > 0) {
             markers.sort((a, b) => a.time - b.time);
-            this.candleSeries.setMarkers(markers);
+            this.candleSeries.setMarkers(this.showIndicators ? markers : []);
         }
-        Object.entries(seriesUpdates).forEach(([key, points]) => {
+
+        let newlyAdded = false;
+        Object.entries(seriesUpdates).forEach(([key, data]) => {
             if (!this.indicatorSeries[key]) {
-                this.indicatorSeries[key] = this.chart.addLineSeries({ title: key, lineWidth: 2, priceScaleId: 'right', autoscaleInfoProvider: () => null });
+                const meta = data.meta;
+                const title = meta ? meta.title : key;
+                this.indicatorSeries[key] = this.chart.addLineSeries({
+                    title: title,
+                    color: data.color,
+                    lineWidth: meta ? (meta.linewidth || 1) : 1,
+                    lineStyle: meta && meta.linestyle === 1 ? LightweightCharts.LineStyle.Dashed : LightweightCharts.LineStyle.Solid,
+                    priceScaleId: 'right',
+                    autoscaleInfoProvider: () => null,
+                    visible: this.showIndicators && !this.hiddenPlots.has(key)
+                });
+                newlyAdded = true;
             }
-            points.sort((a, b) => a.time - b.time);
-            this.indicatorSeries[key].setData(points);
+            data.points.sort((a, b) => a.time - b.time);
+            this.indicatorSeries[key].setData(data.points);
         });
+
+        if (newlyAdded && this.index === activeChartIndex) {
+            if (!document.getElementById('indicatorPanel').classList.contains('hidden')) {
+                populateIndicatorList();
+            }
+        }
     }
 
     stepReplay(delta) {
@@ -317,6 +343,7 @@ let currentLayout = 1;
 function init() {
     loadLayout();
     initLayoutSelector();
+    initIndicatorPanel();
     initDrawingControls();
     initTimeframeUI();
     initSearch();
@@ -358,8 +385,14 @@ function updateHeaderUI() {
     // Update indicator toggle button
     const indBtn = document.getElementById('toggleIndicatorsBtn');
     if (indBtn) {
+        indBtn.innerText = chart.showIndicators ? 'HIDE ALL' : 'SHOW ALL';
         indBtn.classList.toggle('bg-blue-600', chart.showIndicators);
         indBtn.classList.toggle('bg-gray-800', !chart.showIndicators);
+    }
+
+    // Refresh indicator list if panel is open
+    if (!document.getElementById('indicatorPanel').classList.contains('hidden')) {
+        populateIndicatorList();
     }
 }
 
@@ -406,6 +439,7 @@ function setLayout(n) {
             chartInstance.symbol = saved.symbol || 'NSE:NIFTY';
             chartInstance.interval = saved.interval || '1';
             chartInstance.showIndicators = saved.showIndicators !== undefined ? saved.showIndicators : true;
+            chartInstance.hiddenPlots = new Set(saved.hiddenPlots || []);
             chartInstance.switchSymbol(chartInstance.symbol, chartInstance.interval).then(() => {
                 if (saved.drawings) {
                     saved.drawings.forEach(d => {
@@ -469,10 +503,10 @@ function displaySearchResults(symbols) {
     if (symbols.length === 0) { resultsDiv.classList.add('hidden'); return; }
     symbols.forEach(s => {
         const item = document.createElement('div');
-        item.className = 'search-item px-3 py-2 hover:bg-gray-800 cursor-pointer border-b border-gray-800 last:border-0';
+        item.className = 'search-item px-3 py-2 cursor-pointer border-b border-white/5 last:border-0';
         item.innerHTML = `
-            <div class="text-[10px] font-black text-blue-400">${s.symbol}</div>
-            <div class="text-[8px] text-gray-500 uppercase truncate">${s.description} | ${s.exchange}</div>
+            <div class="text-[11px] font-black text-blue-400 tracking-tight">${s.symbol}</div>
+            <div class="text-[9px] text-gray-300 uppercase truncate mt-0.5 font-semibold">${s.description} <span class="text-gray-500 mx-1">|</span> <span class="text-blue-500/80">${s.exchange}</span></div>
         `;
         item.addEventListener('click', () => {
             const cleanSymbol = s.symbol.replace(/<\/?[^>]+(>|$)/g, "");
@@ -541,6 +575,7 @@ function saveLayout() {
             symbol: c.symbol,
             interval: c.interval,
             showIndicators: c.showIndicators,
+            hiddenPlots: Array.from(c.hiddenPlots),
             drawings: c.drawings.map(d => ({ type: d.type, price: d.price, color: d.color }))
         };
         localStorage.setItem(`chart_config_${i}`, JSON.stringify(config));
@@ -564,10 +599,18 @@ function normalizeSymbol(sym) {
 
 function tvColorToRGBA(color) {
     if (color === null || color === undefined) return null;
-    if (typeof color !== 'number') return color;
-    let a = ((color >>> 24) & 0xFF) / 255;
-    if (a === 0) a = 1;
-    return `rgba(${(color >>> 16) & 0xFF}, ${(color >>> 8) & 0xFF}, ${color & 0xFF}, ${a})`;
+    if (typeof color === 'string') return color;
+    if (typeof color === 'number') {
+        // TradingView uses ARGB or similar. If it's a negative number, it's often a bitmask.
+        // Convert to unsigned
+        const uColor = color >>> 0;
+        const a = ((uColor >> 24) & 0xFF) / 255;
+        const r = (uColor >> 16) & 0xFF;
+        const g = (uColor >> 8) & 0xFF;
+        const b = uColor & 0xFF;
+        return `rgba(${r}, ${g}, ${b}, ${a === 0 ? 1 : a})`;
+    }
+    return null;
 }
 
 function applyRvolColoring(candles) {
@@ -625,12 +668,108 @@ function initZoomControls() {
     });
 }
 
+function initIndicatorPanel() {
+    document.getElementById('manageIndicatorsBtn').addEventListener('click', () => {
+        const panel = document.getElementById('indicatorPanel');
+        panel.classList.toggle('hidden');
+        if (!panel.classList.contains('hidden')) {
+            populateIndicatorList();
+        }
+    });
+    document.getElementById('closeIndicatorPanel').addEventListener('click', () => {
+        document.getElementById('indicatorPanel').classList.add('hidden');
+    });
+}
+
+function populateIndicatorList() {
+    const chart = charts[activeChartIndex];
+    if (!chart) return;
+    const list = document.getElementById('indicatorList');
+    list.innerHTML = '';
+
+    // Plots section
+    const plotsHeader = document.createElement('div');
+    plotsHeader.className = 'text-[9px] font-black text-gray-500 mb-2 mt-2 uppercase tracking-tighter';
+    plotsHeader.innerText = 'Plots';
+    list.appendChild(plotsHeader);
+
+    Object.entries(chart.indicatorSeries).forEach(([key, series]) => {
+        const title = series.options().title || key;
+        const item = document.createElement('div');
+        item.className = 'flex items-center justify-between bg-white/5 p-2 rounded-lg';
+
+        const isHidden = chart.hiddenPlots.has(key);
+
+        item.innerHTML = `
+            <span class="text-[10px] font-bold text-gray-300 truncate mr-2">${title}</span>
+            <button class="toggle-plot-btn text-[9px] font-black px-2 py-1 rounded ${isHidden ? 'bg-red-500/20 text-red-400' : 'bg-green-500/20 text-green-400'}" data-key="${key}">
+                ${isHidden ? 'HIDDEN' : 'VISIBLE'}
+            </button>
+        `;
+
+        item.querySelector('.toggle-plot-btn').addEventListener('click', (e) => {
+            if (chart.hiddenPlots.has(key)) {
+                chart.hiddenPlots.delete(key);
+                series.applyOptions({ visible: chart.showIndicators });
+            } else {
+                chart.hiddenPlots.add(key);
+                series.applyOptions({ visible: false });
+            }
+            populateIndicatorList();
+            saveLayout();
+        });
+
+        list.appendChild(item);
+    });
+
+    if (Object.keys(chart.indicatorSeries).length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'text-[10px] text-gray-500 italic mb-4';
+        empty.innerText = 'No indicators loaded';
+        list.appendChild(empty);
+    }
+
+    // Drawings section
+    const drawingsHeader = document.createElement('div');
+    drawingsHeader.className = 'text-[9px] font-black text-gray-500 mb-2 mt-4 uppercase tracking-tighter';
+    drawingsHeader.innerText = 'Drawings';
+    list.appendChild(drawingsHeader);
+
+    chart.drawings.forEach((d, i) => {
+        const item = document.createElement('div');
+        item.className = 'flex items-center justify-between bg-white/5 p-2 rounded-lg mb-2';
+        item.innerHTML = `
+            <span class="text-[10px] font-bold text-blue-400 truncate mr-2">HLINE @ ${d.price.toFixed(2)}</span>
+            <button class="remove-draw-btn text-[9px] font-black px-2 py-1 rounded bg-red-500/20 text-red-400">
+                REMOVE
+            </button>
+        `;
+        item.querySelector('.remove-draw-btn').addEventListener('click', () => {
+            if (d.line) chart.candleSeries.removePriceLine(d.line);
+            chart.drawings.splice(i, 1);
+            populateIndicatorList();
+            saveLayout();
+        });
+        list.appendChild(item);
+    });
+
+    if (chart.drawings.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'text-[10px] text-gray-500 italic';
+        empty.innerText = 'No drawings';
+        list.appendChild(empty);
+    }
+}
+
 function initDrawingControls() {
     document.getElementById('toggleIndicatorsBtn').addEventListener('click', () => {
         const chart = charts[activeChartIndex];
         if (!chart) return;
         chart.showIndicators = !chart.showIndicators;
-        Object.values(chart.indicatorSeries).forEach(s => s.applyOptions({ visible: chart.showIndicators }));
+        Object.values(chart.indicatorSeries).forEach(s => {
+            const key = Object.keys(chart.indicatorSeries).find(k => chart.indicatorSeries[k] === s);
+            s.applyOptions({ visible: chart.showIndicators && !chart.hiddenPlots.has(key) });
+        });
         updateHeaderUI();
         saveLayout();
     });

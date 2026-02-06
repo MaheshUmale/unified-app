@@ -26,6 +26,11 @@
         .chart-wrapper.active { border-color: #3b82f6; }
         .chart-container { width: 100%; height: 100%; }
         .chart-label { position: absolute; top: 10px; left: 10px; z-index: 10; pointer-events: none; background: rgba(0,0,0,0.5); padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; }
+
+        /* Search results visibility */
+        .search-item { transition: background-color 0.2s; }
+        .search-item:hover { background-color: rgba(59, 130, 246, 0.2) !important; }
+        .search-item em { font-style: normal; color: #fff; background-color: rgba(59, 130, 246, 0.4); border-radius: 2px; padding: 0 1px; }
     </style>
 </head>
 <body class="h-full flex flex-col">
@@ -63,7 +68,8 @@
 
             <div class="flex items-center gap-2 shrink-0">
                 <div id="normalControls" class="flex items-center gap-2">
-                    <button id="toggleIndicatorsBtn" class="text-[10px] font-bold px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded-full text-white transition-colors">IND</button>
+                    <button id="manageIndicatorsBtn" class="text-[10px] font-bold px-3 py-1 bg-gray-800 hover:bg-gray-700 rounded-full text-gray-300 transition-colors">INDICATORS</button>
+                    <button id="toggleIndicatorsBtn" class="text-[10px] font-bold px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded-full text-white transition-colors">HIDE ALL</button>
                     <button id="drawingToolBtn" class="text-[10px] font-bold px-3 py-1 bg-gray-800 hover:bg-gray-700 rounded-full text-gray-300 transition-colors" title="Shift+Click to place Horizontal Line">HLINE</button>
                     <button id="clearDrawingsBtn" class="text-[10px] font-bold px-3 py-1 bg-gray-800 hover:bg-gray-700 rounded-full text-gray-300 transition-colors">CLEAR</button>
                     <button id="replayModeBtn" class="text-[10px] font-bold px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded-full text-white transition-colors">REPLAY</button>
@@ -99,6 +105,19 @@
     <main class="flex-1 p-1 flex flex-col overflow-hidden bg-black relative">
         <div id="chartsContainer" class="grid grid-cols-1 grid-rows-1 gap-1 w-full h-full">
             <!-- Charts will be injected here by app.js -->
+        </div>
+
+        <!-- Indicator Management Panel -->
+        <div id="indicatorPanel" class="hidden absolute top-4 right-4 w-64 glass-panel rounded-xl p-4 z-[60] shadow-2xl border border-white/10">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xs font-black uppercase italic tracking-wider">Indicator Plots</h3>
+                <button id="closeIndicatorPanel" class="text-gray-400 hover:text-white">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <div id="indicatorList" class="space-y-2 max-h-96 overflow-y-auto custom-scrollbar">
+                <!-- Plot items injected by app.js -->
+            </div>
         </div>
     </main>
 

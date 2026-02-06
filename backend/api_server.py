@@ -86,13 +86,22 @@ async def health_check():
 
 @fastapi_app.get("/api/tv/search")
 async def tv_search(text: str = Query(..., min_length=1)):
-    """Proxies TradingView symbol search."""
+    """Proxies TradingView symbol search with improved handling for prefixed symbols."""
     import httpx
-    url = f"https://symbol-search.tradingview.com/symbol_search/v3/?text={text}&hl=1&exchange=&lang=en&search_type=undefined&domain=production&sort_by_country=IN&promo=true"
+
+    exchange = ""
+    search_text = text
+    if ":" in text:
+        parts = text.split(":", 1)
+        exchange = parts[0]
+        search_text = parts[1]
+
+    url = f"https://symbol-search.tradingview.com/symbol_search/v3/?text={search_text}&hl=1&exchange={exchange}&lang=en&search_type=&domain=production&sort_by_country=IN"
+
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Referer': 'https://in.tradingview.com/',
-        'Origin': 'https://in.tradingview.com'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Referer': 'https://www.tradingview.com/',
+        'Origin': 'https://www.tradingview.com'
     }
     try:
         async with httpx.AsyncClient() as client:
