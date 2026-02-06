@@ -111,11 +111,12 @@ class TradingViewWSS:
     def get_indicator_metadata(self, indicator_id, version="last"):
         url = f"https://pine-facade.tradingview.com/pine-facade/translate/{indicator_id}/{version}"
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-        response = requests.get(url, headers=headers, cookies=TV_COOKIE)
         try:
+            response = requests.get(url, headers=headers, cookies=TV_COOKIE, timeout=10)
             data = response.json()
-        except:
-            raise Exception(f"Invalid JSON response from TradingView metadata API: {response.status_code}")
+        except Exception as e:
+            logger.error(f"Error fetching indicator metadata: {e}")
+            raise Exception(f"Failed to fetch indicator metadata: {e}")
         if not isinstance(data, dict) or not data.get("success"):
             raise Exception(f"Failed to get indicator metadata: {data.get('reason') if isinstance(data, dict) else 'Unknown error'}")
         result = data.get("result", {})

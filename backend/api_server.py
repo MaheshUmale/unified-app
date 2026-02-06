@@ -17,6 +17,7 @@ from config import LOGGING_CONFIG, INITIAL_INSTRUMENTS
 from core import data_engine
 from core.symbol_mapper import symbol_mapper
 from external.tv_api import tv_api
+from external.tv_scanner import search_options
 from datetime import datetime
 from urllib.parse import unquote
 
@@ -111,6 +112,30 @@ async def tv_search(text: str = Query(..., min_length=1)):
         logger.error(f"Search proxy error: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch search results")
 
+@fastapi_app.get("/api/tv/options")
+async def get_tv_options(underlying: str = Query(...)):
+    """Fetches options for a given underlying."""
+    data = await search_options(underlying)
+    if not data:
+        raise HTTPException(status_code=500, detail="Failed to fetch options")
+
+    # Format results for frontend search dropdown
+    results = []
+    for item in data.get('data', []):
+        # item['d'] contains the columns in order
+        d = item.get('d', [])
+        if len(d) >= 8:
+            name = d[0]
+            desc = d[1]
+            exch = d[2]
+            results.append({
+                "symbol": name,
+                "description": desc,
+                "exchange": exch,
+                "type": "option"
+            })
+    return {"symbols": results}
+
 @fastapi_app.get("/api/tv/intraday/{instrument_key}")
 async def get_intraday(instrument_key: str, interval: str = '1'):
     """Fetch intraday candles from TradingView."""
@@ -133,14 +158,15 @@ async def get_intraday(instrument_key: str, interval: str = '1'):
         # Fetch high-quality historical candles from API
         tv_candles = await asyncio.to_thread(tv_api.get_hist_candles, clean_key, interval, 1000)
 
-        # If we have WSS history, we might want to append the very latest candles
-        # from WSS if they are newer than what the API returned.
-        if tv_candles and wss_candles:
+        # If API failed, use WSS candles
+        if not tv_candles:
+            tv_candles = wss_candles
+        elif wss_candles:
             # tv_api.get_hist_candles returns newest first.
             newest_api_ts = tv_candles[0][0]
 
             # Check if wss_candles has valid timestamps (> 1e9)
-            if wss_candles[0][0] > 1e9:
+            if len(wss_candles) > 0 and wss_candles[0][0] > 1e9:
                 merged_map = {c[0]: c for c in tv_candles}
                 for c in wss_candles:
                     # c[0] is timestamp
