@@ -205,6 +205,7 @@ class TradingViewWSS:
         # Heartbeat check - TV WSS sends ~m~<len>~m~~h~<num>
         if "~h~" in message:
             try:
+                logger.info("TV WSS Heartbeat received")
                 ws.send(message)
             except Exception as e:
                 logger.error(f"Error sending heartbeat: {e}")
@@ -221,10 +222,13 @@ class TradingViewWSS:
                 p = data.get("p", [])
 
                 if m_type == "qsd" and len(p) > 1:
+                    logger.info("TV WSS Quote data received")
                     self._handle_qsd(p[1])
                 elif m_type in ["timescale_update", "du"] and len(p) > 1:
+                    logger.info("TV WSS Chart data received")
                     self._handle_chart_update(p[1])
-
+                else :
+                    logger.info(f" m_type = {m_type}    : : :    p = {p}")
             except Exception as e:
                 pass
 
@@ -232,6 +236,7 @@ class TradingViewWSS:
         symbol = quote_data["n"]
         clean_symbol = symbol[1:] if symbol.startswith('=') else symbol
         values = quote_data.get("v", {})
+        logger.info(f"TV WSS Quote data for {clean_symbol}: {values}")
 
         # Update tracked values
         if 'lp' in values: self.last_prices[clean_symbol] = values['lp']
