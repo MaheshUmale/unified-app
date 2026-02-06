@@ -10,16 +10,20 @@ logger = logging.getLogger(__name__)
 class SymbolMapper:
     _instance = None
     _mapping_cache: Dict[str, str] = {
-        "NSE_INDEX|Nifty 50": "NIFTY",
-        "NSE_INDEX|Nifty Bank": "BANKNIFTY",
-        "NSE_INDEX|Nifty Fin Service": "FINNIFTY",
-        "NSE_INDEX|India VIX": "INDIA VIX"
+        "NSE_INDEX|NIFTY 50": "NIFTY",
+        "NSE_INDEX|NIFTY BANK": "BANKNIFTY",
+        "NSE_INDEX|NIFTY FIN SERVICE": "FINNIFTY",
+        "NSE_INDEX|INDIA VIX": "INDIA VIX",
+        "NSE|NIFTY": "NIFTY",
+        "NSE|BANKNIFTY": "BANKNIFTY",
+        "NSE|CNXFINANCE": "FINNIFTY",
+        "NSE|INDIAVIX": "INDIA VIX"
     } # instrument_key -> HRN
     _reverse_cache: Dict[str, str] = {
-        "NIFTY": "NSE_INDEX|Nifty 50",
-        "BANKNIFTY": "NSE_INDEX|Nifty Bank",
-        "FINNIFTY": "NSE_INDEX|Nifty Fin Service",
-        "INDIA VIX": "NSE_INDEX|India VIX"
+        "NIFTY": "NSE|NIFTY",
+        "BANKNIFTY": "NSE|BANKNIFTY",
+        "FINNIFTY": "NSE|CNXFINANCE",
+        "INDIA VIX": "NSE|INDIAVIX"
     } # HRN -> instrument_key
 
     def __new__(cls):
@@ -34,8 +38,8 @@ class SymbolMapper:
         """
         if not instrument_key: return ""
 
-        # Standardize input key
-        key = instrument_key.replace(':', '|')
+        # Standardize input key - Uppercase is essential for consistent room routing
+        key = instrument_key.upper().replace(':', '|')
 
         if key in self._mapping_cache:
             return self._mapping_cache[key]

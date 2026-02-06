@@ -12,6 +12,7 @@ let mainChart = null;
 let candleSeries = null;
 let volumeSeries = null;
 let lastCandle = null;
+let indicatorSeries = {}; // Registry for indicator series
 
 // Replay State
 let isReplayMode = false;
@@ -195,6 +196,11 @@ async function switchSymbol(symbol) {
     currentSymbol = symbol;
     lastCandle = null;
 
+    // Clear indicator series
+    Object.values(indicatorSeries).forEach(s => mainChart.removeSeries(s));
+    indicatorSeries = {};
+    candleSeries.setMarkers([]);
+
     setLoading(true);
     try {
         const resData = await fetchIntraday(currentSymbol, currentInterval);
@@ -326,12 +332,15 @@ function initSocket() {
 }
 
 function handleTickUpdate(quotes) {
-    // If we're getting fresh chart updates, prefer them over raw ticks to avoid conflicts
-    if (Date.now() - lastChartUpdateTime < 2000) return;
-
+    const currentUpper = currentSymbol.toUpperCase();
     const currentNorm = normalizeSymbol(currentSymbol);
     for (const [key, quote] of Object.entries(quotes)) {
-        if (normalizeSymbol(key) === currentNorm) { updateRealtimeCandle(quote); break; }
+        const keyUpper = key.toUpperCase();
+        // Match either normalized symbol (e.g. BTCUSD) or full technical key (COINBASE:BTCUSD)
+        if (keyUpper === currentUpper || normalizeSymbol(key) === currentNorm) {
+            updateRealtimeCandle(quote);
+            break;
+        }
     }
 }
 
@@ -340,10 +349,8 @@ let lastChartUpdateTime = 0;
 function tvColorToRGBA(color) {
     if (color === null || color === undefined) return null;
     if (typeof color !== 'number') return color;
-    // TradingView alpha is sometimes inverted or different.
-    // We try to ensure it's at least partially visible if it's very transparent.
     let a = ((color >>> 24) & 0xFF) / 255;
-    if (a < 0.2) a = 0.6; // Boost visibility if too transparent
+    if (a === 0) a = 1; // Default to opaque if 0
 
     const r = (color >>> 16) & 0xFF;
     const g = (color >>> 8) & 0xFF;
@@ -351,12 +358,13 @@ function tvColorToRGBA(color) {
     return `rgba(${r}, ${g}, ${b}, ${a})`;
 }
 
-
 function handleChartUpdate(data) {
     lastChartUpdateTime = Date.now();
+
+    // Clear old indicators if symbol changed (handled by fullHistory reset usually)
+
     if (data.ohlcv && data.ohlcv.length > 0) {
         // Handle OHLCV update from chart session
-        // Check if v[0] is index or timestamp.
         // Timestamps are usually > 1e9.
         const isTimestamp = data.ohlcv[0][0] > 1e9;
 
@@ -372,65 +380,138 @@ function handleChartUpdate(data) {
             }));
 
             if (candles.length > 1) {
-            fullHistory.candles = candles;
-            fullHistory.volume = vol;
-            if (!fullHistory.markers) fullHistory.markers = new Map();
-            renderData();
-            lastCandle = candles[candles.length - 1];
-            lastCandle.volume = data.ohlcv[data.ohlcv.length-1][5];
-        } else if (candles.length === 1) {
-            if (lastCandle && candles[0].time >= lastCandle.time) {
-                candleSeries.update(candles[0]);
-                volumeSeries.update(vol[0]);
+                fullHistory.candles = candles;
+                fullHistory.volume = vol;
+                lastCandle = candles[candles.length - 1];
+                lastCandle.volume = data.ohlcv[data.ohlcv.length-1][5];
+                renderData();
+            } else if (candles.length === 1) {
+                const newCandle = candles[0];
+                const newVol = vol[0];
 
-                // Update fullHistory to keep it synced
-                const idx = fullHistory.candles.findIndex(c => c.time === candles[0].time);
-                if (idx !== -1) {
-                    fullHistory.candles[idx] = candles[0];
-                    fullHistory.volume[idx] = vol[0];
-                } else {
-                    fullHistory.candles.push(candles[0]);
-                    fullHistory.volume.push(vol[0]);
+                if (lastCandle && newCandle.time >= lastCandle.time) {
+                    candleSeries.update(newCandle);
+                    volumeSeries.update(newVol);
+
+                    // Update fullHistory to keep it synced
+                    const idx = fullHistory.candles.findIndex(c => c.time === newCandle.time);
+                    if (idx !== -1) {
+                        fullHistory.candles[idx] = newCandle;
+                        fullHistory.volume[idx] = newVol;
+                    } else {
+                        fullHistory.candles.push(newCandle);
+                        fullHistory.volume.push(newVol);
+                    }
+
+                    lastCandle = {...newCandle, volume: newVol.value};
+                } else if (!lastCandle) {
+                    fullHistory.candles = [newCandle];
+                    fullHistory.volume = [newVol];
+                    renderData();
+                    lastCandle = {...newCandle, volume: newVol.value};
                 }
-
-                lastCandle = {...candles[0], volume: vol[0].value};
             }
         }
     }
+
+    if (data.indicators && data.indicators.length > 0) {
+        processIndicators(data.indicators);
+    }
 }
 
-    // Indicator and graphics handling removed per user request
+function processIndicators(indicators) {
+    const markers = [];
+    const seriesUpdates = {};
+
+    indicators.forEach(row => {
+        const time = Math.floor(row.timestamp);
+
+        // Find Bar Color
+        if (row.Bar_Color !== undefined) {
+            const candle = fullHistory.candles.find(c => c.time === time);
+            if (candle) {
+                const color = tvColorToRGBA(row.Bar_Color);
+                candle.color = color;
+                candle.wickColor = color;
+                candle.borderColor = color;
+                candle.hasExplicitColor = true;
+            }
+        }
+
+        // Process Plots
+        Object.entries(row).forEach(([key, val]) => {
+            if (key === 'timestamp' || key === 'Bar_Color' || key.endsWith('_meta') || key.endsWith('_color')) return;
+            if (val === null || val === undefined) return;
+
+            const meta = row[`${key}_meta`];
+            const color = tvColorToRGBA(row[`${key}_color`] || (meta ? meta.color : null));
+
+            if (meta && (meta.title.includes('Bubble') || meta.title.includes('S') || meta.title.includes('R'))) {
+                // Marker indicators
+                let shape = 'circle';
+                let position = 'inBar';
+                let text = '';
+                let size = 1;
+
+                if (meta.title.includes('Bubble')) {
+                    position = 'aboveBar';
+                    size = 2;
+                } else if (meta.title.includes('S')) {
+                    position = 'belowBar';
+                    shape = meta.title.includes('3') ? 'square' : 'circle';
+                    size = meta.title.includes('3') ? 1 : meta.title.includes('2') ? 0.5 : 0.2;
+                } else if (meta.title.includes('R')) {
+                    position = 'aboveBar';
+                    shape = meta.title.includes('3') ? 'square' : 'circle';
+                    size = meta.title.includes('3') ? 1 : meta.title.includes('2') ? 0.5 : 0.2;
+                }
+
+                markers.push({
+                    time: time,
+                    position: position,
+                    color: color || '#3b82f6',
+                    shape: shape,
+                    size: size,
+                    text: text
+                });
+            } else {
+                // Line indicators
+                if (!seriesUpdates[key]) seriesUpdates[key] = [];
+                seriesUpdates[key].push({ time: time, value: val, color: color });
+            }
+        });
+    });
+
+    // Update markers
+    if (markers.length > 0) {
+        markers.sort((a,b) => a.time - b.time);
+        candleSeries.setMarkers(markers);
+    }
+
+    // Update Line Series
+    Object.entries(seriesUpdates).forEach(([key, points]) => {
+        if (!indicatorSeries[key]) {
+            indicatorSeries[key] = mainChart.addLineSeries({
+                title: key,
+                lineWidth: 2,
+                priceScaleId: 'right',
+                autoscaleInfoProvider: () => null, // Don't let indicators squash the price scale
+            });
+        }
+        points.sort((a,b) => a.time - b.time);
+        indicatorSeries[key].setData(points);
+    });
 }
 
 function updateRealtimeCandle(quote) {
-    if (!candleSeries) return;
+    if (!candleSeries || isReplayMode) return;
 
     // Map interval to duration in seconds
     const intervalMap = { '1': 60, '5': 300, '15': 900, '30': 1800, '60': 3600, 'D': 86400, 'W': 604800 };
     const duration = intervalMap[currentInterval] || 60;
 
-    // Adjust for IST offset (5.5 hours) for day boundary calculations
-    const IST_OFFSET = 5.5 * 3600;
     const tickTime = Math.floor(quote.ts_ms / 1000);
-
-    // Drop ticks outside market hours (9:15 - 15:30 IST) for NSE symbols
-    if (currentSymbol.startsWith('NSE:') && !['D', 'W'].includes(currentInterval)) {
-        const date = new Date(tickTime * 1000);
-        const istTime = new Intl.DateTimeFormat('en-GB', {
-            timeZone: 'Asia/Kolkata', hour: 'numeric', minute: 'numeric', hourCycle: 'h23'
-        }).format(date);
-        const [h, m] = istTime.split(':').map(Number);
-        const mins = h * 60 + m;
-        if (mins < 555 || mins > 930) return;
-    }
-
-    // For intervals >= 1 Day, we need to snap to IST midnight, not UTC midnight
-    let candleTime;
-    if (duration >= 86400) {
-        candleTime = (Math.floor((tickTime + IST_OFFSET) / duration) * duration) - IST_OFFSET;
-    } else {
-        candleTime = tickTime - (tickTime % duration);
-    }
+    const candleTime = tickTime - (tickTime % duration);
 
     const price = Number(quote.last_price);
     if (isNaN(price) || price <= 0) return;
@@ -438,14 +519,21 @@ function updateRealtimeCandle(quote) {
 
     if (!lastCandle || candleTime > lastCandle.time) {
         if (lastCandle) {
-            fullHistory.candles.push({...lastCandle});
-            fullHistory.volume.push({
-                time: lastCandle.time, value: lastCandle.volume,
-                color: lastCandle.close >= lastCandle.open ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'
-            });
+            // Check if lastCandle is already in fullHistory
+            if (!fullHistory.candles.some(c => c.time === lastCandle.time)) {
+                fullHistory.candles.push({...lastCandle});
+                fullHistory.volume.push({
+                    time: lastCandle.time, value: lastCandle.volume,
+                    color: lastCandle.close >= lastCandle.open ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'
+                });
+            }
         }
         lastCandle = { time: candleTime, open: price, high: price, low: price, close: price, volume: ltq };
-        renderData();
+        candleSeries.update(lastCandle);
+        volumeSeries.update({
+            time: candleTime, value: ltq,
+            color: 'rgba(59, 130, 246, 0.5)'
+        });
     } else if (candleTime === lastCandle.time) {
         lastCandle.close = price;
         lastCandle.high = Math.max(lastCandle.high, price);
@@ -533,7 +621,7 @@ function renderData() {
 
 function normalizeSymbol(sym) {
     if (!sym) return "";
-    let s = sym.toUpperCase().trim();
+    let s = String(sym).toUpperCase().trim();
     if (s.includes(':')) s = s.split(':')[1];
     if (s.includes('|')) s = s.split('|')[1];
     if (s === "NIFTY 50") return "NIFTY";
