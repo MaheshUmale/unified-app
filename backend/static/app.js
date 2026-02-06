@@ -196,7 +196,7 @@ async function switchSymbol(symbol) {
     lastCandle = null;
 
     // Clear previous indicators
-    Object.values(indicatorSeries).forEach(s => mainChart.removeSeries(s));
+    Object.values(indicatorSeries).forEach(obj => mainChart.removeSeries(obj.series));
     indicatorSeries = {};
 
     setLoading(true);
@@ -289,20 +289,35 @@ function initSocket() {
 }
 
 function handleTickUpdate(quotes) {
+    // If we're getting fresh chart updates, prefer them over raw ticks to avoid conflicts
+    if (Date.now() - lastChartUpdateTime < 2000) return;
+
     const currentNorm = normalizeSymbol(currentSymbol);
     for (const [key, quote] of Object.entries(quotes)) {
         if (normalizeSymbol(key) === currentNorm) { updateRealtimeCandle(quote); break; }
     }
 }
 
+let lastChartUpdateTime = 0;
+
+function tvColorToRGBA(color) {
+    if (typeof color !== 'number') return color;
+    const a = ((color >> 24) & 0xFF) / 255;
+    const r = (color >> 16) & 0xFF;
+    const g = (color >> 8) & 0xFF;
+    const b = color & 0xFF;
+    return `rgba(${r}, ${g}, ${b}, ${a})`;
+}
+
 function handleChartUpdate(data) {
+    lastChartUpdateTime = Date.now();
     if (data.ohlcv && data.ohlcv.length > 0) {
         // Handle OHLCV update from chart session
         const candles = data.ohlcv.map(v => ({
-            time: v[0], open: v[1], high: v[2], low: v[3], close: v[4]
+            time: Math.floor(v[0]), open: v[1], high: v[2], low: v[3], close: v[4]
         }));
         const vol = data.ohlcv.map(v => ({
-            time: v[0], value: v[5],
+            time: Math.floor(v[0]), value: v[5],
             color: v[4] >= v[1] ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'
         }));
 
@@ -313,38 +328,74 @@ function handleChartUpdate(data) {
             renderData();
             lastCandle = candles[candles.length - 1];
             lastCandle.volume = data.ohlcv[data.ohlcv.length-1][5];
-        } else {
+        } else if (candles.length === 1) {
             // Real-time candle update
-            candleSeries.update(candles[0]);
-            volumeSeries.update(vol[0]);
-            lastCandle = {...candles[0], volume: vol[0].value};
+            if (lastCandle && candles[0].time >= lastCandle.time) {
+                candleSeries.update(candles[0]);
+                volumeSeries.update(vol[0]);
+                lastCandle = {...candles[0], volume: vol[0].value};
+            }
         }
     }
 
     if (data.indicators && data.indicators.length > 0) {
         data.indicators.forEach(row => {
-            const time = row.timestamp;
+            const time = Math.floor(row.timestamp);
             Object.keys(row).forEach(key => {
-                if (key === 'timestamp' || key === 'Bar_Color' || key === 'Background_Color') return;
+                if (key === 'timestamp' || key === 'Bar_Color' || key === 'Background_Color' || key.endsWith('_meta')) return;
 
+                const meta = row[`${key}_meta`];
                 let series = indicatorSeries[key];
                 if (!series) {
-                    // Create new series for this indicator
-                    const colors = ['#3b82f6', '#f59e0b', '#8b5cf6', '#ec4899', '#10b981', '#6366f1'];
-                    const color = colors[Object.keys(indicatorSeries).length % colors.length];
-                    series = mainChart.addLineSeries({
-                        color: color,
-                        lineWidth: 1,
-                        title: key,
-                        priceScaleId: 'right',
-                        autoscaleInfoProvider: () => null, // don't squash price axis
-                    });
-                    indicatorSeries[key] = series;
+                    const color = meta ? tvColorToRGBA(meta.color) : '#3b82f6';
+                    const plottype = meta ? meta.type : 0;
+
+                    if (plottype === 1 || plottype === 2) {
+                        series = mainChart.addHistogramSeries({
+                            color: color,
+                            title: key,
+                            priceScaleId: 'right',
+                            autoscaleInfoProvider: () => null,
+                        });
+                    } else if (plottype === 5) {
+                        series = mainChart.addAreaSeries({
+                            topColor: color,
+                            bottomColor: 'transparent',
+                            lineColor: color,
+                            lineWidth: meta ? meta.linewidth : 1,
+                            title: key,
+                            priceScaleId: 'right',
+                            autoscaleInfoProvider: () => null,
+                        });
+                    } else if (plottype === 3 || plottype === 4) {
+                        // Circles or Cross - use dotted line to simulate
+                        series = mainChart.addLineSeries({
+                            color: color,
+                            lineWidth: 3,
+                            lineStyle: 2, // Dotted
+                            title: key,
+                            priceScaleId: 'right',
+                            autoscaleInfoProvider: () => null,
+                        });
+                    } else {
+                        series = mainChart.addLineSeries({
+                            color: color,
+                            lineWidth: meta ? meta.linewidth : 1,
+                            lineStyle: (meta && meta.linestyle === 2) ? 2 : 0,
+                            title: key,
+                            priceScaleId: 'right',
+                            autoscaleInfoProvider: () => null,
+                        });
+                    }
+                    indicatorSeries[key] = { series, lastTime: 0 };
                 }
 
                 const val = row[key];
                 if (val !== null && typeof val === 'number' && val < 1e10) {
-                    series.update({ time: time, value: val });
+                    if (time >= indicatorSeries[key].lastTime) {
+                        indicatorSeries[key].series.update({ time: time, value: val });
+                        indicatorSeries[key].lastTime = time;
+                    }
                 }
             });
         });
@@ -394,7 +445,7 @@ function updateRealtimeCandle(quote) {
         }
         lastCandle = { time: candleTime, open: price, high: price, low: price, close: price, volume: ltq };
         renderData();
-    } else {
+    } else if (candleTime === lastCandle.time) {
         lastCandle.close = price;
         lastCandle.high = Math.max(lastCandle.high, price);
         lastCandle.low = Math.min(lastCandle.low, price);
