@@ -40,7 +40,10 @@ def emit_event(event: str, data: Any, room: Optional[str] = None):
         data = json.loads(json.dumps(data, cls=LocalDBJSONEncoder))
     try:
         if main_event_loop and main_event_loop.is_running():
-            asyncio.run_coroutine_threadsafe(socketio_instance.emit(event, data, room=room), main_event_loop)
+            # Use 'to' for modern python-socketio compatibility
+            asyncio.run_coroutine_threadsafe(socketio_instance.emit(event, data, to=room), main_event_loop)
+            if room:
+                logger.debug(f"Emitted {event} to room {room}")
     except Exception as e:
         logger.error(f"Emit Error: {e}")
 
@@ -67,6 +70,7 @@ def on_message(message: Union[Dict, str]):
         # Handle Chart/Indicator Updates
         if data.get('type') == 'chart_update':
             hrn = data.get('instrumentKey')
+            logger.info(f"Routing chart_update for {hrn}")
             emit_event('chart_update', data['data'], room=hrn)
             return
 

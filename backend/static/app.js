@@ -237,27 +237,31 @@ async function switchSymbol(symbol) {
 
         console.log(`Processed ${candles ? candles.length : 0} candles for ${currentSymbol}`);
 
+        if (candles && candles.length > 0) {
+            const chartData = candles.map(c => ({
+                time: typeof c.timestamp === 'number' ? c.timestamp : Math.floor(new Date(c.timestamp).getTime() / 1000),
+                open: c.open, high: c.high, low: c.low, close: c.close
+            })).sort((a, b) => a.time - b.time);
+            fullHistory.candles = chartData;
+            lastCandle = chartData[chartData.length - 1];
+        }
+
         // Handle historical indicators if present
         if (resData.indicators) {
             handleChartUpdate({ indicators: resData.indicators });
         }
 
         if (candles && candles.length > 0) {
-            const chartData = candles.map(c => ({
-                time: typeof c.timestamp === 'number' ? c.timestamp : Math.floor(new Date(c.timestamp).getTime() / 1000),
-                open: c.open, high: c.high, low: c.low, close: c.close
-            })).sort((a, b) => a.time - b.time);
             const volData = candles.map(c => ({
                 time: typeof c.timestamp === 'number' ? c.timestamp : Math.floor(new Date(c.timestamp).getTime() / 1000),
                 value: c.volume,
                 color: c.close >= c.open ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'
             })).sort((a, b) => a.time - b.time);
-            fullHistory.candles = chartData;
+
             fullHistory.volume = volData;
             if (!fullHistory.markers) fullHistory.markers = new Map();
 
             renderData();
-            lastCandle = chartData[chartData.length - 1];
             lastCandle.volume = candles[candles.length - 1].volume;
 
             // Set visible range to last 100 bars instead of fitContent
@@ -417,11 +421,45 @@ function handleChartUpdate(data) {
 
                 let series = indicatorSeries[key];
                 if (!series) {
+                    // Determine if this is a price-based indicator or an oscillator (like z-score)
+                    let targetScale = 'right';
+
+                    // Use last candle or historical candles to estimate current price level
+                    const referencePrice = lastCandle ? lastCandle.close :
+                                         (fullHistory.candles.length > 0 ? fullHistory.candles[fullHistory.candles.length-1].close : null);
+
+                    // Heuristic: If value is small (< 1000) and far from current price, it's likely an oscillator.
+                    // Also check for specific keywords in title.
+                    const isOscillator = (val < 1000 && (!referencePrice || Math.abs(val - referencePrice) > referencePrice * 0.5));
+
+                    if (isOscillator && !title.toLowerCase().includes('pivot') && !title.toLowerCase().includes('vwap') && !title.toLowerCase().includes('ma')) {
+                        targetScale = 'oscillator';
+                        mainChart.priceScale(targetScale).applyOptions({
+                            visible: false, // Keep oscillators hidden from Y-axis
+                        });
+                    }
+
                     const commonOptions = {
                         title: title,
-                        priceScaleId: 'right',
-                        autoscaleInfoProvider: () => ({ priceRange: null }), // More explicit exclusion
+                        priceScaleId: targetScale,
+                        // By default, return null for priceRange to exclude from auto-scaling.
+                        // This prevents oscillators on the main scale from squashing candles.
+                        autoscaleInfoProvider: () => ({ priceRange: null }),
                     };
+
+                    // For indicators on the main price scale, we only want them to scale
+                    // if they are actually within a reasonable range of the price.
+                    if (targetScale === 'right') {
+                        commonOptions.autoscaleInfoProvider = () => {
+                            if (!lastCandle) return null;
+                            return {
+                                priceRange: {
+                                    minValue: lastCandle.low * 0.8,
+                                    maxValue: lastCandle.high * 1.2,
+                                }
+                            };
+                        };
+                    }
 
                     if (plottype === 1 || plottype === 2) {
                         series = mainChart.addHistogramSeries({
@@ -477,7 +515,7 @@ function handleChartUpdate(data) {
         if (Object.keys(bgColors).length > 0) {
             const bgData = Object.keys(bgColors).map(t => ({
                 time: parseInt(t),
-                value: 1000000, // Large enough to cover range
+                value: 1e12, // Extremely large to cover any price range
                 color: bgColors[t]
             })).sort((a,b) => a.time - b.time);
             bgSeries.setData(bgData);
@@ -568,9 +606,16 @@ function updateRealtimeCandle(quote) {
 
 function renderData() {
     if (fullHistory.candles.length === 0) return;
-    candleSeries.setData(fullHistory.candles);
-    volumeSeries.setData(fullHistory.volume);
-    // Markers are set by handleChartUpdate
+
+    // Use a fresh copy to avoid mutation issues
+    candleSeries.setData([...fullHistory.candles].sort((a,b) => a.time - b.time));
+    volumeSeries.setData([...fullHistory.volume].sort((a,b) => a.time - b.time));
+
+    // If we have markers, re-apply them
+    if (fullHistory.markers && fullHistory.markers.size > 0) {
+        const allMarkers = Array.from(fullHistory.markers.values());
+        candleSeries.setMarkers(allMarkers.sort((a,b) => a.time - b.time));
+    }
 }
 
 // --- Utils & Controls ---
