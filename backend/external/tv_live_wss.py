@@ -8,6 +8,7 @@ import logging
 import re
 import requests
 from config import TV_COOKIE, TV_STUDY_ID
+from core.symbol_mapper import symbol_mapper
 
 logger = logging.getLogger(__name__)
 
@@ -22,12 +23,6 @@ class TradingViewWSS:
         self.study_id = "st1"
         self.current_chart_symbol = None
         self.symbols = []
-        self.symbol_map = {
-            'NSE:NIFTY': 'NIFTY',
-            'NSE:BANKNIFTY': 'BANKNIFTY',
-            'NSE:CNXFINANCE': 'FINNIFTY',
-            'NSE:INDIAVIX': 'INDIA VIX'
-        }
         self.last_volumes = {} # track cumulative volume per symbol
         self.last_prices = {} # track latest price per symbol
         self.last_times = {} # track latest time per symbol
@@ -255,7 +250,7 @@ class TradingViewWSS:
         if 'lp_time' in values: self.last_times[clean_symbol] = values['lp_time']
         if 'volume' in values: self.last_volumes[clean_symbol] = float(values['volume'])
 
-        hrn = self.symbol_map.get(clean_symbol, clean_symbol)
+        hrn = symbol_mapper.get_hrn(clean_symbol)
         price = self.last_prices.get(clean_symbol)
         if price is not None:
             ts_ms = int(self.last_times.get(clean_symbol, time.time()) * 1000)
@@ -277,7 +272,7 @@ class TradingViewWSS:
         # We only care about the study and prices for now
         # st1 corresponds to our study_id
         symbol = self.current_chart_symbol
-        hrn = self.symbol_map.get(symbol, symbol) if symbol else None
+        hrn = symbol_mapper.get_hrn(symbol) if symbol else None
         update_msg = {'type': 'chart_update', 'instrumentKey': hrn, 'data': {}}
 
         # OHLCV data
