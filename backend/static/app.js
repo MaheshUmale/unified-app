@@ -11,6 +11,7 @@ let currentInterval = '1';
 let mainChart = null;
 let candleSeries = null;
 let volumeSeries = null;
+let indicatorSeries = {}; // Map of plot name -> series instance
 let lastCandle = null;
 
 // Replay State
@@ -193,9 +194,15 @@ function displaySearchResults(symbols) {
 async function switchSymbol(symbol) {
     currentSymbol = symbol;
     lastCandle = null;
+
+    // Clear previous indicators
+    Object.values(indicatorSeries).forEach(s => mainChart.removeSeries(s));
+    indicatorSeries = {};
+
     setLoading(true);
     try {
-        let candles = await fetchIntraday(currentSymbol, currentInterval);
+        const resData = await fetchIntraday(currentSymbol, currentInterval);
+        let candles = resData.candles || [];
 
         // Filter for market hours (9:15 - 15:30 IST) for NSE symbols on intraday timeframes
         if (candles && candles.length > 0 && currentSymbol.startsWith('NSE:') && !['D', 'W'].includes(currentInterval)) {
@@ -212,6 +219,12 @@ async function switchSymbol(symbol) {
         }
 
         console.log(`Processed ${candles ? candles.length : 0} candles for ${currentSymbol}`);
+
+        // Handle historical indicators if present
+        if (resData.indicators) {
+            handleChartUpdate({ indicators: resData.indicators });
+        }
+
         if (candles && candles.length > 0) {
             const chartData = candles.map(c => ({
                 time: typeof c.timestamp === 'number' ? c.timestamp : Math.floor(new Date(c.timestamp).getTime() / 1000),
@@ -249,11 +262,11 @@ async function fetchIntraday(key, interval = '1') {
     clearTimeout(timeoutId);
     const data = await res.json();
     if (data && data.candles) {
-        return data.candles.map(c => ({
+        data.candles = data.candles.map(c => ({
             timestamp: c[0], open: c[1], high: c[2], low: c[3], close: c[4], volume: c[5]
         })).reverse();
     }
-    return [];
+    return data || { candles: [] };
 }
 
 function initSocket() {
@@ -272,12 +285,69 @@ function initSocket() {
         console.error("Socket connection error:", error);
     });
     socket.on('raw_tick', (data) => handleTickUpdate(typeof data === 'string' ? JSON.parse(data) : data));
+    socket.on('chart_update', (data) => handleChartUpdate(data));
 }
 
 function handleTickUpdate(quotes) {
     const currentNorm = normalizeSymbol(currentSymbol);
     for (const [key, quote] of Object.entries(quotes)) {
         if (normalizeSymbol(key) === currentNorm) { updateRealtimeCandle(quote); break; }
+    }
+}
+
+function handleChartUpdate(data) {
+    if (data.ohlcv && data.ohlcv.length > 0) {
+        // Handle OHLCV update from chart session
+        const candles = data.ohlcv.map(v => ({
+            time: v[0], open: v[1], high: v[2], low: v[3], close: v[4]
+        }));
+        const vol = data.ohlcv.map(v => ({
+            time: v[0], value: v[5],
+            color: v[4] >= v[1] ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'
+        }));
+
+        if (candles.length > 1) {
+            // Probably initial history
+            fullHistory.candles = candles;
+            fullHistory.volume = vol;
+            renderData();
+            lastCandle = candles[candles.length - 1];
+            lastCandle.volume = data.ohlcv[data.ohlcv.length-1][5];
+        } else {
+            // Real-time candle update
+            candleSeries.update(candles[0]);
+            volumeSeries.update(vol[0]);
+            lastCandle = {...candles[0], volume: vol[0].value};
+        }
+    }
+
+    if (data.indicators && data.indicators.length > 0) {
+        data.indicators.forEach(row => {
+            const time = row.timestamp;
+            Object.keys(row).forEach(key => {
+                if (key === 'timestamp' || key === 'Bar_Color' || key === 'Background_Color') return;
+
+                let series = indicatorSeries[key];
+                if (!series) {
+                    // Create new series for this indicator
+                    const colors = ['#3b82f6', '#f59e0b', '#8b5cf6', '#ec4899', '#10b981', '#6366f1'];
+                    const color = colors[Object.keys(indicatorSeries).length % colors.length];
+                    series = mainChart.addLineSeries({
+                        color: color,
+                        lineWidth: 1,
+                        title: key,
+                        priceScaleId: 'right',
+                        autoscaleInfoProvider: () => null, // don't squash price axis
+                    });
+                    indicatorSeries[key] = series;
+                }
+
+                const val = row[key];
+                if (val !== null && typeof val === 'number' && val < 1e10) {
+                    series.update({ time: time, value: val });
+                }
+            });
+        });
     }
 }
 
