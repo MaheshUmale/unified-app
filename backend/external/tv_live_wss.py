@@ -201,20 +201,25 @@ class TradingViewWSS:
         if isinstance(message, bytes):
             message = message.decode('utf-8')
 
-        # Heartbeat check - TV WSS sends ~m~<len>~m~~h~<num>
-        if "~h~" in message:
-            try:
-                logger.info("TV WSS Heartbeat received")
-                ws.send(message)
-            except Exception as e:
-                logger.error(f"Error sending heartbeat: {e}")
-            return
+        # 1. Extract all messages using the TV delimiter pattern
+        # This splits the frame into individual parts (heartbeats and JSON blobs)
+        # Filter out empty strings from the split
+        payloads = [p for p in re.split(r"~m~\d+~m~", message) if p]
 
-        # Split multiple messages in one frame
-        # We use a more robust split to avoid missing data
-        messages = re.split(r"~m~\d+~m~", message)
-        for msg in messages:
-            if not msg: continue
+        for msg in payloads:
+            # 2. Check if this specific part is a heartbeat
+            if msg.startswith("~h~"):
+                try:
+                    logger.info(f"TV WSS Heartbeat received: {msg}")
+                    # Format the response back correctly: ~m~<len>~m~<content>
+                    heartbeat_response = f"~m~{len(msg)}~m~{msg}"
+                    ws.send(heartbeat_response)
+                except Exception as e:
+                    logger.error(f"Error sending heartbeat: {e}")
+                # Continue to next part, do not return yet!
+                continue
+
+            # 3. Process as JSON data
             try:
                 data = json.loads(msg)
                 m_type = data.get("m")
@@ -223,13 +228,13 @@ class TradingViewWSS:
                 # logger.debug(f"TV WSS Message: {m_type}")
 
                 if m_type == "qsd" and len(p) > 1:
-                    logger.info("TV WSS Quote data received")
+                    # logger.info("TV WSS Quote data received")
                     self._handle_qsd(p[1])
                 elif m_type in ["timescale_update", "du"] and len(p) > 1:
                     logger.info("TV WSS Chart data received")
                     self._handle_chart_update(p[1])
                  
-                elif m_type == "error":
+                elif m_type == "error" or m_type=='critical_error':
                     logger.error(f"TV WSS Protocol Error: {p}")
  
  
@@ -237,6 +242,10 @@ class TradingViewWSS:
                     logger.info(f" m_type = {m_type}    : : :    p = {p}")
 
             except Exception as e:
+                logger.error(f"Error handling TV WSS message: {e}")
+                import traceback
+                traceback.print_exc()
+                logger.error(message)
                 pass
 
     def _handle_qsd(self, quote_data):
