@@ -195,11 +195,16 @@ function displaySearchResults(symbols) {
 async function switchSymbol(symbol) {
     currentSymbol = symbol;
     lastCandle = null;
+    fullHistory = { candles: [], volume: [] };
+
+    // Clear all chart data
+    candleSeries.setData([]);
+    volumeSeries.setData([]);
+    candleSeries.setMarkers([]);
 
     // Clear indicator series
     Object.values(indicatorSeries).forEach(s => mainChart.removeSeries(s));
     indicatorSeries = {};
-    candleSeries.setMarkers([]);
 
     setLoading(true);
     try {
@@ -281,10 +286,10 @@ async function fetchIntraday(key, interval = '1') {
             })).reverse();
             return data;
         }
-        throw new Error("No candles returned from API");
+        return { candles: [], indicators: [] }; // Return empty instead of throwing to avoid generic mock pollution
     } catch (err) {
-        console.warn("Fetch intraday failed, using mock data:", err);
-        return generateMockData();
+        console.warn("Fetch intraday failed:", err);
+        return { candles: [], indicators: [] };
     }
 }
 
