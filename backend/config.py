@@ -7,10 +7,13 @@ import os
 # TV_PASSWORD = os.getenv('TV_PASSWORD', '')
 import rookiepy
 
-raw_cookies = rookiepy.brave(['.tradingview.com']) #os.getenv('TV_COOKIE', '')
-# 2. Convert to a simple name:value dictionary
-cookie_dict = {c['name']: c['value'] for c in raw_cookies}
-TV_COOKIE = cookie_dict
+try:
+    raw_cookies = rookiepy.brave(['.tradingview.com']) #os.getenv('TV_COOKIE', '')
+    # 2. Convert to a simple name:value dictionary
+    cookie_dict = {c['name']: c['value'] for c in raw_cookies}
+    TV_COOKIE = cookie_dict
+except Exception:
+    TV_COOKIE = {}
 
 TV_STUDY_ID = os.getenv('TV_STUDY_ID', 'USER;f9c7fa68b382417ba34df4122c632dcf')
 

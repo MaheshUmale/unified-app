@@ -66,7 +66,8 @@ def on_message(message: Union[Dict, str]):
 
         # Handle Chart/Indicator Updates
         if data.get('type') == 'chart_update':
-            emit_event('chart_update', data['data'])
+            hrn = data.get('instrumentKey')
+            emit_event('chart_update', data['data'], room=hrn)
             return
 
         feeds_map = data.get('feeds', {})
@@ -107,7 +108,8 @@ def on_message(message: Union[Dict, str]):
         # Throttled UI Emission
         now = time.time()
         if now - last_emit_times.get('GLOBAL_TICK', 0) > 0.1:
-            emit_event('raw_tick', hrn_feeds)
+            for hrn, feed in hrn_feeds.items():
+                emit_event('raw_tick', {hrn: feed}, room=hrn)
             last_emit_times['GLOBAL_TICK'] = now
 
         with buffer_lock:
