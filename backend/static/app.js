@@ -417,11 +417,37 @@ function handleChartUpdate(data) {
 
                 let series = indicatorSeries[key];
                 if (!series) {
+                    // Decide which price scale to use.
+                    // If it's price-based, it should be on 'right' but shouldn't compress the candles.
+                    // If it's an oscillator (small values), it should be on its own scale or hidden.
+                    let targetScale = 'right';
+                    const isPriceBased = (lastCandle && Math.abs(val - lastCandle.close) / lastCandle.close < 0.5);
+
+                    if (!isPriceBased && val < 1000 && val > -1000) {
+                        targetScale = 'oscillator';
+                        if (!mainChart.priceScale(targetScale)) {
+                            mainChart.priceScale(targetScale).applyOptions({
+                                visible: false, // Keep oscillators hidden from Y-axis but visible on chart
+                            });
+                        }
+                    }
+
                     const commonOptions = {
                         title: title,
-                        priceScaleId: 'right',
-                        autoscaleInfoProvider: () => ({ priceRange: null }), // More explicit exclusion
+                        priceScaleId: targetScale,
+                        autoscaleInfoProvider: () => null, // Let LWC decide, but we might clip
                     };
+
+                    // For right-scale indicators that are NOT the main candles,
+                    // we want them to NOT affect the auto-scaling of the price axis if they go out of bounds.
+                    if (targetScale === 'right') {
+                        commonOptions.autoscaleInfoProvider = () => ({
+                            priceRange: {
+                                minValue: lastCandle ? lastCandle.low * 0.9 : 0,
+                                maxValue: lastCandle ? lastCandle.high * 1.1 : 1e10,
+                            }
+                        });
+                    }
 
                     if (plottype === 1 || plottype === 2) {
                         series = mainChart.addHistogramSeries({
@@ -477,7 +503,7 @@ function handleChartUpdate(data) {
         if (Object.keys(bgColors).length > 0) {
             const bgData = Object.keys(bgColors).map(t => ({
                 time: parseInt(t),
-                value: 1000000, // Large enough to cover range
+                value: 1e12, // Extremely large to cover any price range
                 color: bgColors[t]
             })).sort((a,b) => a.time - b.time);
             bgSeries.setData(bgData);
@@ -568,9 +594,16 @@ function updateRealtimeCandle(quote) {
 
 function renderData() {
     if (fullHistory.candles.length === 0) return;
-    candleSeries.setData(fullHistory.candles);
-    volumeSeries.setData(fullHistory.volume);
-    // Markers are set by handleChartUpdate
+
+    // Use a fresh copy to avoid mutation issues
+    candleSeries.setData([...fullHistory.candles].sort((a,b) => a.time - b.time));
+    volumeSeries.setData([...fullHistory.volume].sort((a,b) => a.time - b.time));
+
+    // If we have markers, re-apply them
+    if (fullHistory.markers && fullHistory.markers.size > 0) {
+        const allMarkers = Array.from(fullHistory.markers.values());
+        candleSeries.setMarkers(allMarkers.sort((a,b) => a.time - b.time));
+    }
 }
 
 // --- Utils & Controls ---

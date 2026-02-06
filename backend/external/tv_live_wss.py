@@ -34,18 +34,12 @@ class TradingViewWSS:
     def _generate_session(self, prefix=""):
         return prefix + "".join(random.choice(string.ascii_lowercase + string.digits) for _ in range(12))
 
-    def _prepend_header(self, message):
-        return f"~m~{len(message)}~m~{message}"
-
-    def _construct_message(self, func, param_list):
-        return json.dumps({"m": func, "p": param_list}, separators=(",", ":"))
-
     def _send_message(self, func, param_list):
         if not self.ws or not self.ws.sock or not self.ws.sock.connected:
             return
-        message = self._construct_message(func, param_list)
-        payload = self._prepend_header(message)
         try:
+            message = json.dumps({"m": func, "p": param_list}, separators=(",", ":"))
+            payload = f"~m~{len(message)}~m~{message}"
             self.ws.send(payload)
         except Exception as e:
             logger.error(f"Error sending message to TV WSS: {e}")
@@ -63,10 +57,8 @@ class TradingViewWSS:
     def _subscribe_symbols(self, symbols):
         if not symbols: return
         for symbol in symbols:
-            # More robust subscribe call with adjustment
-            symbol_payload = f"={json.dumps({'symbol': symbol, 'adjustment': 'splits'})}"
-            self._send_message("quote_add_symbols", [self.quote_session, symbol_payload])
-            self._send_message("quote_fast_symbols", [self.quote_session, symbol])
+            # Simple symbol string for quote session is more stable
+            self._send_message("quote_add_symbols", [self.quote_session, symbol])
         logger.info(f"Subscribed to {len(symbols)} symbols on TV WSS")
 
     def chart_create_session(self):
@@ -77,8 +69,8 @@ class TradingViewWSS:
         symbol_payload = f"={json.dumps({'symbol': symbol, 'adjustment': 'splits'})}"
         self._send_message("resolve_symbol", [self.chart_session, "sds_sym_1", symbol_payload])
 
-    def create_series(self, timeframe="1D", bars=300):
-        # Param order: [session, series_id, chart_id, symbol_id, timeframe, bars, ""]
+    def create_series(self, timeframe="1", bars=300):
+        # Standard parameters for create_series
         self._send_message("create_series", [self.chart_session, "sds_1", "s1", "sds_sym_1", timeframe, bars, ""])
 
     def create_study(self, study_id, metadata, custom_inputs=None):
@@ -210,19 +202,16 @@ class TradingViewWSS:
         if isinstance(message, bytes):
             message = message.decode('utf-8')
 
-        # logger.debug(f"RAW TV WSS: {message[:100]}...")
-
         # Heartbeat check - TV WSS sends ~m~<len>~m~~h~<num>
         if "~h~" in message:
             try:
-                # Reply with the exact same heartbeat message
                 ws.send(message)
-                logger.debug(f"TV WSS Heartbeat responded: {message}")
             except Exception as e:
                 logger.error(f"Error sending heartbeat: {e}")
             return
 
         # Split multiple messages in one frame
+        # We use a more robust split to avoid missing data
         messages = re.split(r"~m~\d+~m~", message)
         for msg in messages:
             if not msg: continue
@@ -302,24 +291,24 @@ class TradingViewWSS:
 
                         # Map defined plots
                         # TradingView often sends [val1, color1, val2, color2...] if plots have dynamic colors
-                        # We try to detect if there's a column right after the plot value
+                        # Check if response is interleaved: 1 (timestamp) + 2 * num_plots
+                        is_interleaved = len(row) >= (1 + 2 * len(plot_defs))
+
                         for p_def in plot_defs:
-                            idx = p_def["index"] + 1 # +1 for timestamp
-                            if idx < len(row):
-                                val = row[idx]
+                            p_idx = p_def["index"]
+                            if is_interleaved:
+                                val_idx = 1 + 2 * p_idx
+                                color_idx = 2 + 2 * p_idx
+                            else:
+                                val_idx = 1 + p_idx
+                                color_idx = -1
+
+                            if val_idx < len(row):
+                                val = row[val_idx]
                                 mapped_row[p_def["title"]] = val
                                 mapped_row[f"{p_def['title']}_meta"] = p_def
-
-                                # Check for dynamic color in next column if it looks like a color value
-                                # Interleaved color logic
-                                if len(row) > len(plot_defs) + 1:
-                                    # Very likely interleaved. This is a heuristic.
-                                    # In interleaved mode, col_idx for plot i is 1 + 2*i
-                                    col_idx = 1 + 2 * p_def["index"]
-                                    if col_idx < len(row):
-                                        mapped_row[p_def["title"]] = row[col_idx]
-                                        if col_idx + 1 < len(row):
-                                            mapped_row[f"{p_def['title']}_color"] = row[col_idx + 1]
+                                if color_idx > 0 and color_idx < len(row):
+                                    mapped_row[f"{p_def['title']}_color"] = row[color_idx]
 
                         mapped_plots.append(mapped_row)
 
