@@ -109,20 +109,45 @@ async def get_intraday(instrument_key: str, interval: str = '1'):
         # Check if we have history with indicators in WSS
         from external.tv_live_wss import get_tv_wss
         wss = get_tv_wss()
+
+        wss_candles = []
+        wss_indicators = []
         if wss and hrn in wss.history:
             hist = wss.history[hrn]
-            return {
-                "candles": hist.get('ohlcv', []),
-                "indicators": hist.get('indicators', [])
-            }
+            wss_candles = hist.get('ohlcv', [])
+            wss_indicators = hist.get('indicators', [])
 
+        # Fetch high-quality historical candles from API
         tv_candles = await asyncio.to_thread(tv_api.get_hist_candles, clean_key, interval, 1000)
-        if tv_candles:
-            return {"candles": tv_candles}
-        return {"candles": []}
+
+        # If we have WSS history, we might want to append the very latest candles
+        # from WSS if they are newer than what the API returned.
+        if tv_candles and wss_candles:
+            # tv_api.get_hist_candles returns newest first.
+            newest_api_ts = tv_candles[0][0]
+
+            # Check if wss_candles has valid timestamps (> 1e9)
+            if wss_candles[0][0] > 1e9:
+                merged_map = {c[0]: c for c in tv_candles}
+                for c in wss_candles:
+                    # c[0] is timestamp
+                    if c[0] > newest_api_ts:
+                        merged_map[c[0]] = c
+                tv_candles = sorted(merged_map.values(), key=lambda x: x[0], reverse=True)
+
+        # Ensure indicators also have valid timestamps
+        valid_indicators = []
+        for ind in wss_indicators:
+            if ind.get('timestamp', 0) > 1e9:
+                valid_indicators.append(ind)
+
+        return {
+            "candles": tv_candles or [],
+            "indicators": valid_indicators
+        }
     except Exception as e:
         logger.error(f"Error in intraday fetch: {e}")
-        return {"candles": []}
+        return {"candles": [], "indicators": []}
 
 # Template and Static Files
 templates = Jinja2Templates(directory="backend/templates")

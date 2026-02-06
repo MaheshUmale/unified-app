@@ -89,7 +89,7 @@ function init() {
         candleSeries = mainChart.addCandlestickSeries({
             upColor: '#22c55e',
             downColor: '#ef4444',
-            borderVisible: false,
+            borderVisible: true,
             wickUpColor: '#22c55e',
             wickDownColor: '#ef4444',
             priceScaleId: 'right',
@@ -265,7 +265,7 @@ async function switchSymbol(symbol) {
             lastCandle.volume = candles[candles.length - 1].volume;
 
             // Set visible range to last 100 bars instead of fitContent
-            const lastIndex = chartData.length - 1;
+            const lastIndex = fullHistory.candles.length - 1;
             mainChart.timeScale().setVisibleLogicalRange({
                 from: lastIndex - 100,
                 to: lastIndex + 5,
@@ -278,18 +278,24 @@ async function switchSymbol(symbol) {
 }
 
 async function fetchIntraday(key, interval = '1') {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-    let url = `/api/tv/intraday/${encodeURIComponent(key)}?interval=${interval}`;
-    const res = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeoutId);
-    const data = await res.json();
-    if (data && data.candles) {
-        data.candles = data.candles.map(c => ({
-            timestamp: c[0], open: c[1], high: c[2], low: c[3], close: c[4], volume: c[5]
-        })).reverse();
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
+        let url = `/api/tv/intraday/${encodeURIComponent(key)}?interval=${interval}`;
+        const res = await fetch(url, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        const data = await res.json();
+        if (data && data.candles && data.candles.length > 0) {
+            data.candles = data.candles.map(c => ({
+                timestamp: c[0], open: c[1], high: c[2], low: c[3], close: c[4], volume: c[5]
+            })).reverse();
+            return data;
+        }
+        throw new Error("No candles returned from API");
+    } catch (err) {
+        console.error("Fetch intraday failed:", err);
+        return { candles: [], indicators: [] };
     }
-    return data || { candles: [] };
 }
 
 function initSocket() {
@@ -325,7 +331,11 @@ let lastChartUpdateTime = 0;
 
 function tvColorToRGBA(color) {
     if (typeof color !== 'number') return color;
-    const a = ((color >>> 24) & 0xFF) / 255;
+    // TradingView alpha is sometimes inverted or different.
+    // We try to ensure it's at least partially visible if it's very transparent.
+    let a = ((color >>> 24) & 0xFF) / 255;
+    if (a < 0.2) a = 0.6; // Boost visibility if too transparent
+
     const r = (color >>> 16) & 0xFF;
     const g = (color >>> 8) & 0xFF;
     const b = (color & 0xFF);
@@ -336,15 +346,21 @@ function handleChartUpdate(data) {
     lastChartUpdateTime = Date.now();
     if (data.ohlcv && data.ohlcv.length > 0) {
         // Handle OHLCV update from chart session
-        const candles = data.ohlcv.map(v => ({
-            time: Math.floor(v[0]), open: v[1], high: v[2], low: v[3], close: v[4]
-        }));
-        const vol = data.ohlcv.map(v => ({
-            time: Math.floor(v[0]), value: v[5],
-            color: v[4] >= v[1] ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'
-        }));
+        // Check if v[0] is index or timestamp.
+        // Timestamps are usually > 1e9.
+        const isTimestamp = data.ohlcv[0][0] > 1e9;
 
-        if (candles.length > 1) {
+        if (isTimestamp) {
+            const candles = data.ohlcv.map(v => ({
+                time: Math.floor(v[0]),
+                open: Number(v[1]), high: Number(v[2]), low: Number(v[3]), close: Number(v[4])
+            }));
+            const vol = data.ohlcv.map(v => ({
+                time: Math.floor(v[0]), value: Number(v[5]),
+                color: Number(v[4]) >= Number(v[1]) ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'
+            }));
+
+            if (candles.length > 1) {
             fullHistory.candles = candles;
             fullHistory.volume = vol;
             if (!fullHistory.markers) fullHistory.markers = new Map();
@@ -355,10 +371,22 @@ function handleChartUpdate(data) {
             if (lastCandle && candles[0].time >= lastCandle.time) {
                 candleSeries.update(candles[0]);
                 volumeSeries.update(vol[0]);
+
+                // Update fullHistory to keep it synced
+                const idx = fullHistory.candles.findIndex(c => c.time === candles[0].time);
+                if (idx !== -1) {
+                    fullHistory.candles[idx] = candles[0];
+                    fullHistory.volume[idx] = vol[0];
+                } else {
+                    fullHistory.candles.push(candles[0]);
+                    fullHistory.volume.push(vol[0]);
+                }
+
                 lastCandle = {...candles[0], volume: vol[0].value};
             }
         }
     }
+}
 
     if (data.indicators && data.indicators.length > 0) {
         const barColors = {}; // time -> color
@@ -388,6 +416,26 @@ function handleChartUpdate(data) {
 
                 const plottype = meta ? meta.type : 0;
                 const title = meta ? meta.title : key;
+
+                // Filter out plots that look like part of a plotcandle (O, H, L, C)
+                // These often have titles containing "Open", "High", "Low", "Close" or "plot_N".
+                const lowerTitle = title.toLowerCase();
+                if ((lowerTitle.includes('candle') || lowerTitle.includes('plot_')) &&
+                    (lowerTitle.includes('open') || lowerTitle.includes('high') ||
+                     lowerTitle.includes('low') || lowerTitle.includes('close') ||
+                     /\d+/.test(lowerTitle))) {
+
+                    // Specific check for plot_7, plot_8, plot_9, plot_10 which are common O/H/L/C plots
+                    if (['plot_7', 'plot_8', 'plot_9', 'plot_10'].includes(title)) {
+                        return;
+                    }
+
+                    // If it's very close to OHLC and has generic title, skip it
+                    if (lastCandle && Math.abs(val - lastCandle.close) / lastCandle.close < 0.01) {
+                         // Likely redundant plot
+                         return;
+                    }
+                }
 
                 // Handle Shapes/Dots/Bubbles as Markers
                 if (plottype >= 3 || title.includes('Bubble') || title.includes('Dot') || title.includes('TF')) {
