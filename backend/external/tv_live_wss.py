@@ -7,7 +7,7 @@ import time
 import logging
 import re
 import requests
-from config import TV_COOKIE, TV_STUDY_ID
+from config import TV_COOKIE
 from core.symbol_mapper import symbol_mapper
 
 logger = logging.getLogger(__name__)
@@ -187,6 +187,7 @@ class TradingViewWSS:
             # Setup chart for first symbol
             self.resolve_symbol(self.symbols[0])
             self.create_series(timeframe="1", bars=300)
+            from config import TV_STUDY_ID
             if TV_STUDY_ID:
                 try:
                     meta = self.get_indicator_metadata(TV_STUDY_ID)
@@ -194,8 +195,6 @@ class TradingViewWSS:
                     self.create_study(self.study_id, meta)
                     logger.info(f"Loaded study: {TV_STUDY_ID}")
                 except Exception as e:
-                    import traceback
-                    traceback.print_exc()
                     logger.error(f"Failed to load study {TV_STUDY_ID}: {e}")
 
     def on_message(self, ws, message):
@@ -221,14 +220,22 @@ class TradingViewWSS:
                 m_type = data.get("m")
                 p = data.get("p", [])
 
+                # logger.debug(f"TV WSS Message: {m_type}")
+
                 if m_type == "qsd" and len(p) > 1:
                     logger.info("TV WSS Quote data received")
                     self._handle_qsd(p[1])
                 elif m_type in ["timescale_update", "du"] and len(p) > 1:
                     logger.info("TV WSS Chart data received")
                     self._handle_chart_update(p[1])
+                 
+                elif m_type == "error":
+                    logger.error(f"TV WSS Protocol Error: {p}")
+ 
+ 
                 else :
                     logger.info(f" m_type = {m_type}    : : :    p = {p}")
+
             except Exception as e:
                 pass
 
@@ -249,22 +256,23 @@ class TradingViewWSS:
         if price is not None:
             ts_ms = int(self.last_times.get(clean_symbol, time.time()) * 1000)
             current_cum_vol = self.last_volumes.get(clean_symbol)
-            feed_type = 'indexFF' if ('VIX' in hrn.upper() or ('NIFTY' in hrn.upper() and ' ' not in hrn)) else 'marketFF'
 
             feed_msg = {
                 'type': 'live_feed',
                 'feeds': {
                     hrn: {
-                        'fullFeed': { feed_type: { 'ltpc': { 'ltp': str(price), 'ltt': str(ts_ms), 'ltq': '0' }, 'oi': str(values.get('open_interest', 0)) } },
-                        'tv_volume': current_cum_vol, 'source': 'tradingview_wss'
+                        'last_price': float(price),
+                        'ts_ms': ts_ms,
+                        'tv_volume': current_cum_vol,
+                        'oi': float(values.get('open_interest', 0)),
+                        'source': 'tradingview_wss'
                     }
                 }
             }
             self.callback(feed_msg)
 
     def _handle_chart_update(self, chart_data):
-        # We only care about the study and prices for now
-        # st1 corresponds to our study_id
+        # We only care about prices for now
         symbol = self.current_chart_symbol
         hrn = symbol_mapper.get_hrn(symbol) if symbol else None
         update_msg = {'type': 'chart_update', 'instrumentKey': hrn, 'data': {}}
@@ -291,7 +299,6 @@ class TradingViewWSS:
                 if meta and meta.get("plots"):
                     plot_defs = list(meta["plots"].values())
                     mapped_plots = []
-                    # TradingView often sends [val1, color1, val2, color2...] if plots have dynamic colors
                     # Check first row to see if response is interleaved: 1 (timestamp) + 2 * num_plots
                     is_interleaved = len(plots_rows[0]) >= (1 + 2 * len(plot_defs)) if plots_rows else False
 
@@ -320,20 +327,9 @@ class TradingViewWSS:
                                 if isinstance(idx, int) and 0 <= idx < len(mapped_plots):
                                     mapped_plots[idx]["Bar_Color"] = ba_val[1]
 
-                    # If study_val has 'bg' (background colors), map them by index
-                    if "bg" in study_val and study_val["bg"]:
-                        for bg_item in study_val["bg"]:
-                            bg_val = bg_item.get("v")
-                            if isinstance(bg_val, list) and len(bg_val) > 1:
-                                idx = bg_val[0]
-                                if isinstance(idx, int) and 0 <= idx < len(mapped_plots):
-                                    mapped_plots[idx]["Background_Color"] = bg_val[1]
-
                     plot_data = mapped_plots
 
                 update_msg['data']['indicators'] = plot_data
-                if "gl" in study_val:
-                    update_msg['data']['graphics'] = study_val["gl"]
                 if hrn and len(plot_data) > 10:
                     if hrn not in self.history: self.history[hrn] = {}
                     self.history[hrn]['indicators'] = plot_data
