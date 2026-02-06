@@ -6,6 +6,7 @@ import os
 TV_USERNAME = os.getenv('TV_USERNAME', '')
 TV_PASSWORD = os.getenv('TV_PASSWORD', '')
 TV_COOKIE = os.getenv('TV_COOKIE', '')
+TV_STUDY_ID = os.getenv('TV_STUDY_ID', 'USER;f9c7fa68b382417ba34df4122c632dcf')
 
 # LocalDB Config
 DUCKDB_PATH = os.getenv('DUCKDB_PATH', 'pro_trade.db')

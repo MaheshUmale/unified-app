@@ -63,6 +63,12 @@ def on_message(message: Union[Dict, str]):
     global tick_buffer
     try:
         data = json.loads(message) if isinstance(message, str) else message
+
+        # Handle Chart/Indicator Updates
+        if data.get('type') == 'chart_update':
+            emit_event('chart_update', data['data'])
+            return
+
         feeds_map = data.get('feeds', {})
         if not feeds_map: return
 

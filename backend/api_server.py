@@ -15,6 +15,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from config import LOGGING_CONFIG, INITIAL_INSTRUMENTS
 from core import data_engine
+from core.symbol_mapper import symbol_mapper
 from external.tv_api import tv_api
 from datetime import datetime
 from urllib.parse import unquote
@@ -102,6 +103,18 @@ async def get_intraday(instrument_key: str, interval: str = '1'):
     """Fetch intraday candles from TradingView."""
     try:
         clean_key = unquote(instrument_key)
+        hrn = symbol_mapper.get_hrn(clean_key)
+
+        # Check if we have history with indicators in WSS
+        from external.tv_live_wss import get_tv_wss
+        wss = get_tv_wss()
+        if wss and hrn in wss.history:
+            hist = wss.history[hrn]
+            return {
+                "candles": hist.get('ohlcv', []),
+                "indicators": hist.get('indicators', [])
+            }
+
         tv_candles = await asyncio.to_thread(tv_api.get_hist_candles, clean_key, interval, 1000)
         if tv_candles:
             return {"candles": tv_candles}
