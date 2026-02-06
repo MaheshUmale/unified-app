@@ -43,7 +43,7 @@ def emit_event(event: str, data: Any, room: Optional[str] = None):
             # Use 'to' for modern python-socketio compatibility
             asyncio.run_coroutine_threadsafe(socketio_instance.emit(event, data, to=room), main_event_loop)
             if room:
-                logger.debug(f"Emitted {event} to room {room}")
+                logger.info(f"Emitted {event} to room {room}")
     except Exception as e:
         logger.error(f"Emit Error: {e}")
 
@@ -66,12 +66,18 @@ def on_message(message: Union[Dict, str]):
     global tick_buffer
     try:
         data = json.loads(message) if isinstance(message, str) else message
+        logger.info(f"Data engine received message type: {data.get('type')}")
 
         # Handle Chart/OHLCV Updates
         if data.get('type') == 'chart_update':
             hrn = data.get('instrumentKey')
+            interval = data.get('interval')
             if hrn:
-                emit_event('chart_update', data['data'], room=hrn)
+                payload = data['data']
+                if isinstance(payload, dict):
+                    payload['instrumentKey'] = hrn
+                    payload['interval'] = interval
+                emit_event('chart_update', payload, room=hrn)
             return
 
         feeds_map = data.get('feeds', {})
@@ -121,7 +127,7 @@ def on_message(message: Union[Dict, str]):
     except Exception as e:
         logger.error(f"Error in data_engine on_message: {e}")
 
-def subscribe_instrument(instrument_key: str):
+def subscribe_instrument(instrument_key: str, interval: str = "1"):
     from external.tv_live_wss import start_tv_wss
     wss = start_tv_wss(on_message)
     # Map common HRNs to WSS symbols
@@ -129,7 +135,7 @@ def subscribe_instrument(instrument_key: str):
     # Ensure uppercase for mapping lookup and WSS subscription
     key_upper = instrument_key.upper()
     target = mapping.get(key_upper, key_upper)
-    wss.subscribe([target])
+    wss.subscribe([target], interval=interval)
 
 def start_websocket_thread(token: str, keys: List[str]):
     from external.tv_live_wss import start_tv_wss

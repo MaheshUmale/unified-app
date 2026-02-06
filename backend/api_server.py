@@ -67,14 +67,15 @@ async def connect(sid, environ):
 @sio.on('subscribe')
 async def handle_subscribe(sid, data):
     instrument_keys = data.get('instrumentKeys', [])
+    interval = data.get('interval', '1')
     for key in instrument_keys:
         # HRN is used as the room name, derived from technical key
         hrn = symbol_mapper.get_hrn(key)
-        logger.info(f"Client {sid} subscribing to: {key} (Room: {hrn})")
+        logger.info(f"Client {sid} subscribing to: {key} ({interval}m) (Room: {hrn})")
         try:
             await sio.enter_room(sid, hrn)
             # Ensure the technical key is uppercase for consistency
-            data_engine.subscribe_instrument(key.upper())
+            data_engine.subscribe_instrument(key.upper(), interval=str(interval))
         except Exception as e:
             logger.error(f"Subscription error for {key}: {e}")
             continue
@@ -114,8 +115,9 @@ async def get_intraday(instrument_key: str, interval: str = '1'):
 
         wss_candles = []
         wss_indicators = []
-        if wss and hrn in wss.history:
-            hist = wss.history[hrn]
+        hist_key = (hrn, interval)
+        if wss and hist_key in wss.history:
+            hist = wss.history[hist_key]
             wss_candles = hist.get('ohlcv', [])
             wss_indicators = hist.get('indicators', [])
 
