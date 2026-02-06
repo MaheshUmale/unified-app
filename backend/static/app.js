@@ -221,11 +221,18 @@ async function switchSymbol(symbol) {
         const resData = await fetchIntraday(currentSymbol, currentInterval);
         let candles = resData.candles || [];
 
-        // Filter for market hours (9:15 - 15:30 IST) for NSE symbols on intraday timeframes
+        // Filter for market hours (9:15 - 15:30 IST) for NSE symbols on intraday timeframes ONLY for today's data
         if (candles && candles.length > 0 && currentSymbol.startsWith('NSE:') && !['D', 'W'].includes(currentInterval)) {
+            const todayIST = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', year: 'numeric', month: 'numeric', day: 'numeric' }).format(new Date());
+
             candles = candles.filter(c => {
                 const ts = typeof c.timestamp === 'number' ? c.timestamp : Math.floor(new Date(c.timestamp).getTime() / 1000);
                 const date = new Date(ts * 1000);
+                const dateIST = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', year: 'numeric', month: 'numeric', day: 'numeric' }).format(date);
+
+                // If it's not today, don't filter by market hours (allow viewing historical backfills)
+                if (dateIST !== todayIST) return true;
+
                 const istTime = new Intl.DateTimeFormat('en-GB', {
                     timeZone: 'Asia/Kolkata', hour: 'numeric', minute: 'numeric', hourCycle: 'h23'
                 }).format(date);
@@ -486,8 +493,14 @@ function handleChartUpdate(data) {
                     }
                 }
 
-                // Handle Shapes/Dots/Bubbles as Markers
-                if (plottype >= 3 || title.includes('Bubble') || title.includes('Dot') || title.includes('TF')) {
+                // Handle Shapes/Dots/Bubbles as Markers ONLY if they are relative annotations (like Bubbles)
+                // Support/Resistance levels (TF, S, R) need absolute price positioning, so we use LineSeries instead.
+                const isBubble = lowerTitle.includes('bubble');
+                const isMarker = (plottype >= 3 || title.includes('Dot')) && !lowerTitle.includes('tf') &&
+                                 !lowerTitle.includes('support') && !lowerTitle.includes('resistance') &&
+                                 !lowerTitle.includes('_s') && !lowerTitle.includes('_r');
+
+                if (isBubble || isMarker) {
                     const candle = fullHistory.candles.find(c => c.time === time);
                     const config = getMarkerConfig(title, val, candle);
 
@@ -497,7 +510,7 @@ function handleChartUpdate(data) {
                         position: config.position,
                         color: color,
                         shape: config.shape,
-                        size: title.includes('Bubble') ? 2 : 1
+                        size: isBubble ? 2 : 1
                     });
                     return;
                 }
@@ -525,8 +538,13 @@ function handleChartUpdate(data) {
                     const commonOptions = {
                         title: title,
                         priceScaleId: targetScale,
-                        // Always exclude from autoscale to prevent compression
-                        autoscaleInfoProvider: () => null,
+                        // Always exclude from autoscale to prevent compression by providing a neutral range
+                        autoscaleInfoProvider: () => ({
+                            priceRange: {
+                                min: 1e18,
+                                max: -1e18,
+                            },
+                        }),
                     };
 
                     if (plottype === 1 || plottype === 2) {
@@ -544,11 +562,16 @@ function handleChartUpdate(data) {
                         });
                     } else {
                         // plottype 0 (Line) or 4 (Line with breaks) or others
+                        // If it's an S/R level, use dotted style
+                        const isSR = lowerTitle.includes('tf') || lowerTitle.includes('support') ||
+                                     lowerTitle.includes('resistance') || lowerTitle.includes('_s') ||
+                                     lowerTitle.includes('_r');
+
                         series = mainChart.addLineSeries({
                             ...commonOptions,
                             color: color,
-                            lineWidth: meta ? meta.linewidth : 1,
-                            lineStyle: (meta && meta.linestyle === 2) ? 2 : 0,
+                            lineWidth: isSR ? 2 : (meta ? meta.linewidth : 1),
+                            lineStyle: isSR ? 2 : ((meta && meta.linestyle === 2) ? 2 : 0),
                         });
                     }
                     indicatorSeries[key] = { series, lastTime: 0 };
@@ -627,7 +650,12 @@ function handleChartUpdate(data) {
                         color: g.c ? tvColorToRGBA(g.c) : '#ffffff',
                         lineWidth: g.w || 1,
                         priceScaleId: 'right',
-                        autoscaleInfoProvider: () => null,
+                        autoscaleInfoProvider: () => ({
+                            priceRange: {
+                                min: 1e18,
+                                max: -1e18,
+                            },
+                        }),
                     });
                     graphicsSeries[id] = series;
                 }
@@ -797,12 +825,12 @@ function initZoomControls() {
     document.getElementById(btns.in).addEventListener('click', () => {
         const timeScale = mainChart.timeScale();
         const currentSpacing = timeScale.options().barSpacing;
-        timeScale.applyOptions({ barSpacing: currentSpacing * 1.2 });
+        timeScale.applyOptions({ barSpacing: Math.min(50, currentSpacing * 1.2) });
     });
     document.getElementById(btns.out).addEventListener('click', () => {
         const timeScale = mainChart.timeScale();
         const currentSpacing = timeScale.options().barSpacing;
-        timeScale.applyOptions({ barSpacing: Math.max(0.5, currentSpacing / 1.2) });
+        timeScale.applyOptions({ barSpacing: Math.max(0.1, currentSpacing / 1.2) });
     });
     document.getElementById(btns.res).addEventListener('click', () => {
         mainChart.timeScale().reset();
