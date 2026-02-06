@@ -78,10 +78,11 @@ class TradingViewWSS:
     def resolve_symbol(self, symbol):
         self.current_chart_symbol = symbol
         symbol_payload = f"={json.dumps({'symbol': symbol, 'adjustment': 'splits'})}"
-        self._send_message("resolve_symbol", [self.chart_session, self.series_id, symbol_payload])
+        self._send_message("resolve_symbol", [self.chart_session, "sds_sym_1", symbol_payload])
 
     def create_series(self, timeframe="1D", bars=300):
-        self._send_message("create_series", [self.chart_session, "$prices", "s1", self.series_id, timeframe, bars])
+        # Param order: [session, series_id, chart_id, symbol_id, timeframe, bars, ""]
+        self._send_message("create_series", [self.chart_session, "sds_1", "s1", "sds_sym_1", timeframe, bars, ""])
 
     def create_study(self, study_id, metadata, custom_inputs=None):
         inputs = {"text": metadata["script"]}
@@ -104,7 +105,8 @@ class TradingViewWSS:
         if metadata.get("type") == "strategy":
             indicator_type = "StrategyScript@tv-scripting-101!"
 
-        self._send_message("create_study", [self.chart_session, study_id, "st1", "$prices", indicator_type, inputs])
+        # Param order: [session, study_id, study_alias, series_id, type, inputs]
+        self._send_message("create_study", [self.chart_session, study_id, study_id, "sds_1", indicator_type, inputs])
 
     def get_user_data(self):
         if not TV_COOKIE: return None
@@ -182,6 +184,7 @@ class TradingViewWSS:
         logger.info("TV WSS Connection opened")
         token = self.get_user_data() or "unauthorized_user_token"
         self._send_message("set_auth_token", [token])
+        self._send_message("set_locale", ["en", "US"])
 
         # Quote session for all symbols
         self._send_message("quote_create_session", [self.quote_session])
@@ -301,12 +304,25 @@ class TradingViewWSS:
                         mapped_row = {"timestamp": row[0]}
 
                         # Map defined plots
+                        # TradingView often sends [val1, color1, val2, color2...] if plots have dynamic colors
+                        # We try to detect if there's a column right after the plot value
                         for p_def in plot_defs:
                             idx = p_def["index"] + 1 # +1 for timestamp
                             if idx < len(row):
                                 val = row[idx]
                                 mapped_row[p_def["title"]] = val
                                 mapped_row[f"{p_def['title']}_meta"] = p_def
+
+                                # Check for dynamic color in next column if it looks like a color value
+                                # Interleaved color logic
+                                if len(row) > len(plot_defs) + 1:
+                                    # Very likely interleaved. This is a heuristic.
+                                    # In interleaved mode, col_idx for plot i is 1 + 2*i
+                                    col_idx = 1 + 2 * p_def["index"]
+                                    if col_idx < len(row):
+                                        mapped_row[p_def["title"]] = row[col_idx]
+                                        if col_idx + 1 < len(row):
+                                            mapped_row[f"{p_def['title']}_color"] = row[col_idx + 1]
 
                         mapped_plots.append(mapped_row)
 
