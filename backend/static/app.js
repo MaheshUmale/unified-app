@@ -369,18 +369,20 @@ function tvColorToRGBA(color) {
 function getMarkerConfig(title, val, candle) {
     let shape = 'circle';
     let position = 'inBar';
+    const lowerTitle = title.toLowerCase();
 
-    if (title.includes('Bubble')) {
+    if (lowerTitle.includes('bubble')) {
         shape = 'circle';
-        position = (candle && val > candle.close) ? 'aboveBar' : 'belowBar';
-    } else if (title.includes('R') || title.includes('High') || title.includes('Resistance')) {
+        // According to Pine: bubbles for close > open are below, close < open are above
+        position = (candle && candle.close > candle.open) ? 'belowBar' : 'aboveBar';
+    } else if (lowerTitle.includes(' r') || lowerTitle.includes('resistance') || lowerTitle.includes('top')) {
         shape = 'circle';
         position = 'aboveBar';
-    } else if (title.includes('S') || title.includes('Low') || title.includes('Support')) {
+    } else if (lowerTitle.includes(' s') || lowerTitle.includes('support') || lowerTitle.includes('bot')) {
         shape = 'circle';
         position = 'belowBar';
-    } else if (title.includes('TF')) {
-        shape = 'circle';
+    } else if (lowerTitle.includes('tf')) {
+        shape = 'square';
         position = 'inBar';
     }
 
@@ -437,6 +439,7 @@ function handleChartUpdate(data) {
     if (data.indicators && data.indicators.length > 0) {
         const barColors = {}; // time -> color
         const bgColors = {}; // time -> color
+        let hasHistoricalChanges = false;
 
         data.indicators.forEach(row => {
             const time = Math.floor(row.timestamp);
@@ -522,9 +525,8 @@ function handleChartUpdate(data) {
                     const commonOptions = {
                         title: title,
                         priceScaleId: targetScale,
-                        // By default, return null for priceRange to exclude from auto-scaling.
-                        // This prevents oscillators on the main scale from squashing candles.
-                        autoscaleInfoProvider: () => ({ priceRange: null }),
+                        // Always exclude from autoscale to prevent compression
+                        autoscaleInfoProvider: () => null,
                     };
 
                     if (plottype === 1 || plottype === 2) {
@@ -565,22 +567,40 @@ function handleChartUpdate(data) {
             candleSeries.setMarkers(allMarkers.sort((a,b) => a.time - b.time));
         }
 
-        // Apply Bar Colors
-        if (Object.keys(barColors).length > 0) {
+        // Apply Bar Colors efficiently
+        const barColorTimes = Object.keys(barColors);
+        if (barColorTimes.length > 0) {
             let changed = false;
-            const updatedCandles = fullHistory.candles.map(c => {
-                if (barColors[c.time] !== undefined) {
-                    const newCol = barColors[c.time];
-                    if (c.color !== newCol) {
+            barColorTimes.forEach(tStr => {
+                const t = parseInt(tStr);
+                const col = barColors[tStr];
+
+                // If it's the latest candle, we can use update()
+                if (lastCandle && t === lastCandle.time) {
+                    if (lastCandle.color !== col) {
+                        lastCandle.color = col;
+                        lastCandle.wickColor = col;
+                        lastCandle.borderColor = col;
+                        lastCandle.hasExplicitColor = true;
+                        candleSeries.update(lastCandle);
+                        // Also sync fullHistory
+                        const idx = fullHistory.candles.findIndex(c => c.time === t);
+                        if (idx !== -1) fullHistory.candles[idx] = { ...lastCandle };
+                    }
+                } else {
+                    // It's a historical bar color change
+                    const idx = fullHistory.candles.findIndex(c => c.time === t);
+                    if (idx !== -1 && fullHistory.candles[idx].color !== col) {
+                        fullHistory.candles[idx].color = col;
+                        fullHistory.candles[idx].wickColor = col;
+                        fullHistory.candles[idx].borderColor = col;
+                        fullHistory.candles[idx].hasExplicitColor = true;
                         changed = true;
-                        return { ...c, color: newCol, wickColor: newCol, borderColor: newCol };
                     }
                 }
-                return c;
             });
             if (changed) {
-                candleSeries.setData(updatedCandles);
-                fullHistory.candles = updatedCandles;
+                renderData();
             }
         }
 
@@ -607,7 +627,7 @@ function handleChartUpdate(data) {
                         color: g.c ? tvColorToRGBA(g.c) : '#ffffff',
                         lineWidth: g.w || 1,
                         priceScaleId: 'right',
-                        autoscaleInfoProvider: () => ({ priceRange: null }),
+                        autoscaleInfoProvider: () => null,
                     });
                     graphicsSeries[id] = series;
                 }
@@ -737,7 +757,7 @@ function renderData() {
 
     // Apply RVOL coloring if candles don't already have explicit colors
     let displayCandles = [...fullHistory.candles].sort((a,b) => a.time - b.time);
-    const hasExplicitColors = displayCandles.some(c => c.color && !c.color.startsWith('rgba(3, 179, 9'));
+    const hasExplicitColors = displayCandles.some(c => c.hasExplicitColor);
 
     if (!hasExplicitColors) {
         displayCandles = applyRvolColoring(displayCandles);
@@ -775,10 +795,14 @@ function setLoading(show) {
 function initZoomControls() {
     const btns = { in: 'zoomInBtn', out: 'zoomOutBtn', res: 'resetZoomBtn' };
     document.getElementById(btns.in).addEventListener('click', () => {
-        mainChart.timeScale().zoomIn();
+        const timeScale = mainChart.timeScale();
+        const currentSpacing = timeScale.options().barSpacing;
+        timeScale.applyOptions({ barSpacing: currentSpacing * 1.2 });
     });
     document.getElementById(btns.out).addEventListener('click', () => {
-        mainChart.timeScale().zoomOut();
+        const timeScale = mainChart.timeScale();
+        const currentSpacing = timeScale.options().barSpacing;
+        timeScale.applyOptions({ barSpacing: Math.max(0.5, currentSpacing / 1.2) });
     });
     document.getElementById(btns.res).addEventListener('click', () => {
         mainChart.timeScale().reset();
