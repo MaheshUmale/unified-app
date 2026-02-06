@@ -11,6 +11,7 @@ let currentInterval = '1';
 let mainChart = null;
 let candleSeries = null;
 let volumeSeries = null;
+let bgSeries = null;
 let indicatorSeries = {}; // Map of plot name -> series instance
 let lastCandle = null;
 
@@ -100,6 +101,17 @@ function init() {
 
         mainChart.priceScale('volume').applyOptions({
             scaleMargins: { top: 0.8, bottom: 0 },
+            visible: false,
+        });
+
+        bgSeries = mainChart.addHistogramSeries({
+            priceScaleId: 'bg',
+            lastValueVisible: false,
+            priceLineVisible: false,
+        });
+
+        mainChart.priceScale('bg').applyOptions({
+            scaleMargins: { top: 0, bottom: 0 },
             visible: false,
         });
 
@@ -305,10 +317,10 @@ let lastChartUpdateTime = 0;
 
 function tvColorToRGBA(color) {
     if (typeof color !== 'number') return color;
-    const a = ((color >> 24) & 0xFF) / 255;
-    const r = (color >> 16) & 0xFF;
-    const g = (color >> 8) & 0xFF;
-    const b = color & 0xFF;
+    const a = ((color >>> 24) & 0xFF) / 255;
+    const r = (color >>> 16) & 0xFF;
+    const g = (color >>> 8) & 0xFF;
+    const b = (color & 0xFF);
     return `rgba(${r}, ${g}, ${b}, ${a})`;
 }
 
@@ -342,12 +354,16 @@ function handleChartUpdate(data) {
 
     if (data.indicators && data.indicators.length > 0) {
         const barColors = {}; // time -> color
+        const bgColors = {}; // time -> color
 
         data.indicators.forEach(row => {
             const time = Math.floor(row.timestamp);
 
             if (row.Bar_Color) {
                 barColors[time] = tvColorToRGBA(row.Bar_Color);
+            }
+            if (row.Background_Color) {
+                bgColors[time] = tvColorToRGBA(row.Background_Color);
             }
 
             Object.keys(row).forEach(key => {
@@ -357,7 +373,11 @@ function handleChartUpdate(data) {
                 const val = row[key];
                 if (val === null || typeof val !== 'number' || val >= 1e10) return;
 
-                const color = meta ? tvColorToRGBA(meta.color) : '#3b82f6';
+                let color = meta ? tvColorToRGBA(meta.color) : '#3b82f6';
+                if (row[`${key}_color`]) {
+                    color = tvColorToRGBA(row[`${key}_color`]);
+                }
+
                 const plottype = meta ? meta.type : 0;
                 const title = meta ? meta.title : key;
 
@@ -369,12 +389,15 @@ function handleChartUpdate(data) {
                         shape = 'circle';
                         const candle = fullHistory.candles.find(c => c.time === time);
                         position = (candle && val > candle.close) ? 'aboveBar' : 'belowBar';
-                    } else if (title.includes('R') || title.includes('High')) {
-                        shape = 'arrowDown';
+                    } else if (title.includes('R') || title.includes('High') || title.includes('Resistance')) {
+                        shape = 'circle'; // Use circles for S/R as in the image
                         position = 'aboveBar';
-                    } else if (title.includes('S') || title.includes('Low')) {
-                        shape = 'arrowUp';
+                    } else if (title.includes('S') || title.includes('Low') || title.includes('Support')) {
+                        shape = 'circle';
                         position = 'belowBar';
+                    } else if (title.includes('TF')) {
+                        shape = 'circle';
+                        position = 'inBar';
                     }
 
                     const markerKey = `${time}_${key}`;
@@ -443,6 +466,16 @@ function handleChartUpdate(data) {
             });
             candleSeries.setData(updatedCandles);
             fullHistory.candles = updatedCandles;
+        }
+
+        // Apply Background Colors
+        if (Object.keys(bgColors).length > 0) {
+            const bgData = Object.keys(bgColors).map(t => ({
+                time: parseInt(t),
+                value: 1000000, // Large enough to cover range
+                color: bgColors[t]
+            })).sort((a,b) => a.time - b.time);
+            bgSeries.setData(bgData);
         }
     }
 }
