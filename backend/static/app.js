@@ -11,9 +11,6 @@ let currentInterval = '1';
 let mainChart = null;
 let candleSeries = null;
 let volumeSeries = null;
-let bgSeries = null;
-let graphicsSeries = {}; // Map of graphic ID -> series instance
-let indicatorSeries = {}; // Map of plot name -> series instance
 let lastCandle = null;
 
 // Replay State
@@ -23,7 +20,7 @@ let replayInterval = null;
 let isPlaying = false;
 
 // State
-let fullHistory = { candles: [], volume: [], markers: new Map() };
+let fullHistory = { candles: [], volume: [] };
 
 // --- Initialization ---
 
@@ -103,17 +100,6 @@ function init() {
 
         mainChart.priceScale('volume').applyOptions({
             scaleMargins: { top: 0.8, bottom: 0 },
-            visible: false,
-        });
-
-        bgSeries = mainChart.addHistogramSeries({
-            priceScaleId: 'bg',
-            lastValueVisible: false,
-            priceLineVisible: false,
-        });
-
-        mainChart.priceScale('bg').applyOptions({
-            scaleMargins: { top: 0, bottom: 0 },
             visible: false,
         });
 
@@ -209,13 +195,6 @@ async function switchSymbol(symbol) {
     currentSymbol = symbol;
     lastCandle = null;
 
-    // Clear previous indicators, markers and graphics
-    Object.values(indicatorSeries).forEach(obj => mainChart.removeSeries(obj.series));
-    indicatorSeries = {};
-    Object.values(graphicsSeries).forEach(s => mainChart.removeSeries(s));
-    graphicsSeries = {};
-    fullHistory.markers.clear();
-
     setLoading(true);
     try {
         const resData = await fetchIntraday(currentSymbol, currentInterval);
@@ -265,7 +244,6 @@ async function switchSymbol(symbol) {
             })).sort((a, b) => a.time - b.time);
 
             fullHistory.volume = volData;
-            if (!fullHistory.markers) fullHistory.markers = new Map();
 
             renderData();
             lastCandle.volume = candles[candles.length - 1].volume;
@@ -373,28 +351,6 @@ function tvColorToRGBA(color) {
     return `rgba(${r}, ${g}, ${b}, ${a})`;
 }
 
-function getMarkerConfig(title, val, candle) {
-    let shape = 'circle';
-    let position = 'inBar';
-    const lowerTitle = title.toLowerCase();
-
-    if (lowerTitle.includes('bubble')) {
-        shape = 'circle';
-        // According to Pine: bubbles for close > open are below, close < open are above
-        position = (candle && candle.close > candle.open) ? 'belowBar' : 'aboveBar';
-    } else if (lowerTitle.includes(' r') || lowerTitle.includes('resistance') || lowerTitle.includes('top')) {
-        shape = 'circle';
-        position = 'aboveBar';
-    } else if (lowerTitle.includes(' s') || lowerTitle.includes('support') || lowerTitle.includes('bot')) {
-        shape = 'circle';
-        position = 'belowBar';
-    } else if (lowerTitle.includes('tf')) {
-        shape = 'square';
-        position = 'inBar';
-    }
-
-    return { shape, position };
-}
 
 function handleChartUpdate(data) {
     lastChartUpdateTime = Date.now();
@@ -443,229 +399,7 @@ function handleChartUpdate(data) {
     }
 }
 
-    if (data.indicators && data.indicators.length > 0) {
-        const barColors = {}; // time -> color
-        const bgColors = {}; // time -> color
-        let hasHistoricalChanges = false;
-
-        data.indicators.forEach(row => {
-            const time = Math.floor(row.timestamp);
-
-            if (row.Bar_Color) {
-                barColors[time] = tvColorToRGBA(row.Bar_Color);
-            }
-            if (row.Background_Color) {
-                bgColors[time] = tvColorToRGBA(row.Background_Color);
-            }
-
-            Object.keys(row).forEach(key => {
-                if (key === 'timestamp' || key === 'Bar_Color' || key === 'Background_Color' || key.endsWith('_meta')) return;
-
-                const meta = row[`${key}_meta`];
-                const val = row[key];
-                if (val === null || typeof val !== 'number' || val >= 1e10) return;
-
-                let color = meta ? tvColorToRGBA(meta.color) : '#3b82f6';
-                if (row[`${key}_color`]) {
-                    color = tvColorToRGBA(row[`${key}_color`]);
-                }
-
-                const plottype = meta ? meta.type : 0;
-                const title = meta ? meta.title : key;
-
-                // Filter out plots that look like part of a plotcandle (O, H, L, C)
-                // These often have titles containing "Open", "High", "Low", "Close" or "plot_N".
-                const lowerTitle = title.toLowerCase();
-                if ((lowerTitle.includes('candle') || lowerTitle.includes('plot_')) &&
-                    (lowerTitle.includes('open') || lowerTitle.includes('high') ||
-                     lowerTitle.includes('low') || lowerTitle.includes('close') ||
-                     /\d+/.test(lowerTitle))) {
-
-                    // Specific check for plot_7, plot_8, plot_9, plot_10 which are common O/H/L/C plots
-                    if (['plot_7', 'plot_8', 'plot_9', 'plot_10'].includes(title)) {
-                        return;
-                    }
-
-                    // If it's very close to OHLC and has generic title, skip it
-                    if (lastCandle && Math.abs(val - lastCandle.close) / lastCandle.close < 0.01) {
-                         // Likely redundant plot
-                         return;
-                    }
-                }
-
-                // Handle Shapes/Dots/Bubbles as Markers ONLY if they are relative annotations (like Bubbles)
-                // Support/Resistance levels (TF, S, R) need absolute price positioning, so we use LineSeries instead.
-                const isBubble = lowerTitle.includes('bubble');
-                const isMarker = (plottype >= 3 || title.includes('Dot')) && !lowerTitle.includes('tf') &&
-                                 !lowerTitle.includes('support') && !lowerTitle.includes('resistance') &&
-                                 !lowerTitle.includes('_s') && !lowerTitle.includes('_r');
-
-                if (isBubble || isMarker) {
-                    const candle = fullHistory.candles.find(c => c.time === time);
-                    const config = getMarkerConfig(title, val, candle);
-
-                    const markerKey = `${time}_${key}`;
-                    fullHistory.markers.set(markerKey, {
-                        time: time,
-                        position: config.position,
-                        color: color,
-                        shape: config.shape,
-                        size: isBubble ? 2 : 1
-                    });
-                    return;
-                }
-
-                let series = indicatorSeries[key];
-                if (!series) {
-                    // Determine if this is a price-based indicator or an oscillator (like z-score)
-                    let targetScale = 'right';
-
-                    // Use last candle or historical candles to estimate current price level
-                    const referencePrice = lastCandle ? lastCandle.close :
-                                         (fullHistory.candles.length > 0 ? fullHistory.candles[fullHistory.candles.length-1].close : null);
-
-                    // Heuristic: If value is small (< 1000) and far from current price, it's likely an oscillator.
-                    // Also check for specific keywords in title.
-                    const isOscillator = (val < 1000 && (!referencePrice || Math.abs(val - referencePrice) > referencePrice * 0.5));
-
-                    if (isOscillator && !title.toLowerCase().includes('pivot') && !title.toLowerCase().includes('vwap') && !title.toLowerCase().includes('ma')) {
-                        targetScale = 'oscillator';
-                        mainChart.priceScale(targetScale).applyOptions({
-                            visible: false, // Keep oscillators hidden from Y-axis
-                        });
-                    }
-
-                    const commonOptions = {
-                        title: title,
-                        priceScaleId: targetScale,
-                        // Always exclude from autoscale to prevent compression by providing a neutral range
-                        autoscaleInfoProvider: () => ({
-                            priceRange: {
-                                min: 1e18,
-                                max: -1e18,
-                            },
-                        }),
-                    };
-
-                    if (plottype === 1 || plottype === 2) {
-                        series = mainChart.addHistogramSeries({
-                            ...commonOptions,
-                            color: color,
-                        });
-                    } else if (plottype === 5) {
-                        series = mainChart.addAreaSeries({
-                            ...commonOptions,
-                            topColor: color,
-                            bottomColor: 'transparent',
-                            lineColor: color,
-                            lineWidth: meta ? meta.linewidth : 1,
-                        });
-                    } else {
-                        // plottype 0 (Line) or 4 (Line with breaks) or others
-                        // If it's an S/R level, use dotted style
-                        const isSR = lowerTitle.includes('tf') || lowerTitle.includes('support') ||
-                                     lowerTitle.includes('resistance') || lowerTitle.includes('_s') ||
-                                     lowerTitle.includes('_r');
-
-                        series = mainChart.addLineSeries({
-                            ...commonOptions,
-                            color: color,
-                            lineWidth: isSR ? 2 : (meta ? meta.linewidth : 1),
-                            lineStyle: isSR ? 2 : ((meta && meta.linestyle === 2) ? 2 : 0),
-                        });
-                    }
-                    indicatorSeries[key] = { series, lastTime: 0 };
-                }
-
-                if (time >= indicatorSeries[key].lastTime) {
-                    indicatorSeries[key].series.update({ time: time, value: val });
-                    indicatorSeries[key].lastTime = time;
-                }
-            });
-        });
-
-        // Apply Markers (persistent from fullHistory)
-        if (fullHistory.markers.size > 0) {
-            const allMarkers = Array.from(fullHistory.markers.values());
-            candleSeries.setMarkers(allMarkers.sort((a,b) => a.time - b.time));
-        }
-
-        // Apply Bar Colors efficiently
-        const barColorTimes = Object.keys(barColors);
-        if (barColorTimes.length > 0) {
-            let changed = false;
-            barColorTimes.forEach(tStr => {
-                const t = parseInt(tStr);
-                const col = barColors[tStr];
-
-                // If it's the latest candle, we can use update()
-                if (lastCandle && t === lastCandle.time) {
-                    if (lastCandle.color !== col) {
-                        lastCandle.color = col;
-                        lastCandle.wickColor = col;
-                        lastCandle.borderColor = col;
-                        lastCandle.hasExplicitColor = true;
-                        candleSeries.update(lastCandle);
-                        // Also sync fullHistory
-                        const idx = fullHistory.candles.findIndex(c => c.time === t);
-                        if (idx !== -1) fullHistory.candles[idx] = { ...lastCandle };
-                    }
-                } else {
-                    // It's a historical bar color change
-                    const idx = fullHistory.candles.findIndex(c => c.time === t);
-                    if (idx !== -1 && fullHistory.candles[idx].color !== col) {
-                        fullHistory.candles[idx].color = col;
-                        fullHistory.candles[idx].wickColor = col;
-                        fullHistory.candles[idx].borderColor = col;
-                        fullHistory.candles[idx].hasExplicitColor = true;
-                        changed = true;
-                    }
-                }
-            });
-            if (changed) {
-                renderData();
-            }
-        }
-
-        // Apply Background Colors
-        if (Object.keys(bgColors).length > 0) {
-            const bgData = Object.keys(bgColors).map(t => ({
-                time: parseInt(t),
-                value: 1e12, // Extremely large to cover any price range
-                color: bgColors[t]
-            })).sort((a,b) => a.time - b.time);
-            bgSeries.setData(bgData);
-        }
-    }
-
-    if (data.graphics && data.graphics.length > 0) {
-        data.graphics.forEach(g => {
-            // Basic line object support
-            if (g.v && g.v.length >= 4) {
-                const [t1, p1, t2, p2] = g.v;
-                const id = g.id || `line_${t1}_${p1}`;
-                let series = graphicsSeries[id];
-                if (!series) {
-                    series = mainChart.addLineSeries({
-                        color: g.c ? tvColorToRGBA(g.c) : '#ffffff',
-                        lineWidth: g.w || 1,
-                        priceScaleId: 'right',
-                        autoscaleInfoProvider: () => ({
-                            priceRange: {
-                                min: 1e18,
-                                max: -1e18,
-                            },
-                        }),
-                    });
-                    graphicsSeries[id] = series;
-                }
-                series.setData([
-                    { time: Math.floor(t1), value: p1 },
-                    { time: Math.floor(t2), value: p2 }
-                ]);
-            }
-        });
-    }
+    // Indicator and graphics handling removed per user request
 }
 
 function updateRealtimeCandle(quote) {
@@ -793,12 +527,6 @@ function renderData() {
 
     candleSeries.setData(displayCandles);
     volumeSeries.setData([...fullHistory.volume].sort((a,b) => a.time - b.time));
-
-    // If we have markers, re-apply them
-    if (fullHistory.markers && fullHistory.markers.size > 0) {
-        const allMarkers = Array.from(fullHistory.markers.values());
-        candleSeries.setMarkers(allMarkers.sort((a,b) => a.time - b.time));
-    }
 }
 
 // --- Utils & Controls ---
