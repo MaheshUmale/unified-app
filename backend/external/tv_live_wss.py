@@ -111,8 +111,10 @@ class TradingViewWSS:
         url = "https://www.tradingview.com/"
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
         try:
-            res = requests.get(url, headers=headers, cookies={"sessionid": TV_COOKIE}, timeout=15)
+            res = requests.get(url, headers=headers, cookies=TV_COOKIE, timeout=15)
+            # logger.info(res.text)
             auth_token = re.search(r'"auth_token":"(.*?)"', res.text)
+            logger.info(f"auth TOKEN {auth_token.group(1) if auth_token else 'None'}")
             if auth_token: return auth_token.group(1)
         except Exception as e:
             logger.error(f"Error getting user data: {e}")
@@ -125,7 +127,7 @@ class TradingViewWSS:
         if TV_COOKIE:
             try:
                 # Basic session cookie parsing if it's a simple string
-                cookies = {"sessionid": TV_COOKIE}
+                cookies =  TV_COOKIE
             except: pass
 
         response = requests.get(url, headers=headers, cookies=cookies)
@@ -181,6 +183,8 @@ class TradingViewWSS:
                     self.create_study(self.study_id, meta)
                     logger.info(f"Loaded study: {TV_STUDY_ID}")
                 except Exception as e:
+                    import traceback
+                    traceback.print_exc()
                     logger.error(f"Failed to load study {TV_STUDY_ID}: {e}")
 
     def on_message(self, ws, message):

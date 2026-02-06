@@ -3,9 +3,15 @@ import os
 # --- Global Configuration ---
 # It is recommended to set these in environment variables for security
 # TradingView Config
-TV_USERNAME = os.getenv('TV_USERNAME', '')
-TV_PASSWORD = os.getenv('TV_PASSWORD', '')
-TV_COOKIE = os.getenv('TV_COOKIE', '')
+# TV_USERNAME = os.getenv('TV_USERNAME', '')
+# TV_PASSWORD = os.getenv('TV_PASSWORD', '')
+import rookiepy
+
+raw_cookies = rookiepy.brave(['.tradingview.com']) #os.getenv('TV_COOKIE', '')
+# 2. Convert to a simple name:value dictionary
+cookie_dict = {c['name']: c['value'] for c in raw_cookies}
+TV_COOKIE = cookie_dict
+
 TV_STUDY_ID = os.getenv('TV_STUDY_ID', 'USER;f9c7fa68b382417ba34df4122c632dcf')
 
 # LocalDB Config
