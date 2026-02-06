@@ -286,29 +286,23 @@ class TradingViewWSS:
                 if meta and meta.get("plots"):
                     plot_defs = list(meta["plots"].values())
                     mapped_plots = []
+                    # TradingView often sends [val1, color1, val2, color2...] if plots have dynamic colors
+                    # Check first row to see if response is interleaved: 1 (timestamp) + 2 * num_plots
+                    is_interleaved = len(plots_rows[0]) >= (1 + 2 * len(plot_defs)) if plots_rows else False
+
                     for row in plots_rows:
                         mapped_row = {"timestamp": row[0]}
-
-                        # Map defined plots
-                        # TradingView often sends [val1, color1, val2, color2...] if plots have dynamic colors
-                        # Check if response is interleaved: 1 (timestamp) + 2 * num_plots
-                        is_interleaved = len(row) >= (1 + 2 * len(plot_defs))
-
                         for p_def in plot_defs:
                             p_idx = p_def["index"]
-                            if is_interleaved:
-                                val_idx = 1 + 2 * p_idx
-                                color_idx = 2 + 2 * p_idx
-                            else:
-                                val_idx = 1 + p_idx
-                                color_idx = -1
+                            val_idx = 1 + (2 * p_idx if is_interleaved else p_idx)
 
                             if val_idx < len(row):
-                                val = row[val_idx]
-                                mapped_row[p_def["title"]] = val
+                                mapped_row[p_def["title"]] = row[val_idx]
                                 mapped_row[f"{p_def['title']}_meta"] = p_def
-                                if color_idx > 0 and color_idx < len(row):
-                                    mapped_row[f"{p_def['title']}_color"] = row[color_idx]
+                                if is_interleaved:
+                                    color_idx = val_idx + 1
+                                    if color_idx < len(row):
+                                        mapped_row[f"{p_def['title']}_color"] = row[color_idx]
 
                         mapped_plots.append(mapped_row)
 
