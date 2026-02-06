@@ -12,6 +12,7 @@ let mainChart = null;
 let candleSeries = null;
 let volumeSeries = null;
 let bgSeries = null;
+let graphicsSeries = {}; // Map of graphic ID -> series instance
 let indicatorSeries = {}; // Map of plot name -> series instance
 let lastCandle = null;
 
@@ -91,6 +92,7 @@ function init() {
             borderVisible: false,
             wickUpColor: '#22c55e',
             wickDownColor: '#ef4444',
+            priceScaleId: 'right',
         });
 
         volumeSeries = mainChart.addHistogramSeries({
@@ -207,9 +209,11 @@ async function switchSymbol(symbol) {
     currentSymbol = symbol;
     lastCandle = null;
 
-    // Clear previous indicators and markers
+    // Clear previous indicators, markers and graphics
     Object.values(indicatorSeries).forEach(obj => mainChart.removeSeries(obj.series));
     indicatorSeries = {};
+    Object.values(graphicsSeries).forEach(s => mainChart.removeSeries(s));
+    graphicsSeries = {};
     fullHistory.markers.clear();
 
     setLoading(true);
@@ -413,31 +417,32 @@ function handleChartUpdate(data) {
 
                 let series = indicatorSeries[key];
                 if (!series) {
+                    const commonOptions = {
+                        title: title,
+                        priceScaleId: 'right',
+                        autoscaleInfoProvider: () => ({ priceRange: null }), // More explicit exclusion
+                    };
+
                     if (plottype === 1 || plottype === 2) {
                         series = mainChart.addHistogramSeries({
+                            ...commonOptions,
                             color: color,
-                            title: title,
-                            priceScaleId: 'right',
-                            autoscaleInfoProvider: () => null,
                         });
-                    } else if (plottype === 5 || plottype === 4) {
+                    } else if (plottype === 5) {
                         series = mainChart.addAreaSeries({
+                            ...commonOptions,
                             topColor: color,
                             bottomColor: 'transparent',
                             lineColor: color,
                             lineWidth: meta ? meta.linewidth : 1,
-                            title: title,
-                            priceScaleId: 'right',
-                            autoscaleInfoProvider: () => null,
                         });
                     } else {
+                        // plottype 0 (Line) or 4 (Line with breaks) or others
                         series = mainChart.addLineSeries({
+                            ...commonOptions,
                             color: color,
                             lineWidth: meta ? meta.linewidth : 1,
                             lineStyle: (meta && meta.linestyle === 2) ? 2 : 0,
-                            title: title,
-                            priceScaleId: 'right',
-                            autoscaleInfoProvider: () => null,
                         });
                     }
                     indicatorSeries[key] = { series, lastTime: 0 };
@@ -477,6 +482,30 @@ function handleChartUpdate(data) {
             })).sort((a,b) => a.time - b.time);
             bgSeries.setData(bgData);
         }
+    }
+
+    if (data.graphics && data.graphics.length > 0) {
+        data.graphics.forEach(g => {
+            // Basic line object support
+            if (g.v && g.v.length >= 4) {
+                const [t1, p1, t2, p2] = g.v;
+                const id = g.id || `line_${t1}_${p1}`;
+                let series = graphicsSeries[id];
+                if (!series) {
+                    series = mainChart.addLineSeries({
+                        color: g.c ? tvColorToRGBA(g.c) : '#ffffff',
+                        lineWidth: g.w || 1,
+                        priceScaleId: 'right',
+                        autoscaleInfoProvider: () => ({ priceRange: null }),
+                    });
+                    graphicsSeries[id] = series;
+                }
+                series.setData([
+                    { time: Math.floor(t1), value: p1 },
+                    { time: Math.floor(t2), value: p2 }
+                ]);
+            }
+        });
     }
 }
 

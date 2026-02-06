@@ -68,8 +68,10 @@ class TradingViewWSS:
     def _subscribe_symbols(self, symbols):
         if not symbols: return
         for symbol in symbols:
-            # Simplified subscribe call
-            self._send_message("quote_add_symbols", [self.quote_session, symbol])
+            # More robust subscribe call with adjustment
+            symbol_payload = f"={json.dumps({'symbol': symbol, 'adjustment': 'splits'})}"
+            self._send_message("quote_add_symbols", [self.quote_session, symbol_payload])
+            self._send_message("quote_fast_symbols", [self.quote_session, symbol])
         logger.info(f"Subscribed to {len(symbols)} symbols on TV WSS")
 
     def chart_create_session(self):
