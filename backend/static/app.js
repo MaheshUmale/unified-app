@@ -19,6 +19,7 @@ class ChartInstance {
         this.lastCandle = null;
         this.fullHistory = { candles: [], volume: [] };
         this.drawings = [];
+        this.markers = [];
         this.showIndicators = true;
         this.hiddenPlots = new Set();
 
@@ -266,10 +267,11 @@ class ChartInstance {
             });
         });
 
-        if (markers.length > 0) {
-            markers.sort((a, b) => a.time - b.time);
-            this.candleSeries.setMarkers(this.showIndicators ? markers : []);
+        this.markers = markers;
+        if (this.markers.length > 0) {
+            this.markers.sort((a, b) => a.time - b.time);
         }
+        this.candleSeries.setMarkers(this.showIndicators ? this.markers : []);
 
         let newlyAdded = false;
         Object.entries(seriesUpdates).forEach(([key, data]) => {
@@ -283,7 +285,8 @@ class ChartInstance {
                     lineStyle: meta && meta.linestyle === 1 ? LightweightCharts.LineStyle.Dashed : LightweightCharts.LineStyle.Solid,
                     priceScaleId: 'right',
                     autoscaleInfoProvider: () => null,
-                    visible: this.showIndicators && !this.hiddenPlots.has(key)
+                    visible: this.showIndicators && !this.hiddenPlots.has(key),
+                    axisLabelVisible: false
                 });
                 newlyAdded = true;
             }
@@ -490,7 +493,22 @@ function initSearch() {
             try {
                 const res = await fetch(`/api/tv/search?text=${encodeURIComponent(text)}`);
                 const data = await res.json();
-                if (data && data.symbols) displaySearchResults(data.symbols);
+                let symbols = data.symbols || [];
+
+                // If it's an index, also try to fetch options
+                const upperText = text.toUpperCase();
+                if (['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'CNXFINANCE'].some(idx => upperText.includes(idx))) {
+                    const baseIdx = upperText.includes('BANK') ? 'BANKNIFTY' : upperText.includes('FIN') ? 'FINNIFTY' : 'NIFTY';
+                    try {
+                        const optRes = await fetch(`/api/tv/options?underlying=${baseIdx}`);
+                        const optData = await optRes.json();
+                        if (optData && optData.symbols) {
+                            symbols = [...symbols, ...optData.symbols.slice(0, 20)];
+                        }
+                    } catch (e) { console.warn("Options search failed", e); }
+                }
+
+                if (symbols.length > 0) displaySearchResults(symbols);
             } catch (err) { console.error("Search failed:", err); }
         }, 300);
     });
@@ -504,8 +522,12 @@ function displaySearchResults(symbols) {
     symbols.forEach(s => {
         const item = document.createElement('div');
         item.className = 'search-item px-3 py-2 cursor-pointer border-b border-white/5 last:border-0';
+        const isOption = s.type === 'option' || s.symbol.includes('CE') || s.symbol.includes('PE');
         item.innerHTML = `
-            <div class="text-[11px] font-black text-blue-400 tracking-tight">${s.symbol}</div>
+            <div class="flex items-center justify-between">
+                <div class="text-[11px] font-black text-blue-400 tracking-tight">${s.symbol}</div>
+                ${isOption ? '<span class="text-[8px] bg-blue-500/20 text-blue-400 px-1 rounded">OPTION</span>' : ''}
+            </div>
             <div class="text-[9px] text-gray-300 uppercase truncate mt-0.5 font-semibold">${s.description} <span class="text-gray-500 mx-1">|</span> <span class="text-blue-500/80">${s.exchange}</span></div>
         `;
         item.addEventListener('click', () => {
@@ -770,6 +792,7 @@ function initDrawingControls() {
             const key = Object.keys(chart.indicatorSeries).find(k => chart.indicatorSeries[k] === s);
             s.applyOptions({ visible: chart.showIndicators && !chart.hiddenPlots.has(key) });
         });
+        chart.candleSeries.setMarkers(chart.showIndicators ? chart.markers : []);
         updateHeaderUI();
         saveLayout();
     });

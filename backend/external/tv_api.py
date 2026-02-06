@@ -27,6 +27,12 @@ def convert_hrn_to_symbol(symbol_or_hrn):
         dd = dt.strftime("%d")
         cp = "C" if opt_type == "CALL" else "P"
         return f"{base}{yy}{mm}{dd}{cp}{strike}"
+
+    # Handle direct TV option format: NIFTY260210C25500
+    # If it already looks like an option symbol, return as is.
+    if re.search(r"(NIFTY|BANKNIFTY|FINNIFTY)\d{6}[CP]\d+", symbol_or_hrn.upper()):
+        return symbol_or_hrn.upper()
+
     return symbol_or_hrn
 
 logger = logging.getLogger(__name__)
