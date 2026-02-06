@@ -148,7 +148,14 @@ class TradingViewWSS:
 
         plots = {}
         for plot_id, style in metaInfo.get("styles", {}).items():
-            if "title" in style: plots[plot_id] = style["title"].replace(" ", "_")
+            if "title" in style:
+                plots[plot_id] = {
+                    "title": style["title"].replace(" ", "_"),
+                    "type": style.get("plottype"),
+                    "color": style.get("color"),
+                    "linewidth": style.get("linewidth", 1),
+                    "linestyle": style.get("linestyle", 0)
+                }
 
         return {
             "pineId": metaInfo.get("scriptIdPart", indicator_id),
@@ -272,10 +279,17 @@ class TradingViewWSS:
                 meta = self.indicator_metadata.get(self.study_id)
                 plot_data = plots
                 if meta and meta.get("plots"):
-                    plot_names = ["timestamp"] + list(meta["plots"].values())
+                    plot_defs = list(meta["plots"].values())
                     mapped_plots = []
                     for row in plots:
-                        mapped_row = {plot_names[i]: row[i] for i in range(min(len(row), len(plot_names)))}
+                        mapped_row = {"timestamp": row[0]}
+                        # We also want to include the plot metadata in the update if it's the first time
+                        # or just rely on the name. Let's use the name as key.
+                        for i, p_def in enumerate(plot_defs):
+                            if i + 1 < len(row):
+                                mapped_row[p_def["title"]] = row[i+1]
+                                # Attach metadata for the frontend to use if needed
+                                mapped_row[f"{p_def['title']}_meta"] = p_def
                         mapped_plots.append(mapped_row)
                     plot_data = mapped_plots
 
