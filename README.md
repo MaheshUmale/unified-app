@@ -11,27 +11,26 @@ A minimal, high-performance trading terminal featuring TradingView charting, rea
   - Enter Replay mode to analyze historical price action.
   - **Select Start**: Click anywhere on the chart to set the starting point for replay.
   - **Playback**: Use Play/Pause, Next, and Previous buttons to step through candles one by one.
-- **Real-time Data**: Live quote streaming via TradingView WebSocket (WSS) protocol.
-- **Universal Search**: Search for any symbol across exchanges supported by TradingView.
-- **Advanced Technical Indicators**:
-    - **Colored Candles**: Volume-based candle coloring for trend and strength analysis.
-    - **Volume Bubbles**: Visualizes significant volume spikes directly on price action.
-    - **MTF S/R Dots**: Support and Resistance levels derived from high-volume bars.
-    - **Dynamic Pivot**: Real-time trend detection using Force/Pivot logic.
-    - **EVWMA**: Elastic Volume Weighted Moving Average.
-    - **Swing Breaks**: Automated Swing High/Low detection.
-- **Customizable Themes**: Toggle between professional Dark and Light themes.
-- **Efficient Backend**: Built with FastAPI and Socket.IO for low-latency data delivery.
+- **Real-time Data Flow**:
+  - Live quote streaming and indicator plot data via TradingView WebSocket (WSS) protocol.
+  - **Indicator Integration**: Directly pulls plot data from Pine Script studies (Bubbles, S/R Dots, Pivot Lines, etc.).
+  - **Room-based Broadcasting**: Uses Socket.IO rooms named after symbol HRNs to ensure efficient, targeted data delivery.
+- **Advanced Visualization**:
+  - **Markers & Shapes**: Dynamic rendering of volume bubbles and S/R dots using Lightweight Charts markers.
+  - **Bar Coloring**: Real-time candle color updates based on study-provided volume and trend metrics.
+  - **Background Shading**: Highlighting of specific market conditions (e.g., breakout zones) via background colors.
+  - **Smart Scaling**: Automatic Y-axis management to prevent low-value oscillators from compressing the price action.
+- **Universal Search**: Search for any symbol across exchanges supported by TradingView with an integrated proxy for metadata.
+- **Efficient Backend**: Built with FastAPI and DuckDB for low-latency data handling and persistence.
 
 ## Architecture
 
-- **Frontend**: Single Page Application (SPA) using Tailwind CSS, Socket.IO client, and TradingView Lightweight Charts.
+- **Frontend**: SPA built with Tailwind CSS. Utilizes `lightweight-charts` for rendering and `socket.io-client` for real-time synchronization.
 - **Backend**:
-  - `FastAPI`: REST API for symbol search and historical data.
-  - `Socket.IO`: Real-time bi-directional communication.
-  - `TradingViewWSS`: Custom implementation of the TradingView WebSocket protocol for live feeds.
-  - `Data Engine`: Aggregates and broadcasts market data to connected clients.
-- **Database**: `DuckDB` used for local storage of tick data and instrument metadata.
+  - `FastAPI`: Serves the UI and provides REST endpoints for symbol search and historical candle aggregation.
+  - `TradingViewWSS`: A robust WebSocket client that manages 'quote' and 'chart' sessions, handling interleaved study data and protocol heartbeats.
+  - `Data Engine`: The central hub for processing raw ticks, calculating volume deltas, and routing chart updates to the correct Socket.IO rooms.
+  - `DuckDB`: A local, high-performance analytical database for storing tick history and symbol metadata.
 
 ## Setup & Running
 
@@ -49,11 +48,7 @@ A minimal, high-performance trading terminal featuring TradingView charting, rea
 
 ### Configuration
 
-Optional: Set TradingView credentials in environment variables for authenticated access:
-```bash
-export TV_USERNAME='your_username'
-export TV_PASSWORD='your_password'
-```
+Set TradingView credentials or session cookies in `config.py` (or via environment variables) to access private indicators and higher-granularity data.
 
 ### Running the Server
 
@@ -65,12 +60,7 @@ python3 backend/api_server.py
 
 The terminal will be available at `http://localhost:5051`.
 
-## Usage
+## Development & Customization
 
-1. **Search**: Use the centered search bar at the top to find any symbol.
-2. **Zoom**: Use the (+) and (-) buttons on the top right to zoom the chart.
-3. **Replay**:
-   - Click the **REPLAY** button.
-   - Click a candle on the chart to set the start point.
-   - Use the controls to play or step through candles.
-   - Click **EXIT** to return to live mode.
+- **Indicator Mapping**: Indicator plots are mapped in `backend/static/app.js` using the `indicatorSeries` registry. Titles containing "Bubble", "Dot", or "TF" are automatically converted to chart markers.
+- **Symbol Normalization**: Symbols are standardized using `backend/core/symbol_mapper.py` to ensure consistency between technical keys (e.g., `NSE:NIFTY`) and human-readable names (`NIFTY`).

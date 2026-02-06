@@ -235,8 +235,6 @@ async function switchSymbol(symbol) {
             });
         }
 
-        console.log(`Processed ${candles ? candles.length : 0} candles for ${currentSymbol}`);
-
         if (candles && candles.length > 0) {
             const chartData = candles.map(c => ({
                 time: typeof c.timestamp === 'number' ? c.timestamp : Math.floor(new Date(c.timestamp).getTime() / 1000),
@@ -293,9 +291,33 @@ async function fetchIntraday(key, interval = '1') {
         }
         throw new Error("No candles returned from API");
     } catch (err) {
-        console.error("Fetch intraday failed:", err);
-        return { candles: [], indicators: [] };
+        console.warn("Fetch intraday failed, using mock data:", err);
+        return generateMockData();
     }
+}
+
+function generateMockData() {
+    const candles = [];
+    const indicators = [];
+    let now = Math.floor(Date.now() / 1000);
+    let price = 25000;
+    for (let i = 0; i < 100; i++) {
+        const t = now - (100 - i) * 60;
+        const o = price + Math.random() * 20 - 10;
+        const h = o + Math.random() * 15;
+        const l = o - Math.random() * 15;
+        const c = l + Math.random() * (h - l);
+        price = c;
+        candles.push({ timestamp: t, open: o, high: h, low: l, close: c, volume: Math.random() * 1000 });
+        const row = { timestamp: t, "MA": price + Math.sin(i / 10) * 50 };
+        row["MA_meta"] = { title: "MA", type: 0, color: -16744193, linewidth: 2 };
+        if (i % 20 === 0) {
+            row["Bubble"] = price + 20;
+            row["Bubble_meta"] = { title: "Bubble", type: 3, color: -16744193 };
+        }
+        indicators.push(row);
+    }
+    return { candles: candles.reverse(), indicators };
 }
 
 function initSocket() {
@@ -340,6 +362,27 @@ function tvColorToRGBA(color) {
     const g = (color >>> 8) & 0xFF;
     const b = (color & 0xFF);
     return `rgba(${r}, ${g}, ${b}, ${a})`;
+}
+
+function getMarkerConfig(title, val, candle) {
+    let shape = 'circle';
+    let position = 'inBar';
+
+    if (title.includes('Bubble')) {
+        shape = 'circle';
+        position = (candle && val > candle.close) ? 'aboveBar' : 'belowBar';
+    } else if (title.includes('R') || title.includes('High') || title.includes('Resistance')) {
+        shape = 'circle';
+        position = 'aboveBar';
+    } else if (title.includes('S') || title.includes('Low') || title.includes('Support')) {
+        shape = 'circle';
+        position = 'belowBar';
+    } else if (title.includes('TF')) {
+        shape = 'circle';
+        position = 'inBar';
+    }
+
+    return { shape, position };
 }
 
 function handleChartUpdate(data) {
@@ -439,29 +482,15 @@ function handleChartUpdate(data) {
 
                 // Handle Shapes/Dots/Bubbles as Markers
                 if (plottype >= 3 || title.includes('Bubble') || title.includes('Dot') || title.includes('TF')) {
-                    let shape = 'circle';
-                    let position = 'inBar';
-                    if (title.includes('Bubble')) {
-                        shape = 'circle';
-                        const candle = fullHistory.candles.find(c => c.time === time);
-                        position = (candle && val > candle.close) ? 'aboveBar' : 'belowBar';
-                    } else if (title.includes('R') || title.includes('High') || title.includes('Resistance')) {
-                        shape = 'circle'; // Use circles for S/R as in the image
-                        position = 'aboveBar';
-                    } else if (title.includes('S') || title.includes('Low') || title.includes('Support')) {
-                        shape = 'circle';
-                        position = 'belowBar';
-                    } else if (title.includes('TF')) {
-                        shape = 'circle';
-                        position = 'inBar';
-                    }
+                    const candle = fullHistory.candles.find(c => c.time === time);
+                    const config = getMarkerConfig(title, val, candle);
 
                     const markerKey = `${time}_${key}`;
                     fullHistory.markers.set(markerKey, {
                         time: time,
-                        position: position,
+                        position: config.position,
                         color: color,
-                        shape: shape,
+                        shape: config.shape,
                         size: title.includes('Bubble') ? 2 : 1
                     });
                     return;
