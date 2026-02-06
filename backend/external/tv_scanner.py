@@ -6,23 +6,35 @@ logger = logging.getLogger(__name__)
 async def search_options(underlying: str):
     url = "https://scanner.tradingview.com/options/scan2?label-product=options-symbol-search"
 
+    # Standardize underlying for TradingView (usually NSE:NIFTY)
+    if not underlying.startswith("NSE:"):
+        if underlying in ["NIFTY", "BANKNIFTY", "FINNIFTY"]:
+            tv_underlying = f"NSE:{underlying}"
+        else:
+            tv_underlying = underlying
+    else:
+        tv_underlying = underlying
+
+    root = tv_underlying.split(":")[-1]
+
     payload = {
-        "columns": ["name", "description", "exchange", "expiry", "strike", "option_type", "underlying_symbol", "root"],
+        "columns": ["option-type", "strike"],
         "filter": [
-            {"left": "underlying_symbol", "operation": "equal", "right": underlying.upper()},
-            {"left": "type", "operation": "in_range", "right": ["option"]}
+            {"left": "type", "operation": "equal", "right": "option"},
+            {"left": "root", "operation": "equal", "right": root}
         ],
-        "ignore_unknown_fields": True,
-        "markets": ["india"],
-        "options": {"lang": "en"},
-        "range": [0, 100],
-        "sort": {"column": "expiry", "direction": "asc"},
-        "symbols": {"query": {"types": []}, "tickers": []}
+        "ignore_unknown_fields": False,
+        "sort": {"sortBy": "name", "sortOrder": "asc"},
+        "index_filters": [
+            {"name": "underlying_symbol", "values": [tv_underlying]}
+        ]
     }
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "Referer": "https://www.tradingview.com/",
+        "Origin": "https://www.tradingview.com"
     }
 
     try:

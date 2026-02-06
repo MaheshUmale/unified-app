@@ -121,16 +121,13 @@ async def get_tv_options(underlying: str = Query(...)):
 
     # Format results for frontend search dropdown
     results = []
-    for item in data.get('data', []):
-        # item['d'] contains the columns in order
-        d = item.get('d', [])
-        if len(d) >= 8:
-            name = d[0]
-            desc = d[1]
-            exch = d[2]
+    for item in data.get('symbols', []):
+        full_symbol = item.get('s', '')
+        if ':' in full_symbol:
+            exch, name = full_symbol.split(':', 1)
             results.append({
                 "symbol": name,
-                "description": desc,
+                "description": f"{name} Option",
                 "exchange": exch,
                 "type": "option"
             })
