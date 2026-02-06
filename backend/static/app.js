@@ -21,7 +21,7 @@ let replayInterval = null;
 let isPlaying = false;
 
 // State
-let fullHistory = { candles: [], volume: [] };
+let fullHistory = { candles: [], volume: [], markers: new Map() };
 
 // --- Initialization ---
 
@@ -195,9 +195,10 @@ async function switchSymbol(symbol) {
     currentSymbol = symbol;
     lastCandle = null;
 
-    // Clear previous indicators
+    // Clear previous indicators and markers
     Object.values(indicatorSeries).forEach(obj => mainChart.removeSeries(obj.series));
     indicatorSeries = {};
+    fullHistory.markers.clear();
 
     setLoading(true);
     try {
@@ -235,7 +236,9 @@ async function switchSymbol(symbol) {
                 value: c.volume,
                 color: c.close >= c.open ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'
             })).sort((a, b) => a.time - b.time);
-            fullHistory = { candles: chartData, volume: volData };
+            fullHistory.candles = chartData;
+            fullHistory.volume = volData;
+            if (!fullHistory.markers) fullHistory.markers = new Map();
 
             renderData();
             lastCandle = chartData[chartData.length - 1];
@@ -322,14 +325,13 @@ function handleChartUpdate(data) {
         }));
 
         if (candles.length > 1) {
-            // Probably initial history
             fullHistory.candles = candles;
             fullHistory.volume = vol;
+            if (!fullHistory.markers) fullHistory.markers = new Map();
             renderData();
             lastCandle = candles[candles.length - 1];
             lastCandle.volume = data.ohlcv[data.ohlcv.length-1][5];
         } else if (candles.length === 1) {
-            // Real-time candle update
             if (lastCandle && candles[0].time >= lastCandle.time) {
                 candleSeries.update(candles[0]);
                 volumeSeries.update(vol[0]);
@@ -339,41 +341,69 @@ function handleChartUpdate(data) {
     }
 
     if (data.indicators && data.indicators.length > 0) {
+        const barColors = {}; // time -> color
+
         data.indicators.forEach(row => {
             const time = Math.floor(row.timestamp);
+
+            if (row.Bar_Color) {
+                barColors[time] = tvColorToRGBA(row.Bar_Color);
+            }
+
             Object.keys(row).forEach(key => {
                 if (key === 'timestamp' || key === 'Bar_Color' || key === 'Background_Color' || key.endsWith('_meta')) return;
 
                 const meta = row[`${key}_meta`];
+                const val = row[key];
+                if (val === null || typeof val !== 'number' || val >= 1e10) return;
+
+                const color = meta ? tvColorToRGBA(meta.color) : '#3b82f6';
+                const plottype = meta ? meta.type : 0;
+                const title = meta ? meta.title : key;
+
+                // Handle Shapes/Dots/Bubbles as Markers
+                if (plottype >= 3 || title.includes('Bubble') || title.includes('Dot') || title.includes('TF')) {
+                    let shape = 'circle';
+                    let position = 'inBar';
+                    if (title.includes('Bubble')) {
+                        shape = 'circle';
+                        const candle = fullHistory.candles.find(c => c.time === time);
+                        position = (candle && val > candle.close) ? 'aboveBar' : 'belowBar';
+                    } else if (title.includes('R') || title.includes('High')) {
+                        shape = 'arrowDown';
+                        position = 'aboveBar';
+                    } else if (title.includes('S') || title.includes('Low')) {
+                        shape = 'arrowUp';
+                        position = 'belowBar';
+                    }
+
+                    const markerKey = `${time}_${key}`;
+                    fullHistory.markers.set(markerKey, {
+                        time: time,
+                        position: position,
+                        color: color,
+                        shape: shape,
+                        size: title.includes('Bubble') ? 2 : 1
+                    });
+                    return;
+                }
+
                 let series = indicatorSeries[key];
                 if (!series) {
-                    const color = meta ? tvColorToRGBA(meta.color) : '#3b82f6';
-                    const plottype = meta ? meta.type : 0;
-
                     if (plottype === 1 || plottype === 2) {
                         series = mainChart.addHistogramSeries({
                             color: color,
-                            title: key,
+                            title: title,
                             priceScaleId: 'right',
                             autoscaleInfoProvider: () => null,
                         });
-                    } else if (plottype === 5) {
+                    } else if (plottype === 5 || plottype === 4) {
                         series = mainChart.addAreaSeries({
                             topColor: color,
                             bottomColor: 'transparent',
                             lineColor: color,
                             lineWidth: meta ? meta.linewidth : 1,
-                            title: key,
-                            priceScaleId: 'right',
-                            autoscaleInfoProvider: () => null,
-                        });
-                    } else if (plottype === 3 || plottype === 4) {
-                        // Circles or Cross - use dotted line to simulate
-                        series = mainChart.addLineSeries({
-                            color: color,
-                            lineWidth: 3,
-                            lineStyle: 2, // Dotted
-                            title: key,
+                            title: title,
                             priceScaleId: 'right',
                             autoscaleInfoProvider: () => null,
                         });
@@ -382,7 +412,7 @@ function handleChartUpdate(data) {
                             color: color,
                             lineWidth: meta ? meta.linewidth : 1,
                             lineStyle: (meta && meta.linestyle === 2) ? 2 : 0,
-                            title: key,
+                            title: title,
                             priceScaleId: 'right',
                             autoscaleInfoProvider: () => null,
                         });
@@ -390,15 +420,30 @@ function handleChartUpdate(data) {
                     indicatorSeries[key] = { series, lastTime: 0 };
                 }
 
-                const val = row[key];
-                if (val !== null && typeof val === 'number' && val < 1e10) {
-                    if (time >= indicatorSeries[key].lastTime) {
-                        indicatorSeries[key].series.update({ time: time, value: val });
-                        indicatorSeries[key].lastTime = time;
-                    }
+                if (time >= indicatorSeries[key].lastTime) {
+                    indicatorSeries[key].series.update({ time: time, value: val });
+                    indicatorSeries[key].lastTime = time;
                 }
             });
         });
+
+        // Apply Markers (persistent from fullHistory)
+        if (fullHistory.markers.size > 0) {
+            const allMarkers = Array.from(fullHistory.markers.values());
+            candleSeries.setMarkers(allMarkers.sort((a,b) => a.time - b.time));
+        }
+
+        // Apply Bar Colors
+        if (Object.keys(barColors).length > 0) {
+            const updatedCandles = fullHistory.candles.map(c => {
+                if (barColors[c.time]) {
+                    return { ...c, color: barColors[c.time], wickColor: barColors[c.time], borderColor: barColors[c.time] };
+                }
+                return c;
+            });
+            candleSeries.setData(updatedCandles);
+            fullHistory.candles = updatedCandles;
+        }
     }
 }
 
@@ -463,7 +508,7 @@ function renderData() {
     if (fullHistory.candles.length === 0) return;
     candleSeries.setData(fullHistory.candles);
     volumeSeries.setData(fullHistory.volume);
-    candleSeries.setMarkers([]);
+    // Markers are set by handleChartUpdate
 }
 
 // --- Utils & Controls ---
@@ -544,7 +589,7 @@ function stepReplay(delta) {
         const vV = fullHistory.volume.slice(0, replayIndex + 1);
         candleSeries.setData(vC);
         volumeSeries.setData(vV);
-        candleSeries.setMarkers([]);
+        // Note: Markers could also be subsetted here if they were stored in fullHistory
         lastCandle = {...vC[vC.length - 1]};
         document.getElementById('replayStatus').innerText = `BAR ${replayIndex + 1} / ${fullHistory.candles.length}`;
     }

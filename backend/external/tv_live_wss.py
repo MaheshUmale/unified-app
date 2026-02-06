@@ -149,15 +149,27 @@ class TradingViewWSS:
             inputs[item["id"]] = {"name": item.get("name"), "type": item.get("type"), "value": item.get("defval"), "isFake": item.get("isFake", False)}
 
         plots = {}
-        for plot_id, style in metaInfo.get("styles", {}).items():
-            if "title" in style:
-                plots[plot_id] = {
-                    "title": style["title"].replace(" ", "_"),
-                    "type": style.get("plottype"),
-                    "color": style.get("color"),
-                    "linewidth": style.get("linewidth", 1),
-                    "linestyle": style.get("linestyle", 0)
-                }
+        # Use plots metaInfo to get all plot IDs and their types
+        plots_meta = metaInfo.get("plots", [])
+        styles = metaInfo.get("styles", {})
+
+        for i, p in enumerate(plots_meta):
+            plot_id = p.get("id")
+            style = styles.get(plot_id, {})
+            title = style.get("title", plot_id).replace(" ", "_")
+            # Ensure title is unique within this study
+            if title in [p["title"] for p in plots.values()]:
+                title = f"{title}_{plot_id}"
+
+            plots[plot_id] = {
+                "id": plot_id,
+                "index": i,
+                "title": title,
+                "type": style.get("plottype"),
+                "color": style.get("color"),
+                "linewidth": style.get("linewidth", 1),
+                "linestyle": style.get("linestyle", 0)
+            }
 
         return {
             "pineId": metaInfo.get("scriptIdPart", indicator_id),
@@ -259,9 +271,9 @@ class TradingViewWSS:
     def _handle_chart_update(self, chart_data):
         # We only care about the study and prices for now
         # st1 corresponds to our study_id
-        update_msg = {'type': 'chart_update', 'data': {}}
         symbol = self.current_chart_symbol
         hrn = self.symbol_map.get(symbol, symbol) if symbol else None
+        update_msg = {'type': 'chart_update', 'instrumentKey': hrn, 'data': {}}
 
         # OHLCV data
         if "$prices" in chart_data:
@@ -277,27 +289,50 @@ class TradingViewWSS:
         if self.study_id in chart_data:
             study_val = chart_data[self.study_id]
             if "st" in study_val and study_val["st"]:
-                plots = [item["v"] for item in study_val["st"]]
+                plots_rows = [item["v"] for item in study_val["st"]]
 
                 # Map plots if we have metadata
                 meta = self.indicator_metadata.get(self.study_id)
-                plot_data = plots
+                plot_data = plots_rows
                 if meta and meta.get("plots"):
                     plot_defs = list(meta["plots"].values())
                     mapped_plots = []
-                    for row in plots:
+                    for row in plots_rows:
                         mapped_row = {"timestamp": row[0]}
-                        # We also want to include the plot metadata in the update if it's the first time
-                        # or just rely on the name. Let's use the name as key.
-                        for i, p_def in enumerate(plot_defs):
-                            if i + 1 < len(row):
-                                mapped_row[p_def["title"]] = row[i+1]
-                                # Attach metadata for the frontend to use if needed
+
+                        # Map defined plots
+                        for p_def in plot_defs:
+                            idx = p_def["index"] + 1 # +1 for timestamp
+                            if idx < len(row):
+                                val = row[idx]
+                                mapped_row[p_def["title"]] = val
                                 mapped_row[f"{p_def['title']}_meta"] = p_def
+
                         mapped_plots.append(mapped_row)
+
+                    # If study_val has 'ba' (bar colors), map them by index
+                    if "ba" in study_val and study_val["ba"]:
+                        for ba_item in study_val["ba"]:
+                            ba_val = ba_item.get("v")
+                            if isinstance(ba_val, list) and len(ba_val) > 1:
+                                idx = ba_val[0]
+                                if isinstance(idx, int) and 0 <= idx < len(mapped_plots):
+                                    mapped_plots[idx]["Bar_Color"] = ba_val[1]
+
+                    # If study_val has 'bg' (background colors), map them by index
+                    if "bg" in study_val and study_val["bg"]:
+                        for bg_item in study_val["bg"]:
+                            bg_val = bg_item.get("v")
+                            if isinstance(bg_val, list) and len(bg_val) > 1:
+                                idx = bg_val[0]
+                                if isinstance(idx, int) and 0 <= idx < len(mapped_plots):
+                                    mapped_plots[idx]["Background_Color"] = bg_val[1]
+
                     plot_data = mapped_plots
 
                 update_msg['data']['indicators'] = plot_data
+                if "gl" in study_val:
+                    update_msg['data']['graphics'] = study_val["gl"]
                 if hrn and len(plot_data) > 10:
                     if hrn not in self.history: self.history[hrn] = {}
                     self.history[hrn]['indicators'] = plot_data
