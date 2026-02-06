@@ -68,9 +68,10 @@ async def connect(sid, environ):
 async def handle_subscribe(sid, data):
     instrument_keys = data.get('instrumentKeys', [])
     for key in instrument_keys:
-        logger.info(f"Client {sid} subscribing to: {key}")
+        hrn = symbol_mapper.get_hrn(key)
+        logger.info(f"Client {sid} subscribing to: {key} (Room: {hrn})")
         try:
-            await sio.enter_room(sid, key)
+            await sio.enter_room(sid, hrn)
             data_engine.subscribe_instrument(key)
         except Exception as e:
             logger.error(f"Subscription error for {key}: {e}")
