@@ -535,6 +535,18 @@ function initSearch() {
             } catch (err) { console.error("Search failed:", err); }
         }, 300);
     });
+
+    searchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            const symbol = searchInput.value.trim().toUpperCase();
+            if (symbol) {
+                const chart = charts[activeChartIndex];
+                if (chart) chart.switchSymbol(symbol);
+                resultsDiv.classList.add('hidden');
+            }
+        }
+    });
+
     document.addEventListener('click', (e) => { if (!searchInput.contains(e.target) && !resultsDiv.contains(e.target)) resultsDiv.classList.add('hidden'); });
 }
 
