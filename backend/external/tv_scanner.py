@@ -7,11 +7,9 @@ async def search_options(underlying: str):
     url = "https://scanner.tradingview.com/options/scan2?label-product=options-symbol-search"
 
     # Standardize underlying for TradingView (usually NSE:NIFTY)
-    if not underlying.startswith("NSE:"):
-        if underlying in ["NIFTY", "BANKNIFTY", "FINNIFTY"]:
-            tv_underlying = f"NSE:{underlying}"
-        else:
-            tv_underlying = underlying
+    # Default to NSE for Indian markets if no exchange specified
+    if ":" not in underlying:
+        tv_underlying = f"NSE:{underlying}"
     else:
         tv_underlying = underlying
 

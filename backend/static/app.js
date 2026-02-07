@@ -493,24 +493,7 @@ function initSearch() {
             try {
                 const res = await fetch(`/api/tv/search?text=${encodeURIComponent(text)}`);
                 const data = await res.json();
-                let symbols = data.symbols || [];
-
-                // If it's an index or specific option, also try to fetch options
-                const upperText = text.toUpperCase();
-                if (['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'CNXFINANCE'].some(idx => upperText.includes(idx))) {
-                    const baseIdx = upperText.includes('BANK') ? 'BANKNIFTY' : upperText.includes('FIN') ? 'FINNIFTY' : 'NIFTY';
-                    try {
-                        const optRes = await fetch(`/api/tv/options?underlying=${baseIdx}`);
-                        const optData = await optRes.json();
-                        if (optData && optData.symbols) {
-                            let filteredOptions = optData.symbols;
-                            if (upperText.length > baseIdx.length) {
-                                filteredOptions = optData.symbols.filter(s => s.symbol.toUpperCase().includes(upperText));
-                            }
-                            symbols = [...symbols, ...filteredOptions.slice(0, 50)];
-                        }
-                    } catch (e) { console.warn("Options search failed", e); }
-                }
+                const symbols = data.symbols || [];
 
                 if (symbols.length > 0) displaySearchResults(symbols);
             } catch (err) { console.error("Search failed:", err); }

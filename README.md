@@ -15,12 +15,22 @@ A minimal, high-performance trading terminal featuring TradingView charting, rea
   - Live quote streaming and indicator plot data via TradingView WebSocket (WSS) protocol.
   - **Indicator Integration**: Directly pulls plot data from Pine Script studies (Bubbles, S/R Dots, Pivot Lines, etc.).
   - **Room-based Broadcasting**: Uses Socket.IO rooms named after symbol HRNs to ensure efficient, targeted data delivery.
+- **Multi-Chart Layouts**:
+  - Toggle between **1, 2, or 4-chart** grids using the layout selector.
+  - Each chart instance operates independently with its own symbol, interval, and indicator state.
+  - Automatic grid resizing for optimal screen utilization.
+- **Layout Persistence**:
+  - Automatically saves your layout, symbols, intervals, and drawing tools to `localStorage`.
+  - Restores your previous setup instantly on refresh.
 - **Advanced Visualization**:
   - **Markers & Shapes**: Dynamic rendering of volume bubbles and S/R dots using Lightweight Charts markers.
   - **Bar Coloring**: Real-time candle color updates based on study-provided volume and trend metrics, with a built-in RVOL (Relative Volume) fallback for consistent trend analysis.
   - **Background Shading**: Highlighting of specific market conditions (e.g., breakout zones) via background colors.
   - **Smart Scaling**: Automatic Y-axis management to prevent low-value oscillators from compressing the price action.
-- **Universal Search**: Search for any symbol across exchanges supported by TradingView with an integrated proxy for metadata.
+- **Enhanced Search & Discovery**:
+  - **Unified Search**: Search for indices (NIFTY, BANKNIFTY) or stocks (RELIANCE) and get instant results.
+  - **Options Discovery**: Automatically merges results from the TradingView Options Scanner.
+  - **Technical Search**: Search using exact technical strings (e.g., `NIFTY260210C25600`) for precise contract selection.
 - **Efficient Backend**: Built with FastAPI and DuckDB for low-latency data handling and persistence.
 
 ## Architecture
@@ -64,3 +74,10 @@ The terminal will be available at `http://localhost:5051`.
 
 - **Indicator Mapping**: Indicator plots are mapped in `backend/static/app.js` using the `indicatorSeries` registry. Titles containing "Bubble", "Dot", or "TF" are automatically converted to chart markers.
 - **Symbol Normalization**: Symbols are standardized using `backend/core/symbol_mapper.py` to ensure consistency between technical keys (e.g., `NSE:NIFTY`) and human-readable names (`NIFTY`).
+
+## Searching for Options
+
+To find specific option contracts:
+1. **Index Search**: Type an index name like `NIFTY` or `BANKNIFTY`. The search results will automatically show the underlying index followed by available option contracts.
+2. **Filtered Search**: Type an index name and a partial date or strike, e.g., `NIFTY 2602` or `NIFTY 25000`.
+3. **Exact Technical String**: For power users, you can search for the exact TradingView technical symbol, such as `NIFTY260210C25600`.
