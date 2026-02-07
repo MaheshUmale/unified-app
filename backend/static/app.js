@@ -68,11 +68,15 @@ class ChartInstance {
                     this.stepReplay(0);
                     updateReplayUI(this);
                 }
-            } else if (param.price) {
-                const hlineBtn = document.getElementById('drawingToolBtn');
-                const isHlineActive = hlineBtn && hlineBtn.classList.contains('bg-blue-600');
-                if (isHlineActive || (window.event && window.event.shiftKey)) {
-                    this.addHorizontalLine(param.price);
+            } else {
+                const price = param.point ? this.candleSeries.coordinateToPrice(param.point.y) : null;
+                if (price) {
+                    const hlineBtn = document.getElementById('drawingToolBtn');
+                    const isHlineActive = hlineBtn && hlineBtn.classList.contains('bg-blue-600');
+                    const isShiftKey = param.sourceEvent && param.sourceEvent.shiftKey;
+                    if (isHlineActive || isShiftKey) {
+                        this.addHorizontalLine(price);
+                    }
                 }
             }
         });
@@ -671,7 +675,6 @@ function initZoomControls() {
     document.getElementById('resetZoomBtn').addEventListener('click', () => {
         const chart = charts[activeChartIndex];
         if (!chart) return;
-        chart.chart.timeScale().reset();
         const lastIdx = chart.fullHistory.candles.length - 1;
         if (lastIdx >= 0) chart.chart.timeScale().setVisibleLogicalRange({ from: lastIdx - 100, to: lastIdx + 5 });
     });
