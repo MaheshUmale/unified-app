@@ -85,3 +85,4 @@ backend/backtest_logs/*.log
 *.jsonl
 *.db
 *.txt
+.vscode/settings.json
