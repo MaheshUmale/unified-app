@@ -70,14 +70,38 @@ python3 backend/api_server.py
 
 The terminal will be available at `http://localhost:5051`.
 
+## User Guide
+
+### 1. Multi-Chart Layouts
+- **Switching Layouts**: Use the grid icons in the header to toggle between **1, 2, or 4 charts**.
+- **Active Chart**: Click anywhere on a chart to make it "Active". The active chart is highlighted with a blue border.
+- **Independent Controls**: Symbol search, timeframe selection, and indicator toggles apply only to the **currently active chart**. This allows you to monitor different symbols or timeframes side-by-side.
+
+### 2. Symbol Search & Options
+- **Discovery**: Type a symbol (e.g., `RELIANCE`) or index (e.g., `NIFTY`) in the search bar.
+- **Options Discovery**: Searching for an index automatically fetches and displays associated option contracts from the TradingView Options Scanner.
+- **Technical Symbols**: You can enter exact technical strings like `NSE:NIFTY260210C25600` for direct access to specific contracts.
+
+### 3. Drawing Tools (HLINE)
+- **Activation**: Click the **HLINE** button in the header (it will turn blue).
+- **Placement**: Click anywhere on the active chart to place a horizontal price line.
+- **Quick Shortcut**: Hold **Shift + Click** on the chart to place a horizontal line at any time, even if the HLINE tool is not toggled on.
+- **Management**: Drawings are saved automatically and can be removed via the **Indicators** panel.
+
+### 4. Indicator Management
+- **Global Toggle**: Use **HIDE ALL / SHOW ALL** to quickly clear the chart of all indicator plots and markers.
+- **Individual Control**: Click **INDICATORS** to open the management panel. From here, you can toggle the visibility of specific indicator plots or remove individual drawings.
+
+### 5. Candle Replay
+- **Enter Mode**: Click the **REPLAY** button.
+- **Select Start**: Click on any historical candle to set the starting point.
+- **Controls**: Use **Play/Pause**, **Next**, and **Previous** to step through the price action candle-by-candle.
+- **Exit**: Click **EXIT** to return to the real-time feed.
+
+### 6. Persistence
+- Your layout configuration, selected symbols, timeframes, and drawings are automatically saved to your browser's local storage. They will be restored exactly as you left them when you return to the application.
+
 ## Development & Customization
 
 - **Indicator Mapping**: Indicator plots are mapped in `backend/static/app.js` using the `indicatorSeries` registry. Titles containing "Bubble", "Dot", or "TF" are automatically converted to chart markers.
 - **Symbol Normalization**: Symbols are standardized using `backend/core/symbol_mapper.py` to ensure consistency between technical keys (e.g., `NSE:NIFTY`) and human-readable names (`NIFTY`).
-
-## Searching for Options
-
-To find specific option contracts:
-1. **Index Search**: Type an index name like `NIFTY` or `BANKNIFTY`. The search results will automatically show the underlying index followed by available option contracts.
-2. **Filtered Search**: Type an index name and a partial date or strike, e.g., `NIFTY 2602` or `NIFTY 25000`.
-3. **Exact Technical String**: For power users, you can search for the exact TradingView technical symbol, such as `NIFTY260210C25600`.
