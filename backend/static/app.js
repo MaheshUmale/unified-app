@@ -144,7 +144,10 @@ class ChartInstance {
 
             if (resData.indicators) {
                 this.handleChartUpdate({ indicators: resData.indicators });
-                Object.values(this.indicatorSeries).forEach(s => s.applyOptions({ visible: this.showIndicators }));
+                Object.entries(this.indicatorSeries).forEach(([key, s]) => {
+                    s.applyOptions({ visible: this.showIndicators && !this.hiddenPlots.has(key) });
+                });
+                this.candleSeries.setMarkers(this.showIndicators && !this.hiddenPlots.has('__markers__') ? this.markers : []);
             }
 
             socket.emit('subscribe', { instrumentKeys: [this.symbol], interval: this.interval });
@@ -240,9 +243,12 @@ class ChartInstance {
     processIndicators(indicators) {
         const markers = [];
         const seriesUpdates = {};
+        let newlyAdded = false;
 
         indicators.forEach(row => {
             const time = Math.floor(row.timestamp);
+
+            // 1. Handle Bar Coloring
             if (row.Bar_Color !== undefined) {
                 const candle = this.fullHistory.candles.find(c => c.time === time);
                 if (candle) {
@@ -250,21 +256,48 @@ class ChartInstance {
                     candle.color = color; candle.wickColor = color; candle.borderColor = color; candle.hasExplicitColor = true;
                 }
             }
+
+            // 2. Handle Plots (Levels, Bubbles, etc.)
             Object.entries(row).forEach(([key, val]) => {
-                if (['timestamp', 'Bar_Color'].includes(key) || key.endsWith('_meta') || key.endsWith('_color')) return;
-                if (val === null || val === undefined) return;
+                if (['timestamp', 'Bar_Color', 'v_norm', 'V_NORM', 'vol_norm'].includes(key) || key.endsWith('_meta') || key.endsWith('_color')) return;
+                if (val === null || val === undefined || val === 0) return;
 
                 const meta = row[`${key}_meta`];
+                const title = (meta ? meta.title : key).toUpperCase();
                 const color = tvColorToRGBA(row[`${key}_color`] || (meta ? meta.color : null)) || '#3b82f6';
 
-                // Only treat as markers if explicitly a Bubble or identified marker type
-                // The image shows that Support/Resistance levels (S/R) are being forced to markers
-                // Let's only use markers for Bubble and things that aren't numeric levels if possible
-                // Actually, if it has a numeric value, it's better as a line or scatter segment.
-
-                if (meta && meta.title.includes('Bubble')) {
-                    markers.push({ time, position: 'aboveBar', color, shape: 'circle', size: 2, text: '' });
-                } else {
+                // VOLUME BUBBLES: Rendered as dynamic circles
+                if (title.includes('BUBBLE') || title.includes('VOL1')) {
+                    let size = 1;
+                    const v_norm = row['v_norm'] || row['V_NORM'] || row['vol_norm'];
+                    if (v_norm !== undefined) {
+                        if (v_norm >= 4) size = 4;
+                        else if (v_norm >= 3) size = 3;
+                        else if (v_norm >= 2) size = 2;
+                        else size = 1;
+                    }
+                    markers.push({
+                        time,
+                        position: val > (this.lastCandle?.close || 0) ? 'aboveBar' : 'belowBar',
+                        color,
+                        shape: 'circle',
+                        size: size,
+                        text: ''
+                    });
+                }
+                // TF3 LEVELS: Rendered as square markers
+                else if (title.includes('S3') || title.includes('R3') || title.includes('TF3')) {
+                    markers.push({
+                        time,
+                        position: title.includes('S') ? 'belowBar' : 'aboveBar',
+                        color,
+                        shape: 'square',
+                        size: 1,
+                        text: ''
+                    });
+                }
+                // ALL OTHER LEVELS (TF1, TF2, etc.): Rendered as Line Series
+                else {
                     if (!seriesUpdates[key]) seriesUpdates[key] = { points: [], meta, color };
                     seriesUpdates[key].points.push({ time, value: val, color });
                 }
@@ -275,9 +308,8 @@ class ChartInstance {
         if (this.markers.length > 0) {
             this.markers.sort((a, b) => a.time - b.time);
         }
-        this.candleSeries.setMarkers(this.showIndicators ? this.markers : []);
+        this.candleSeries.setMarkers(this.showIndicators && !this.hiddenPlots.has('__markers__') ? this.markers : []);
 
-        let newlyAdded = false;
         Object.entries(seriesUpdates).forEach(([key, data]) => {
             if (!this.indicatorSeries[key]) {
                 const meta = data.meta;
@@ -614,14 +646,16 @@ function tvColorToRGBA(color) {
     if (color === null || color === undefined) return null;
     if (typeof color === 'string') return color;
     if (typeof color === 'number') {
-        // TradingView uses ARGB or similar. If it's a negative number, it's often a bitmask.
-        // Convert to unsigned
+        // TradingView colors can be ARGB or similar packed integers.
         const uColor = color >>> 0;
         const a = ((uColor >> 24) & 0xFF) / 255;
         const r = (uColor >> 16) & 0xFF;
         const g = (uColor >> 8) & 0xFF;
         const b = uColor & 0xFF;
-        return `rgba(${r}, ${g}, ${b}, ${a === 0 ? 1 : a})`;
+        // If alpha component is 0 in the bitmask, it's often intended to be opaque (1.0)
+        // unless explicitly a transparency-based indicator.
+        const alpha = ((uColor >> 24) & 0xFF) === 0 ? 1.0 : a;
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
     }
     return null;
 }
@@ -702,8 +736,32 @@ function populateIndicatorList() {
     // Plots section
     const plotsHeader = document.createElement('div');
     plotsHeader.className = 'text-[9px] font-black text-gray-500 mb-2 mt-2 uppercase tracking-tighter';
-    plotsHeader.innerText = 'Plots';
+    plotsHeader.innerText = 'Plots & Indicators';
     list.appendChild(plotsHeader);
+
+    // Marker Toggle (Global for markers)
+    if (chart.markers.length > 0) {
+        const item = document.createElement('div');
+        item.className = 'flex items-center justify-between bg-white/5 p-2 rounded-lg mb-2';
+        const isHidden = chart.hiddenPlots.has('__markers__');
+        item.innerHTML = `
+            <span class="text-[10px] font-bold text-gray-300 truncate mr-2 italic">Markers (Bubbles/TF3)</span>
+            <button class="toggle-plot-btn text-[9px] font-black px-2 py-1 rounded ${isHidden ? 'bg-red-500/20 text-red-400' : 'bg-green-500/20 text-green-400'}" data-key="__markers__">
+                ${isHidden ? 'HIDDEN' : 'VISIBLE'}
+            </button>
+        `;
+        item.querySelector('.toggle-plot-btn').addEventListener('click', () => {
+            if (chart.hiddenPlots.has('__markers__')) {
+                chart.hiddenPlots.delete('__markers__');
+            } else {
+                chart.hiddenPlots.add('__markers__');
+            }
+            chart.candleSeries.setMarkers(chart.showIndicators && !chart.hiddenPlots.has('__markers__') ? chart.markers : []);
+            populateIndicatorList();
+            saveLayout();
+        });
+        list.appendChild(item);
+    }
 
     Object.entries(chart.indicatorSeries).forEach(([key, series]) => {
         const title = series.options().title || key;
@@ -782,7 +840,7 @@ function initDrawingControls() {
             const key = Object.keys(chart.indicatorSeries).find(k => chart.indicatorSeries[k] === s);
             s.applyOptions({ visible: chart.showIndicators && !chart.hiddenPlots.has(key) });
         });
-        chart.candleSeries.setMarkers(chart.showIndicators ? chart.markers : []);
+        chart.candleSeries.setMarkers(chart.showIndicators && !chart.hiddenPlots.has('__markers__') ? chart.markers : []);
         updateHeaderUI();
         saveLayout();
     });

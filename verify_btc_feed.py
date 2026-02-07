@@ -21,7 +21,7 @@ async def verify_btc_feed():
         print("Subscribed to Coinbase:BTCUSD")
 
     try:
-        await sio.connect('http://localhost:3000')
+        await sio.connect('http://localhost:5051')
         # Wait for some ticks
         for _ in range(30):
             if received_ticks:
