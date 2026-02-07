@@ -87,7 +87,7 @@ async def health_check():
 
 @fastapi_app.get("/api/tv/search")
 async def tv_search(text: str = Query(..., min_length=1)):
-    """Proxies TradingView symbol search with improved handling for prefixed symbols."""
+    """Proxies TradingView symbol search and merges results with options scanner."""
     import httpx
 
     exchange = ""
@@ -97,6 +97,7 @@ async def tv_search(text: str = Query(..., min_length=1)):
         exchange = parts[0]
         search_text = parts[1]
 
+    # Standard proxy search
     url = f"https://symbol-search.tradingview.com/symbol_search/v3/?text={search_text}&hl=1&exchange={exchange}&lang=en&search_type=&domain=production&sort_by_country=IN"
 
     headers = {
@@ -104,13 +105,65 @@ async def tv_search(text: str = Query(..., min_length=1)):
         'Referer': 'https://www.tradingview.com/',
         'Origin': 'https://www.tradingview.com'
     }
+
+    tv_results = {"symbols": []}
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(url, headers=headers, timeout=10.0)
-            return response.json()
+            if response.status_code == 200:
+                tv_results = response.json()
     except Exception as e:
         logger.error(f"Search proxy error: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch search results")
+
+    # Augmented search for options
+    upper_text = search_text.upper()
+
+    # Heuristic to find underlying
+    # If it's a known index or a common stock name
+    indices = ["NIFTY", "BANKNIFTY", "FINNIFTY"]
+    underlying = None
+    for idx in indices:
+        if idx in upper_text:
+            underlying = idx
+            break
+
+    # If no index, and it looks like it could be a stock ticker (4-15 chars, all caps)
+    if not underlying and 3 <= len(upper_text) <= 15 and upper_text.isalpha():
+        underlying = upper_text
+
+    if underlying:
+        try:
+            opt_data = await search_options(underlying)
+            if opt_data and 'symbols' in opt_data:
+                # Filter options that match the search text
+                # Technical symbols are like NSE:NIFTY260210C25600
+                search_parts = upper_text.split()
+                filtered = []
+                for item in opt_data['symbols']:
+                    s = item.get('s', '')
+                    s_norm = s.upper().replace(":", "")
+                    if all(p in s_norm for p in search_parts):
+                        exch, name = s.split(':', 1) if ':' in s else ("NSE", s)
+                        filtered.append({
+                            "symbol": name,
+                            "description": f"{name} Option",
+                            "exchange": exch,
+                            "type": "option"
+                        })
+
+                # Merge into tv_results, prioritizing scanner results
+                existing_syms = {s['symbol'] for s in tv_results.get('symbols', [])}
+                new_symbols = []
+                for f in filtered[:100]: # Limit to avoid bloat
+                    if f['symbol'] not in existing_syms:
+                        new_symbols.append(f)
+
+                # Prepend merged results so they appear at the top
+                tv_results['symbols'] = new_symbols + tv_results.get('symbols', [])
+        except Exception as e:
+            logger.error(f"Options merging error: {e}")
+
+    return tv_results
 
 @fastapi_app.get("/api/tv/options")
 async def get_tv_options(underlying: str = Query(...)):
