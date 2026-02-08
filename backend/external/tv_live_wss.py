@@ -178,6 +178,21 @@ class TradingViewWSS:
             feed_msg = {'type': 'live_feed', 'feeds': {hrn: {'last_price': float(price), 'ts_ms': ts_ms, 'tv_volume': self.last_volumes.get(clean_symbol), 'oi': float(values.get('open_interest', 0)), 'source': 'tradingview_wss'}}}
             self.callback(feed_msg)
 
+    def _map_tv_plot_type(self, tv_type):
+        """Maps TradingView plot type integers to generic chart types."""
+        mapping = {
+            0: "line",
+            1: "histogram",
+            2: "line", # step
+            3: "line",
+            4: "histogram",
+            5: "line", # circles
+            6: "line", # cross
+            7: "area",
+            8: "area"
+        }
+        return mapping.get(tv_type, "line")
+
     def _handle_chart_update(self, session_id, chart_data):
         logger.info(f"Chart data keys for {session_id}: {list(chart_data.keys())}")
         meta = self.chart_sessions.get(session_id)
@@ -203,33 +218,59 @@ class TradingViewWSS:
                 plots_rows = [item["v"] for item in study_val["st"]]
                 from config import TV_STUDY_ID
                 meta_info = self.indicator_metadata.get(TV_STUDY_ID)
-                plot_data = plots_rows
+
                 if meta_info and meta_info.get("plots"):
                     plot_defs = list(meta_info["plots"].values())
-                    mapped_plots = []
+                    indicator_series = {}
+                    for p_def in plot_defs:
+                        p_id = p_def["id"]
+                        indicator_series[p_id] = {
+                            "id": p_id,
+                            "title": p_def["title"],
+                            "type": self._map_tv_plot_type(p_def.get("type")),
+                            "style": {
+                                "color": p_def.get("color"),
+                                "lineWidth": p_def.get("linewidth", 1),
+                                "lineStyle": p_def.get("linestyle", 0)
+                            },
+                            "data": []
+                        }
+
                     is_interleaved = len(plots_rows[0]) >= (1 + 2 * len(plot_defs)) if plots_rows else False
                     for row in plots_rows:
-                        mapped_row = {"timestamp": row[0]}
+                        timestamp = row[0]
                         for p_def in plot_defs:
                             p_idx = p_def["index"]
                             val_idx = 1 + (2 * p_idx if is_interleaved else p_idx)
                             if val_idx < len(row):
-                                mapped_row[p_def["title"]] = row[val_idx]
-                                mapped_row[f"{p_def['title']}_meta"] = p_def
-                                if is_interleaved and (val_idx + 1) < len(row): mapped_row[f"{p_def['title']}_color"] = row[val_idx + 1]
-                        mapped_plots.append(mapped_row)
+                                val = row[val_idx]
+                                if val is not None:
+                                    dp = {"time": timestamp, "value": val}
+                                    if is_interleaved and (val_idx + 1) < len(row):
+                                        dp["color"] = row[val_idx + 1]
+                                    indicator_series[p_def["id"]]["data"].append(dp)
+
+                    final_indicators = list(indicator_series.values())
+                    update_msg['data']['indicators'] = final_indicators
+
+                    # Bar coloring
                     if "ba" in study_val and study_val["ba"]:
+                        bar_colors = []
                         for ba_item in study_val["ba"]:
-                            ba_val = ba_item.get("v")
-                            if isinstance(ba_val, list) and len(ba_val) > 1:
-                                idx = ba_val[0]
-                                if 0 <= idx < len(mapped_plots): mapped_plots[idx]["Bar_Color"] = ba_val[1]
-                    plot_data = mapped_plots
-                update_msg['data']['indicators'] = plot_data
-                hist_key = (hrn, interval)
-                if len(plot_data) > 10:
-                    if hist_key not in self.history: self.history[hist_key] = {}
-                    self.history[hist_key]['indicators'] = plot_data
+                            v = ba_item.get("v")
+                            if isinstance(v, list) and len(v) > 1:
+                                idx = v[0]
+                                color = v[1]
+                                if 0 <= idx < len(plots_rows):
+                                    bar_colors.append({"time": plots_rows[idx][0], "color": color})
+                        update_msg['data']['bar_colors'] = bar_colors
+
+                    hist_key = (hrn, interval)
+                    if len(plots_rows) > 10:
+                        if hist_key not in self.history: self.history[hist_key] = {}
+                        self.history[hist_key]['indicators'] = final_indicators
+                        if "bar_colors" in update_msg['data']:
+                            self.history[hist_key]['bar_colors'] = update_msg['data']['bar_colors']
 
         if update_msg['data']:
             self.callback(update_msg)

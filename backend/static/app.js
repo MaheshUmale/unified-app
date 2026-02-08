@@ -100,6 +100,11 @@ class ChartInstance {
         Object.values(this.indicatorSeries).forEach(s => this.chart.removeSeries(s));
         this.indicatorSeries = {};
 
+        if (this.priceLines) {
+            Object.values(this.priceLines).forEach(l => this.candleSeries.removePriceLine(l));
+            this.priceLines = {};
+        }
+
         setLoading(true);
         try {
             const resData = await fetchIntraday(this.symbol, this.interval);
@@ -235,106 +240,130 @@ class ChartInstance {
                 }
             }
         }
-        if (data.indicators && data.indicators.length > 0) {
-            this.processIndicators(data.indicators);
+
+        if (data.bar_colors) {
+            this.applyBarColors(data.bar_colors);
+        }
+
+        if (data.indicators) {
+            this.applyIndicators(data.indicators);
         }
     }
 
-    processIndicators(indicators) {
-        const markers = [];
-        const seriesUpdates = {};
+    applyBarColors(barColors) {
+        barColors.forEach(bc => {
+            const time = Math.floor(bc.time);
+            const candle = this.fullHistory.candles.find(c => c.time === time);
+            if (candle) {
+                const color = tvColorToRGBA(bc.color);
+                candle.color = color; candle.wickColor = color; candle.borderColor = color; candle.hasExplicitColor = true;
+            }
+        });
+        this.renderData();
+    }
+
+    applyIndicators(indicators) {
         let newlyAdded = false;
+        const allMarkers = [];
 
-        indicators.forEach(row => {
-            const time = Math.floor(row.timestamp);
+        indicators.forEach(ind => {
+            const { id, type, title, style, data } = ind;
 
-            // 1. Handle Bar Coloring
-            if (row.Bar_Color !== undefined) {
-                const candle = this.fullHistory.candles.find(c => c.time === time);
-                if (candle) {
-                    const color = tvColorToRGBA(row.Bar_Color);
-                    candle.color = color; candle.wickColor = color; candle.borderColor = color; candle.hasExplicitColor = true;
-                }
+            if (type === 'markers') {
+                data.forEach(m => allMarkers.push({
+                    time: m.time,
+                    position: m.position || 'aboveBar',
+                    color: tvColorToRGBA(m.color) || '#3b82f6',
+                    shape: m.shape || 'circle',
+                    size: m.size || 1,
+                    text: m.text || ''
+                }));
+                return;
             }
 
-            // 2. Handle Plots (Levels, Bubbles, etc.)
-            Object.entries(row).forEach(([key, val]) => {
-                if (['timestamp', 'Bar_Color', 'v_norm', 'V_NORM', 'vol_norm'].includes(key) || key.endsWith('_meta') || key.endsWith('_color')) return;
-                if (val === null || val === undefined || val === 0) return;
+            if (type === 'price_line') {
+                this.addPriceLine(id, data);
+                return;
+            }
 
-                const meta = row[`${key}_meta`];
-                const title = (meta ? meta.title : key).toUpperCase();
-                const color = tvColorToRGBA(row[`${key}_color`] || (meta ? meta.color : null)) || '#3b82f6';
+            if (type === 'trade') {
+                this.addTradePlot(id, data);
+                return;
+            }
 
-                // VOLUME BUBBLES: Rendered as dynamic circles
-                if (title.includes('BUBBLE') || title.includes('VOL1')) {
-                    let size = 1;
-                    const v_norm = row['v_norm'] || row['V_NORM'] || row['vol_norm'];
-                    if (v_norm !== undefined) {
-                        if (v_norm >= 4) size = 4;
-                        else if (v_norm >= 3) size = 3;
-                        else if (v_norm >= 2) size = 2;
-                        else size = 1;
-                    }
-                    markers.push({
-                        time,
-                        position: val > (this.lastCandle?.close || 0) ? 'aboveBar' : 'belowBar',
-                        color,
-                        shape: 'circle',
-                        size: size,
-                        text: ''
-                    });
+            // Standard Series: line, area, histogram
+            if (!this.indicatorSeries[id]) {
+                const options = {
+                    title: title || id,
+                    color: tvColorToRGBA(style?.color) || '#3b82f6',
+                    lineWidth: style?.lineWidth || 1,
+                    lineStyle: this._mapLineStyle(style?.lineStyle),
+                    visible: this.showIndicators && !this.hiddenPlots.has(id),
+                    axisLabelVisible: false,
+                    priceScaleId: 'right'
+                };
+
+                if (type === 'area') {
+                    this.indicatorSeries[id] = this.chart.addAreaSeries(options);
+                } else if (type === 'histogram') {
+                    this.indicatorSeries[id] = this.chart.addHistogramSeries(options);
+                } else {
+                    this.indicatorSeries[id] = this.chart.addLineSeries(options);
                 }
-                // TF3 LEVELS: Rendered as square markers
-                else if (title.includes('S3') || title.includes('R3') || title.includes('TF3')) {
-                    markers.push({
-                        time,
-                        position: title.includes('S') ? 'belowBar' : 'aboveBar',
-                        color,
-                        shape: 'square',
-                        size: 1,
-                        text: ''
-                    });
-                }
-                // ALL OTHER LEVELS (TF1, TF2, etc.): Rendered as Line Series
-                else {
-                    if (!seriesUpdates[key]) seriesUpdates[key] = { points: [], meta, color };
-                    seriesUpdates[key].points.push({ time, value: val, color });
-                }
-            });
-        });
-
-        this.markers = markers;
-        if (this.markers.length > 0) {
-            this.markers.sort((a, b) => a.time - b.time);
-        }
-        this.candleSeries.setMarkers(this.showIndicators && !this.hiddenPlots.has('__markers__') ? this.markers : []);
-
-        Object.entries(seriesUpdates).forEach(([key, data]) => {
-            if (!this.indicatorSeries[key]) {
-                const meta = data.meta;
-                const title = meta ? meta.title : key;
-                this.indicatorSeries[key] = this.chart.addLineSeries({
-                    title: title,
-                    color: data.color,
-                    lineWidth: meta ? (meta.linewidth || 1) : 1,
-                    lineStyle: meta && meta.linestyle === 1 ? LightweightCharts.LineStyle.Dashed : LightweightCharts.LineStyle.Solid,
-                    priceScaleId: 'right',
-                    autoscaleInfoProvider: () => null,
-                    visible: this.showIndicators && !this.hiddenPlots.has(key),
-                    axisLabelVisible: false
-                });
                 newlyAdded = true;
             }
-            data.points.sort((a, b) => a.time - b.time);
-            this.indicatorSeries[key].setData(data.points);
+
+            if (data && data.length > 0) {
+                const formattedData = data.map(d => ({
+                    time: d.time,
+                    value: d.value,
+                    color: d.color ? tvColorToRGBA(d.color) : undefined
+                })).sort((a, b) => a.time - b.time);
+                this.indicatorSeries[id].setData(formattedData);
+            }
         });
+
+        // Handle merged markers
+        if (allMarkers.length > 0 || (Array.isArray(indicators) && indicators.some(i => i.type === 'markers'))) {
+            this.markers = allMarkers.sort((a, b) => a.time - b.time);
+            this.candleSeries.setMarkers(this.showIndicators && !this.hiddenPlots.has('__markers__') ? this.markers : []);
+        }
 
         if (newlyAdded && this.index === activeChartIndex) {
             if (!document.getElementById('indicatorPanel').classList.contains('hidden')) {
                 populateIndicatorList();
             }
         }
+    }
+
+    _mapLineStyle(style) {
+        if (style === 1) return LightweightCharts.LineStyle.Dashed;
+        if (style === 2) return LightweightCharts.LineStyle.Dotted;
+        if (style === 3) return LightweightCharts.LineStyle.LargeDashed;
+        if (style === 4) return LightweightCharts.LineStyle.SparseDotted;
+        return LightweightCharts.LineStyle.Solid;
+    }
+
+    addPriceLine(id, data) {
+        if (!this.priceLines) this.priceLines = {};
+        if (this.priceLines[id]) {
+            this.candleSeries.removePriceLine(this.priceLines[id]);
+        }
+        this.priceLines[id] = this.candleSeries.createPriceLine({
+            price: data.price,
+            color: tvColorToRGBA(data.color) || '#3b82f6',
+            lineWidth: data.lineWidth || 2,
+            lineStyle: this._mapLineStyle(data.lineStyle || 2),
+            axisLabelVisible: true,
+            title: data.title || id
+        });
+    }
+
+    addTradePlot(id, data) {
+        const { entry, sl, target, entryColor, slColor, targetColor } = data;
+        if (entry) this.addPriceLine(`${id}_entry`, { price: entry, color: entryColor || '#fff', title: 'ENTRY', lineStyle: 0 });
+        if (sl) this.addPriceLine(`${id}_sl`, { price: sl, color: slColor || '#ef4444', title: 'SL', lineStyle: 2 });
+        if (target) this.addPriceLine(`${id}_target`, { price: target, color: targetColor || '#22c55e', title: 'TARGET', lineStyle: 2 });
     }
 
     stepReplay(delta) {
@@ -757,7 +786,7 @@ function populateIndicatorList() {
         item.className = 'flex items-center justify-between bg-white/5 p-2 rounded-lg mb-2';
         const isHidden = chart.hiddenPlots.has('__markers__');
         item.innerHTML = `
-            <span class="text-[10px] font-bold text-gray-300 truncate mr-2 italic">Markers (Bubbles/TF3)</span>
+            <span class="text-[10px] font-bold text-gray-300 truncate mr-2 italic">Markers (Shapes/Signals)</span>
             <button class="toggle-plot-btn text-[9px] font-black px-2 py-1 rounded ${isHidden ? 'bg-red-500/20 text-red-400' : 'bg-green-500/20 text-green-400'}" data-key="__markers__">
                 ${isHidden ? 'HIDDEN' : 'VISIBLE'}
             </button>
