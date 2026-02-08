@@ -22,6 +22,7 @@ class ChartInstance {
         this.markers = [];
         this.showIndicators = true;
         this.hiddenPlots = new Set();
+        this.colorOverrides = {}; // Keyed by indicator title or marker text
 
         // Replay State
         this.isReplayMode = false;
@@ -289,14 +290,17 @@ class ChartInstance {
             const { id, type, title, style, data } = ind;
 
             if (type === 'markers') {
-                data.forEach(m => allMarkers.push({
-                    time: m.time,
-                    position: m.position || 'aboveBar',
-                    color: tvColorToRGBA(m.color) || '#3b82f6',
-                    shape: m.shape || 'circle',
-                    size: m.size || 1,
-                    text: m.text || ''
-                }));
+                data.forEach(m => {
+                    const mText = m.text || '';
+                    allMarkers.push({
+                        time: m.time,
+                        position: m.position || 'aboveBar',
+                        color: this.colorOverrides[mText] || tvColorToRGBA(m.color) || '#3b82f6',
+                        shape: m.shape || 'circle',
+                        size: m.size || 1,
+                        text: mText
+                    });
+                });
                 return;
             }
 
@@ -314,7 +318,7 @@ class ChartInstance {
             if (!this.indicatorSeries[id]) {
                 const options = {
                     title: '', // Hide title on scale
-                    color: tvColorToRGBA(style?.color) || '#3b82f6',
+                    color: this.colorOverrides[title] || tvColorToRGBA(style?.color) || '#3b82f6',
                     lineWidth: style?.lineWidth || 1,
                     lineStyle: this._mapLineStyle(style?.lineStyle),
                     visible: this.showIndicators && !this.hiddenPlots.has(id),
@@ -331,6 +335,7 @@ class ChartInstance {
                 } else {
                     this.indicatorSeries[id] = this.chart.addLineSeries(options);
                 }
+                this.indicatorSeries[id]._backendTitle = title;
                 newlyAdded = true;
             }
 
@@ -346,7 +351,11 @@ class ChartInstance {
                 if (!this.isReplayMode) {
                     this.indicatorSeries[id].setData(formattedData);
                     // Force hide labels on every update to be sure
-                    this.indicatorSeries[id].applyOptions({ lastValueVisible: false, priceLineVisible: false });
+                    this.indicatorSeries[id].applyOptions({
+                        lastValueVisible: false,
+                        priceLineVisible: false,
+                        color: this.colorOverrides[title] || tvColorToRGBA(style?.color) || '#3b82f6'
+                    });
                 }
             }
         });
@@ -390,13 +399,14 @@ class ChartInstance {
         if (this.priceLines[id]) {
             this.candleSeries.removePriceLine(this.priceLines[id]);
         }
+        const title = data.title || id;
         this.priceLines[id] = this.candleSeries.createPriceLine({
             price: data.price,
-            color: tvColorToRGBA(data.color) || '#3b82f6',
+            color: this.colorOverrides[title] || tvColorToRGBA(data.color) || '#3b82f6',
             lineWidth: data.lineWidth || 2,
             lineStyle: this._mapLineStyle(data.lineStyle || 2),
             axisLabelVisible: false,
-            title: data.title || id
+            title: title
         });
     }
 
@@ -565,6 +575,7 @@ function setLayout(n) {
             chartInstance.interval = saved.interval || '1';
             chartInstance.showIndicators = saved.showIndicators !== undefined ? saved.showIndicators : true;
             chartInstance.hiddenPlots = new Set(saved.hiddenPlots || []);
+            chartInstance.colorOverrides = saved.colorOverrides || {};
             chartInstance.switchSymbol(chartInstance.symbol, chartInstance.interval).then(() => {
                 if (saved.drawings) {
                     saved.drawings.forEach(d => {
@@ -719,6 +730,7 @@ function saveLayout() {
             interval: c.interval,
             showIndicators: c.showIndicators,
             hiddenPlots: Array.from(c.hiddenPlots),
+            colorOverrides: c.colorOverrides,
             drawings: c.drawings.map(d => ({ type: d.type, price: d.price, color: d.color }))
         };
         localStorage.setItem(`chart_config_${i}`, JSON.stringify(config));
@@ -738,6 +750,17 @@ function normalizeSymbol(sym) {
     if (s.includes(':')) s = s.split(':')[1];
     if (s.includes('|')) s = s.split('|')[1];
     return s.split(' ')[0].replace("NIFTY 50", "NIFTY").replace("BANK NIFTY", "BANKNIFTY").replace("FIN NIFTY", "FINNIFTY");
+}
+
+function rgbaToHex(rgba) {
+    if (!rgba) return '#3b82f6';
+    if (rgba.startsWith('#')) return rgba;
+    const parts = rgba.match(/[\d.]+/g);
+    if (!parts || parts.length < 3) return '#3b82f6';
+    const r = parseInt(parts[0]);
+    const g = parseInt(parts[1]);
+    const b = parseInt(parts[2]);
+    return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
 }
 
 function tvColorToRGBA(color) {
@@ -843,7 +866,7 @@ function populateIndicatorList() {
         item.className = 'flex items-center justify-between bg-white/5 p-2 rounded-lg mb-2';
         const isHidden = chart.hiddenPlots.has('__markers__');
         item.innerHTML = `
-            <span class="text-[10px] font-bold text-gray-300 truncate mr-2 italic">Markers (Shapes/Signals)</span>
+            <span class="text-[10px] font-bold text-gray-300 truncate mr-2 italic">Global Markers Toggle</span>
             <button class="toggle-plot-btn text-[9px] font-black px-2 py-1 rounded ${isHidden ? 'bg-red-500/20 text-red-400' : 'bg-green-500/20 text-green-400'}" data-key="__markers__">
                 ${isHidden ? 'HIDDEN' : 'VISIBLE'}
             </button>
@@ -859,21 +882,56 @@ function populateIndicatorList() {
             saveLayout();
         });
         list.appendChild(item);
+
+        // Unique marker types for color overriding
+        const uniqueLabels = [...new Set(chart.markers.map(m => m.text).filter(t => t))];
+        uniqueLabels.forEach(label => {
+            const mItem = document.createElement('div');
+            mItem.className = 'flex items-center justify-between bg-white/5 p-2 rounded-lg mb-1 ml-2';
+            const sampleMarker = chart.markers.find(m => m.text === label);
+            const currentColor = sampleMarker ? sampleMarker.color : '#3b82f6';
+
+            mItem.innerHTML = `
+                <div class="flex items-center truncate mr-2">
+                    <input type="color" class="indicator-color-picker w-4 h-4 rounded cursor-pointer mr-2 border-0 bg-transparent" value="${rgbaToHex(currentColor)}">
+                    <span class="text-[9px] font-bold text-gray-400 truncate">${label}</span>
+                </div>
+            `;
+            mItem.querySelector('.indicator-color-picker').addEventListener('input', (e) => {
+                const newColor = e.target.value;
+                chart.colorOverrides[label] = newColor;
+                chart.markers = chart.markers.map(m => m.text === label ? { ...m, color: newColor } : m);
+                chart.candleSeries.setMarkers(chart.showIndicators && !chart.hiddenPlots.has('__markers__') ? chart.markers : []);
+                saveLayout();
+            });
+            list.appendChild(mItem);
+        });
     }
 
     Object.entries(chart.indicatorSeries).forEach(([key, series]) => {
-        const title = series.options().title || key;
+        const title = series._backendTitle || key;
         const item = document.createElement('div');
         item.className = 'flex items-center justify-between bg-white/5 p-2 rounded-lg';
 
         const isHidden = chart.hiddenPlots.has(key);
+        const currentColor = series.options().color;
 
         item.innerHTML = `
-            <span class="text-[10px] font-bold text-gray-300 truncate mr-2">${title}</span>
+            <div class="flex items-center truncate mr-2">
+                <input type="color" class="indicator-color-picker w-4 h-4 rounded cursor-pointer mr-2 border-0 bg-transparent" value="${rgbaToHex(currentColor)}">
+                <span class="text-[10px] font-bold text-gray-300 truncate">${title}</span>
+            </div>
             <button class="toggle-plot-btn text-[9px] font-black px-2 py-1 rounded ${isHidden ? 'bg-red-500/20 text-red-400' : 'bg-green-500/20 text-green-400'}" data-key="${key}">
                 ${isHidden ? 'HIDDEN' : 'VISIBLE'}
             </button>
         `;
+
+        item.querySelector('.indicator-color-picker').addEventListener('input', (e) => {
+            const newColor = e.target.value;
+            chart.colorOverrides[title] = newColor;
+            series.applyOptions({ color: newColor });
+            saveLayout();
+        });
 
         item.querySelector('.toggle-plot-btn').addEventListener('click', (e) => {
             if (chart.hiddenPlots.has(key)) {
@@ -890,7 +948,32 @@ function populateIndicatorList() {
         list.appendChild(item);
     });
 
-    if (Object.keys(chart.indicatorSeries).length === 0) {
+    if (chart.priceLines) {
+        Object.entries(chart.priceLines).forEach(([key, line]) => {
+            const title = line.options().title || key;
+            const item = document.createElement('div');
+            item.className = 'flex items-center justify-between bg-white/5 p-2 rounded-lg mt-1';
+            const currentColor = line.options().color;
+
+            item.innerHTML = `
+                <div class="flex items-center truncate mr-2">
+                    <input type="color" class="indicator-color-picker w-4 h-4 rounded cursor-pointer mr-2 border-0 bg-transparent" value="${rgbaToHex(currentColor)}">
+                    <span class="text-[10px] font-bold text-blue-300 truncate">${title}</span>
+                </div>
+                <span class="text-[8px] text-gray-500 uppercase font-black">Line</span>
+            `;
+
+            item.querySelector('.indicator-color-picker').addEventListener('input', (e) => {
+                const newColor = e.target.value;
+                chart.colorOverrides[title] = newColor;
+                line.applyOptions({ color: newColor });
+                saveLayout();
+            });
+            list.appendChild(item);
+        });
+    }
+
+    if (Object.keys(chart.indicatorSeries).length === 0 && (!chart.priceLines || Object.keys(chart.priceLines).length === 0)) {
         const empty = document.createElement('div');
         empty.className = 'text-[10px] text-gray-500 italic mb-4';
         empty.innerText = 'No indicators loaded';
