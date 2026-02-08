@@ -45,8 +45,8 @@ class ChartInstance {
                 locale: 'en-IN',
                 timeFormatter: (ts) => new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(ts * 1000))
             },
-            rightPriceScale: { borderColor: '#1f2937', autoScale: true, scaleMargins: { top: 0.1, bottom: 0.1 } },
-            timeScale: { borderColor: '#1f2937', timeVisible: true, secondsVisible: false }
+            rightPriceScale: { borderColor: '#1f2937', autoScale: true, scaleMargins: { top: 0.2, bottom: 0.2 } },
+            timeScale: { borderColor: '#1f2937', timeVisible: true, secondsVisible: false, rightOffset: 10 }
         });
 
         this.candleSeries = this.chart.addCandlestickSeries({
@@ -149,7 +149,7 @@ class ChartInstance {
                 this.renderData();
 
                 const lastIdx = this.fullHistory.candles.length - 1;
-                this.chart.timeScale().setVisibleLogicalRange({ from: lastIdx - 100, to: lastIdx + 5 });
+                this.chart.timeScale().setVisibleLogicalRange({ from: lastIdx - 100, to: lastIdx + 10 });
             }
 
             if (resData.indicators) {
@@ -325,7 +325,8 @@ class ChartInstance {
                     lastValueVisible: false,
                     priceLineVisible: false,
                     priceScaleId: 'right',
-                    priceFormat: { type: 'custom', formatter: val => '' }
+                    priceFormat: { type: 'custom', formatter: val => '' },
+                    autoscaleInfoProvider: () => null
                 };
 
                 if (type === 'area') {
@@ -831,7 +832,7 @@ function initZoomControls() {
         const chart = charts[activeChartIndex];
         if (!chart) return;
         const lastIdx = chart.fullHistory.candles.length - 1;
-        if (lastIdx >= 0) chart.chart.timeScale().setVisibleLogicalRange({ from: lastIdx - 100, to: lastIdx + 5 });
+        if (lastIdx >= 0) chart.chart.timeScale().setVisibleLogicalRange({ from: lastIdx - 100, to: lastIdx + 10 });
     });
 }
 
