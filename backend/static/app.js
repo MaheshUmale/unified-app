@@ -17,7 +17,7 @@ class ChartInstance {
         this.volumeSeries = null;
         this.indicatorSeries = {};
         this.lastCandle = null;
-        this.fullHistory = { candles: [], volume: [] };
+        this.fullHistory = { candles: [], volume: [], indicators: {} };
         this.drawings = [];
         this.markers = [];
         this.showIndicators = true;
@@ -96,7 +96,7 @@ class ChartInstance {
         if (interval) this.interval = interval;
 
         this.lastCandle = null;
-        this.fullHistory = { candles: [], volume: [] };
+        this.fullHistory = { candles: [], volume: [], indicators: {} };
 
         this.candleSeries.setData([]);
         this.volumeSeries.setData([]);
@@ -181,6 +181,17 @@ class ChartInstance {
         }
         this.candleSeries.setData(displayCandles);
         this.volumeSeries.setData([...this.fullHistory.volume].sort((a, b) => a.time - b.time));
+
+        // Restore indicators
+        Object.entries(this.fullHistory.indicators).forEach(([id, data]) => {
+            if (this.indicatorSeries[id]) {
+                this.indicatorSeries[id].setData(data);
+                this.indicatorSeries[id].applyOptions({ lastValueVisible: false, priceLineVisible: false });
+            }
+        });
+
+        // Restore markers
+        this.candleSeries.setMarkers(this.showIndicators && !this.hiddenPlots.has('__markers__') ? this.markers : []);
     }
 
     updateRealtimeCandle(quote) {
@@ -233,7 +244,7 @@ class ChartInstance {
                     this.fullHistory.candles = candles;
                     this.fullHistory.volume = vol;
                     this.lastCandle = { ...candles[candles.length - 1], volume: data.ohlcv[data.ohlcv.length - 1][5] };
-                    this.renderData();
+                    if (!this.isReplayMode) this.renderData();
                 } else if (candles.length === 1) {
                     const newCandle = candles[0];
                     const newVol = vol[0];
@@ -329,16 +340,34 @@ class ChartInstance {
                     value: d.value,
                     color: d.color ? tvColorToRGBA(d.color) : undefined
                 })).sort((a, b) => a.time - b.time);
-                this.indicatorSeries[id].setData(formattedData);
-                // Force hide labels on every update to be sure
-                this.indicatorSeries[id].applyOptions({ lastValueVisible: false, priceLineVisible: false });
+
+                this.fullHistory.indicators[id] = formattedData;
+
+                if (!this.isReplayMode) {
+                    this.indicatorSeries[id].setData(formattedData);
+                    // Force hide labels on every update to be sure
+                    this.indicatorSeries[id].applyOptions({ lastValueVisible: false, priceLineVisible: false });
+                }
             }
         });
 
         // Handle merged markers
         if (allMarkers.length > 0 || (Array.isArray(indicators) && indicators.some(i => i.type === 'markers'))) {
-            this.markers = allMarkers.sort((a, b) => a.time - b.time);
-            this.candleSeries.setMarkers(this.showIndicators && !this.hiddenPlots.has('__markers__') ? this.markers : []);
+            // Deduplicate markers by time and text
+            const uniqueMarkers = [];
+            const seen = new Set();
+            allMarkers.sort((a, b) => a.time - b.time).forEach(m => {
+                const key = `${m.time}_${m.text}`;
+                if (!seen.has(key)) {
+                    uniqueMarkers.push(m);
+                    seen.add(key);
+                }
+            });
+
+            this.markers = uniqueMarkers;
+            if (!this.isReplayMode) {
+                this.candleSeries.setMarkers(this.showIndicators && !this.hiddenPlots.has('__markers__') ? this.markers : []);
+            }
         }
 
         if (newlyAdded && this.index === activeChartIndex) {
@@ -384,8 +413,24 @@ class ChartInstance {
             this.replayIndex = newIdx;
             const vC = this.fullHistory.candles.slice(0, this.replayIndex + 1);
             const vV = this.fullHistory.volume.slice(0, this.replayIndex + 1);
+            const currentTime = vC[vC.length - 1].time;
+
             this.candleSeries.setData(vC);
             this.volumeSeries.setData(vV);
+
+            // Subset indicators
+            Object.entries(this.fullHistory.indicators).forEach(([id, data]) => {
+                const series = this.indicatorSeries[id];
+                if (series) {
+                    const subset = data.filter(d => d.time <= currentTime);
+                    series.setData(subset);
+                }
+            });
+
+            // Subset markers
+            const visibleMarkers = this.markers.filter(m => m.time <= currentTime);
+            this.candleSeries.setMarkers(this.showIndicators && !this.hiddenPlots.has('__markers__') ? visibleMarkers : []);
+
             this.lastCandle = { ...vC[vC.length - 1] };
         }
     }
