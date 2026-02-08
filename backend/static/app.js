@@ -49,11 +49,15 @@ class ChartInstance {
         });
 
         this.candleSeries = this.chart.addCandlestickSeries({
-            upColor: '#22c55e', downColor: '#ef4444', borderVisible: true, wickUpColor: '#22c55e', wickDownColor: '#ef4444'
+            upColor: '#22c55e', downColor: '#ef4444', borderVisible: true, wickUpColor: '#22c55e', wickDownColor: '#ef4444',
+            lastValueVisible: false,
+            priceLineVisible: false
         });
 
         this.volumeSeries = this.chart.addHistogramSeries({
-            color: '#3b82f6', priceFormat: { type: 'volume' }, priceScaleId: 'volume'
+            color: '#3b82f6', priceFormat: { type: 'volume' }, priceScaleId: 'volume',
+            lastValueVisible: false,
+            priceLineVisible: false
         });
 
         this.chart.priceScale('volume').applyOptions({
@@ -150,7 +154,11 @@ class ChartInstance {
             if (resData.indicators) {
                 this.handleChartUpdate({ indicators: resData.indicators });
                 Object.entries(this.indicatorSeries).forEach(([key, s]) => {
-                    s.applyOptions({ visible: this.showIndicators && !this.hiddenPlots.has(key) });
+                    s.applyOptions({
+                        visible: this.showIndicators && !this.hiddenPlots.has(key),
+                        lastValueVisible: false,
+                        priceLineVisible: false
+                    });
                 });
                 this.candleSeries.setMarkers(this.showIndicators && !this.hiddenPlots.has('__markers__') ? this.markers : []);
             }
@@ -294,13 +302,15 @@ class ChartInstance {
             // Standard Series: line, area, histogram
             if (!this.indicatorSeries[id]) {
                 const options = {
-                    title: title || id,
+                    title: '', // Hide title on scale
                     color: tvColorToRGBA(style?.color) || '#3b82f6',
                     lineWidth: style?.lineWidth || 1,
                     lineStyle: this._mapLineStyle(style?.lineStyle),
                     visible: this.showIndicators && !this.hiddenPlots.has(id),
-                    axisLabelVisible: false,
-                    priceScaleId: 'right'
+                    lastValueVisible: false,
+                    priceLineVisible: false,
+                    priceScaleId: 'right',
+                    priceFormat: { type: 'custom', formatter: val => '' }
                 };
 
                 if (type === 'area') {
@@ -320,6 +330,8 @@ class ChartInstance {
                     color: d.color ? tvColorToRGBA(d.color) : undefined
                 })).sort((a, b) => a.time - b.time);
                 this.indicatorSeries[id].setData(formattedData);
+                // Force hide labels on every update to be sure
+                this.indicatorSeries[id].applyOptions({ lastValueVisible: false, priceLineVisible: false });
             }
         });
 
@@ -354,7 +366,7 @@ class ChartInstance {
             color: tvColorToRGBA(data.color) || '#3b82f6',
             lineWidth: data.lineWidth || 2,
             lineStyle: this._mapLineStyle(data.lineStyle || 2),
-            axisLabelVisible: true,
+            axisLabelVisible: false,
             title: data.title || id
         });
     }
@@ -380,7 +392,7 @@ class ChartInstance {
 
     addHorizontalLine(price, color = '#3b82f6') {
         const line = this.candleSeries.createPriceLine({
-            price: price, color: color, lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Dotted, axisLabelVisible: true, title: 'HLINE'
+            price: price, color: color, lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Dotted, axisLabelVisible: false, title: 'HLINE'
         });
         this.drawings.push({ type: 'hline', price, color, line });
         saveLayout();
