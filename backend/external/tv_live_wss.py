@@ -212,65 +212,80 @@ class TradingViewWSS:
                 if hist_key not in self.history: self.history[hist_key] = {}
                 self.history[hist_key]['ohlcv'] = ohlcv
 
-        if self.study_id in chart_data:
-            study_val = chart_data[self.study_id]
-            if "st" in study_val and study_val["st"]:
-                plots_rows = [item["v"] for item in study_val["st"]]
-                from config import TV_STUDY_ID
-                meta_info = self.indicator_metadata.get(TV_STUDY_ID)
+        # Recalculate indicators from history
+        hist_key = (hrn, interval)
+        if hist_key in self.history and 'ohlcv' in self.history[hist_key]:
+            ohlcv_data = self.history[hist_key]['ohlcv']
+            indicators = []
 
-                if meta_info and meta_info.get("plots"):
-                    plot_defs = list(meta_info["plots"].values())
-                    indicator_series = {}
-                    for p_def in plot_defs:
-                        p_id = p_def["id"]
-                        indicator_series[p_id] = {
-                            "id": p_id,
-                            "title": p_def["title"],
-                            "type": self._map_tv_plot_type(p_def.get("type")),
-                            "style": {
-                                "color": p_def.get("color"),
-                                "lineWidth": p_def.get("linewidth", 1),
-                                "lineStyle": p_def.get("linestyle", 0)
-                            },
-                            "data": []
+            try:
+                import pandas as pd
+                df = pd.DataFrame(ohlcv_data, columns=['ts', 'o', 'h', 'l', 'c', 'v'])
+
+                # EMA 9 (Blue)
+                ema9 = df['c'].ewm(span=9, adjust=False).mean()
+                indicators.append({
+                    "id": "ema_9",
+                    "title": "EMA 9",
+                    "type": "line",
+                    "style": {"color": "#3b82f6", "lineWidth": 1},
+                    "data": [{"time": ohlcv_data[i][0], "value": float(val)} for i, val in enumerate(ema9) if i >= 8]
+                })
+
+                # EMA 20 (Orange)
+                ema20 = df['c'].ewm(span=20, adjust=False).mean()
+                indicators.append({
+                    "id": "ema_20",
+                    "title": "EMA 20",
+                    "type": "line",
+                    "style": {"color": "#f97316", "lineWidth": 1},
+                    "data": [{"time": ohlcv_data[i][0], "value": float(val)} for i, val in enumerate(ema20) if i >= 19]
+                })
+
+                # Market Psychology Analyzer integration
+                from brain.MarketPsychologyAnalyzer import MarketPsychologyAnalyzer
+                analyzer = MarketPsychologyAnalyzer()
+                zones, signals = analyzer.analyze(ohlcv_data)
+
+                # Add Zones as price lines
+                for i, zone in enumerate(zones):
+                    indicators.append({
+                        "id": f"battle_zone_{i}",
+                        "type": "price_line",
+                        "title": "BATTLE ZONE",
+                        "data": {
+                            "price": zone['price'],
+                            "color": "rgba(59, 130, 246, 0.4)", # Blue-ish as in plot
+                            "lineStyle": 2,
+                            "title": "BATTLE ZONE"
                         }
+                    })
 
-                    is_interleaved = len(plots_rows[0]) >= (1 + 2 * len(plot_defs)) if plots_rows else False
-                    for row in plots_rows:
-                        timestamp = row[0]
-                        for p_def in plot_defs:
-                            p_idx = p_def["index"]
-                            val_idx = 1 + (2 * p_idx if is_interleaved else p_idx)
-                            if val_idx < len(row):
-                                val = row[val_idx]
-                                if val is not None:
-                                    dp = {"time": timestamp, "value": val}
-                                    if is_interleaved and (val_idx + 1) < len(row):
-                                        dp["color"] = row[val_idx + 1]
-                                    indicator_series[p_def["id"]]["data"].append(dp)
+                # Add Signals as markers
+                marker_data = []
+                for ts, sig_type in signals.items():
+                    unix_ts = int(ts.timestamp())
+                    marker_data.append({
+                        "time": unix_ts,
+                        "position": "aboveBar" if "SHORT" in sig_type else "belowBar",
+                        "color": "#ef4444" if "SHORT" in sig_type else "#22c55e",
+                        "shape": "arrowDown" if "SHORT" in sig_type else "arrowUp",
+                        "text": sig_type
+                    })
 
-                    final_indicators = list(indicator_series.values())
-                    update_msg['data']['indicators'] = final_indicators
+                if marker_data:
+                    indicators.append({
+                        "id": "psych_signals",
+                        "type": "markers",
+                        "title": "Psychology Signals",
+                        "data": marker_data
+                    })
 
-                    # Bar coloring
-                    if "ba" in study_val and study_val["ba"]:
-                        bar_colors = []
-                        for ba_item in study_val["ba"]:
-                            v = ba_item.get("v")
-                            if isinstance(v, list) and len(v) > 1:
-                                idx = v[0]
-                                color = v[1]
-                                if 0 <= idx < len(plots_rows):
-                                    bar_colors.append({"time": plots_rows[idx][0], "color": color})
-                        update_msg['data']['bar_colors'] = bar_colors
+                update_msg['data']['indicators'] = indicators
+                self.history[hist_key]['indicators'] = indicators
 
-                    hist_key = (hrn, interval)
-                    if len(plots_rows) > 10:
-                        if hist_key not in self.history: self.history[hist_key] = {}
-                        self.history[hist_key]['indicators'] = final_indicators
-                        if "bar_colors" in update_msg['data']:
-                            self.history[hist_key]['bar_colors'] = update_msg['data']['bar_colors']
+            except Exception as e:
+                logger.error(f"Error calculating indicators live: {e}")
 
         if update_msg['data']:
             self.callback(update_msg)
