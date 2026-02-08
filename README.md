@@ -22,6 +22,11 @@ A minimal, high-performance trading terminal featuring TradingView charting, rea
 - **Layout Persistence**:
   - Automatically saves your layout, symbols, intervals, and drawing tools to `localStorage`.
   - Restores your previous setup instantly on refresh.
+- **URL Parameters**:
+  - Open a specific symbol and interval directly via the URL (e.g., `?symbol=NSE:RELIANCE&interval=5`).
+  - This mode automatically sets the layout to 1 chart.
+- **Maximize Chart**:
+  - Use the **MAXIMIZE** button to open the currently active chart in a new browser tab for focused, full-screen analysis.
 - **Advanced Visualization**:
   - **Markers & Shapes**: Dynamic rendering of volume bubbles and S/R dots using Lightweight Charts markers.
   - **Bar Coloring**: Real-time candle color updates based on study-provided volume and trend metrics, with a built-in RVOL (Relative Volume) fallback for consistent trend analysis.
@@ -90,7 +95,11 @@ The terminal will be available at `http://localhost:5051`.
 
 ### 4. Indicator Management
 - **Global Toggle**: Use **HIDE ALL / SHOW ALL** to quickly clear the chart of all indicator plots and markers.
-- **Individual Control**: Click **INDICATORS** to open the management panel. From here, you can toggle the visibility of specific indicator plots or remove individual drawings.
+- **Individual Control**: Click **INDICATORS** to open the management panel. From here, you can:
+  - Toggle the visibility of specific indicator series (lines, areas, histograms).
+  - **Customize Colors**: Change the color of any indicator or marker type (e.g., TRAPS) using the built-in color picker.
+  - Toggles for markers and signals.
+  - Remove individual drawings like horizontal lines.
 
 ### 5. Candle Replay
 - **Enter Mode**: Click the **REPLAY** button.

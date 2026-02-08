@@ -479,6 +479,7 @@ let currentLayout = 1;
 function init() {
     loadLayout();
     initLayoutSelector();
+    initFullscreen();
     initIndicatorPanel();
     initDrawingControls();
     initTimeframeUI();
@@ -545,7 +546,7 @@ function updateActiveChartLabel() {
     });
 }
 
-function setLayout(n) {
+function setLayout(n, overrideSymbol = null, overrideInterval = null) {
     currentLayout = n;
     const container = document.getElementById('chartsContainer');
     container.innerHTML = '';
@@ -570,22 +571,26 @@ function setLayout(n) {
         const chartInstance = new ChartInstance(`chart-${i}`, i);
         charts.push(chartInstance);
 
-        const saved = JSON.parse(localStorage.getItem(`chart_config_${i}`));
-        if (saved) {
-            chartInstance.symbol = saved.symbol || 'NSE:NIFTY';
-            chartInstance.interval = saved.interval || '1';
-            chartInstance.showIndicators = saved.showIndicators !== undefined ? saved.showIndicators : true;
-            chartInstance.hiddenPlots = new Set(saved.hiddenPlots || []);
-            chartInstance.colorOverrides = saved.colorOverrides || {};
-            chartInstance.switchSymbol(chartInstance.symbol, chartInstance.interval).then(() => {
-                if (saved.drawings) {
-                    saved.drawings.forEach(d => {
-                        if (d.type === 'hline') chartInstance.addHorizontalLine(d.price, d.color);
-                    });
-                }
-            });
+        if (i === 0 && overrideSymbol) {
+            chartInstance.switchSymbol(overrideSymbol, overrideInterval || '1');
         } else {
-            chartInstance.switchSymbol('NSE:NIFTY', '1');
+            const saved = JSON.parse(localStorage.getItem(`chart_config_${i}`));
+            if (saved) {
+                chartInstance.symbol = saved.symbol || 'NSE:NIFTY';
+                chartInstance.interval = saved.interval || '1';
+                chartInstance.showIndicators = saved.showIndicators !== undefined ? saved.showIndicators : true;
+                chartInstance.hiddenPlots = new Set(saved.hiddenPlots || []);
+                chartInstance.colorOverrides = saved.colorOverrides || {};
+                chartInstance.switchSymbol(chartInstance.symbol, chartInstance.interval).then(() => {
+                    if (saved.drawings) {
+                        saved.drawings.forEach(d => {
+                            if (d.type === 'hline') chartInstance.addHorizontalLine(d.price, d.color);
+                        });
+                    }
+                });
+            } else {
+                chartInstance.switchSymbol('NSE:NIFTY', '1');
+            }
         }
     }
 
@@ -739,8 +744,16 @@ function saveLayout() {
 }
 
 function loadLayout() {
-    const savedLayout = localStorage.getItem('prodesk_layout');
-    setLayout(savedLayout ? parseInt(savedLayout) : 1);
+    const params = new URLSearchParams(window.location.search);
+    const urlSymbol = params.get('symbol');
+    const urlInterval = params.get('interval');
+
+    if (urlSymbol) {
+        setLayout(1, urlSymbol.toUpperCase(), urlInterval);
+    } else {
+        const savedLayout = localStorage.getItem('prodesk_layout');
+        setLayout(savedLayout ? parseInt(savedLayout) : 1);
+    }
 }
 
 // --- Utils ---
@@ -834,6 +847,19 @@ function initZoomControls() {
         const lastIdx = chart.fullHistory.candles.length - 1;
         if (lastIdx >= 0) chart.chart.timeScale().setVisibleLogicalRange({ from: lastIdx - 100, to: lastIdx + 10 });
     });
+}
+
+function initFullscreen() {
+    const btn = document.getElementById('maximizeBtn');
+    if (btn) {
+        btn.addEventListener('click', () => {
+            const chart = charts[activeChartIndex];
+            if (chart) {
+                const url = `${window.location.origin}${window.location.pathname}?symbol=${encodeURIComponent(chart.symbol)}&interval=${encodeURIComponent(chart.interval)}`;
+                window.open(url, '_blank');
+            }
+        });
+    }
 }
 
 function initIndicatorPanel() {
