@@ -224,11 +224,75 @@ async def get_intraday(instrument_key: str, interval: str = '1'):
                         merged_map[c[0]] = c
                 tv_candles = sorted(merged_map.values(), key=lambda x: x[0], reverse=True)
 
-        # Ensure indicators also have valid timestamps
+        # Build Indicators from historical candles
         valid_indicators = []
-        for ind in wss_indicators:
-            if ind.get('timestamp', 0) > 1e9:
-                valid_indicators.append(ind)
+        if tv_candles:
+            try:
+                import pandas as pd
+                # tv_candles are newest first, we need oldest first for EMA
+                analyzer_candles = sorted(tv_candles, key=lambda x: x[0])
+                df = pd.DataFrame(analyzer_candles, columns=['ts', 'o', 'h', 'l', 'c', 'v'])
+
+                # EMA 9 (Blue)
+                ema9 = df['c'].ewm(span=9, adjust=False).mean()
+                valid_indicators.append({
+                    "id": "ema_9",
+                    "title": "EMA 9",
+                    "type": "line",
+                    "style": {"color": "#3b82f6", "lineWidth": 1},
+                    "data": [{"time": analyzer_candles[i][0], "value": float(val)} for i, val in enumerate(ema9) if i >= 8]
+                })
+
+                # EMA 20 (Orange)
+                ema20 = df['c'].ewm(span=20, adjust=False).mean()
+                valid_indicators.append({
+                    "id": "ema_20",
+                    "title": "EMA 20",
+                    "type": "line",
+                    "style": {"color": "#f97316", "lineWidth": 1},
+                    "data": [{"time": analyzer_candles[i][0], "value": float(val)} for i, val in enumerate(ema20) if i >= 19]
+                })
+
+                # Market Psychology Analyzer
+                from brain.MarketPsychologyAnalyzer import MarketPsychologyAnalyzer
+                analyzer = MarketPsychologyAnalyzer()
+                zones, signals = analyzer.analyze(analyzer_candles)
+
+                # Add Zones as price lines
+                for i, zone in enumerate(zones):
+                    valid_indicators.append({
+                        "id": f"battle_zone_{i}",
+                        "type": "price_line",
+                        "title": "BATTLE ZONE",
+                        "data": {
+                            "price": zone['price'],
+                            "color": "rgba(59, 130, 246, 0.4)",
+                            "lineStyle": 2,
+                            "title": "BATTLE ZONE"
+                        }
+                    })
+
+                # Add Signals as markers
+                marker_data = []
+                for ts, sig_type in signals.items():
+                    unix_ts = int(ts.timestamp())
+                    marker_data.append({
+                        "time": unix_ts,
+                        "position": "aboveBar" if "SHORT" in sig_type else "belowBar",
+                        "color": "#ef4444" if "SHORT" in sig_type else "#22c55e",
+                        "shape": "arrowDown" if "SHORT" in sig_type else "arrowUp",
+                        "text": sig_type
+                    })
+
+                if marker_data:
+                    valid_indicators.append({
+                        "id": "psych_signals",
+                        "type": "markers",
+                        "title": "Psychology Signals",
+                        "data": marker_data
+                    })
+            except Exception as e:
+                logger.error(f"Error building indicators for intraday: {e}")
 
         return {
             "candles": tv_candles or [],
