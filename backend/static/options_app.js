@@ -85,6 +85,18 @@ async function loadData() {
     else if (currentTab === 'pcr') await loadPCRTrend();
 }
 
+function formatIST(ts) {
+    if (!ts) return '-';
+    const date = new Date(ts);
+    return new Intl.DateTimeFormat('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+    }).format(date);
+}
+
 async function loadChain() {
     try {
         const res = await fetch(`/api/options/chain/${encodeURIComponent(currentUnderlying)}`);
@@ -95,7 +107,7 @@ async function loadChain() {
         symbolToCells = {};
 
         if (data.timestamp) {
-            document.getElementById('lastUpdateTime').innerText = `${new Date(data.timestamp).toLocaleTimeString()}`;
+            document.getElementById('lastUpdateTime').innerText = formatIST(data.timestamp);
         }
 
         // Group by strike
@@ -191,7 +203,7 @@ async function loadPCRTrend() {
             document.getElementById('spotPriceVal').innerText = last.spot_price?.toFixed(2) || '-';
         }
 
-        const labels = history.map(h => new Date(h.timestamp).toLocaleTimeString());
+        const labels = history.map(h => formatIST(h.timestamp));
         const pcrOI = history.map(h => h.pcr_oi);
         const pcrVol = history.map(h => h.pcr_vol);
         const price = history.map(h => h.underlying_price);

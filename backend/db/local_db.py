@@ -137,6 +137,10 @@ class LocalDB:
             df = self.conn.execute(sql, params).fetch_df()
 
         if json_serialize:
+            # Ensure datetime columns are UTC-aware for correct ISO serialization (with 'Z')
+            for col in df.select_dtypes(include=['datetime64']).columns:
+                if df[col].dt.tz is None:
+                    df[col] = df[col].dt.tz_localize('UTC')
             # Use pandas to_json to handle NaN/nulls correctly for API consumption
             return json.loads(df.to_json(orient='records', date_format='iso'))
 
