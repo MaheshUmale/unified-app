@@ -48,7 +48,7 @@ class TradingViewAPI:
             self.tv = None
             logger.warning("tvDatafeed not installed, falling back to Streamer only")
 
-        self.streamer = Streamer()
+        self.streamer = Streamer(export_result=False)
         self.symbol_map = {
             'NIFTY': {'symbol': 'NIFTY', 'exchange': 'NSE'},
             'BANKNIFTY': {'symbol': 'BANKNIFTY', 'exchange': 'NSE'},
@@ -86,30 +86,24 @@ class TradingViewAPI:
                 tf = f"{interval_min}m"
                 if interval_min == 'D': tf = '1d'
                 elif interval_min == 'W': tf = '1w'
+                # Ensure tf matches keys in streamer.py timeframe_map
+                if interval_min == '60': tf = '1h'
+
+                logger.info(f"Using timeframe {tf} for Streamer (interval_min={interval_min})")
 
                 with contextlib.redirect_stdout(io.StringIO()):
-                    stream_gen = self.streamer.stream(
+                    data = self.streamer.stream(
                         exchange=tv_exchange,
                         symbol=tv_symbol,
                         timeframe=tf,
                         numb_price_candles=n_bars
                     )
 
-                    # Consume generator to find OHLC data
-                    data = None
-                    start_time = time.time()
-                    for update in stream_gen:
-                        if isinstance(update, dict) and 'ohlc' in update:
-                            data = update
-                            break
-                        if time.time() - start_time > 10: # Timeout
-                            break
-
                 if data and 'ohlc' in data:
                     candles = []
                     for row in data['ohlc']:
-                        # Ensure we have a unix timestamp or ISO string that can be parsed
-                        ts = row['datetime']
+                        # Streamer uses 'timestamp' key
+                        ts = row.get('timestamp') or row.get('datetime')
                         if isinstance(ts, (int, float)):
                             pass # already unix
                         else:
@@ -137,8 +131,8 @@ class TradingViewAPI:
                 elif interval_min == '15': tv_interval = Interval.in_15_minute
                 elif interval_min == '30': tv_interval = Interval.in_30_minute
                 elif interval_min == '60': tv_interval = Interval.in_1_hour
-                elif interval_min == 'D': tv_interval = Interval.in_daily
-                elif interval_min == 'W': tv_interval = Interval.in_weekly
+                elif interval_min == 'D' or interval_min == '1d': tv_interval = Interval.in_daily
+                elif interval_min == 'W' or interval_min == '1w': tv_interval = Interval.in_weekly
 
                 df = self.tv.get_hist(symbol=tv_symbol, exchange=tv_exchange, interval=tv_interval, n_bars=n_bars)
                 if df is not None and not df.empty:

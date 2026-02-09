@@ -116,6 +116,10 @@
                 });
                 const data = await res.json();
 
+            if (data.detail) {
+                tableBody.innerHTML = `<tr><td colspan="100" class="p-8 text-red-500 font-mono text-xs whitespace-pre-wrap">${data.detail}</td></tr>`;
+                return;
+            }
                 if (data.error) {
                     tableBody.innerHTML = `<tr><td colspan="100" class="p-8 text-red-500 font-mono text-xs whitespace-pre-wrap">${data.error}</td></tr>`;
                     return;
