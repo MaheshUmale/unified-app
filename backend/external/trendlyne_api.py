@@ -24,8 +24,19 @@ class TrendlyneAPI:
                 response = await client.get(url, params=params, headers=self.headers, timeout=10)
                 if response.status_code == 200:
                     data = response.json()
-                    if data and 'body' in data and 'data' in data['body'] and len(data['body']['data']) > 0:
-                        stock_id = data['body']['data'][0]['stock_id']
+                    logger.debug(f"Trendlyne Search Response for {symbol}: {data}")
+                    if data and 'body' in data and 'data' in data['body']:
+                        stock_id = None
+                        for item in data['body']['data']:
+                            if item.get('stock_code', '').lower() == symbol.lower():
+                                stock_id = item['stock_id']
+                                break
+
+                        # Fallback to first if no exact match (optional, but user requested exact)
+                        if not stock_id and len(data['body']['data']) > 0:
+                             # Just in case, let's log what we found
+                             logger.warning(f"No exact stock_code match for {symbol}, found codes: {[i.get('stock_code') for i in data['body']['data']]}")
+
                         if stock_id:
                             self.stock_id_cache[symbol] = stock_id
                             return stock_id
@@ -65,7 +76,9 @@ class TrendlyneAPI:
             async with httpx.AsyncClient() as client:
                 response = await client.get(url, params=params, headers=self.headers, timeout=15)
                 if response.status_code == 200:
-                    return response.json()
+                    data = response.json()
+                    logger.debug(f"Trendlyne OI Response for stock_id {stock_id}: {data}")
+                    return data
         except Exception as e:
             logger.error(f"Error fetching OI data from Trendlyne: {e}")
         return None

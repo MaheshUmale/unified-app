@@ -66,6 +66,7 @@ class LocalDB:
             CREATE TABLE IF NOT EXISTS options_snapshots (
                 timestamp TIMESTAMP,
                 underlying VARCHAR,
+                symbol VARCHAR,
                 expiry DATE,
                 strike DOUBLE,
                 option_type VARCHAR,
@@ -84,7 +85,9 @@ class LocalDB:
                 underlying VARCHAR,
                 pcr_oi DOUBLE,
                 pcr_vol DOUBLE,
-                underlying_price DOUBLE
+                underlying_price DOUBLE,
+                max_pain DOUBLE,
+                spot_price DOUBLE
             )
         """)
         self.conn.execute("CREATE INDEX IF NOT EXISTS idx_pcr_hist_ts ON pcr_history (timestamp, underlying)")
