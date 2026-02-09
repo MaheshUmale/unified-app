@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PRODESK | DB Viewer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #000; color: #d1d5db; }
+        .glass-panel { background: rgba(17, 24, 39, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.05); }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #374151; border-radius: 10px; }
+    </style>
+</head>
+<body class="h-full flex flex-col overflow-hidden">
+    <header class="h-14 py-2 glass-panel border-b border-white/5 px-4 md:px-6 flex items-center shrink-0">
+        <div class="flex items-center gap-6 w-full">
+            <a href="/" class="text-sm font-black text-white italic tracking-tighter uppercase shrink-0">PRO<span class="text-blue-500">DESK</span> <span class="text-xs ml-2 text-gray-500 not-italic font-normal">DB VIEWER</span></a>
+        </div>
+    </header>
+
+    <div class="flex-1 flex overflow-hidden">
+        <!-- Sidebar -->
+        <aside class="w-64 border-r border-white/5 flex flex-col glass-panel overflow-hidden shrink-0">
+            <div class="p-4 border-b border-white/5">
+                <h2 class="text-xs font-black uppercase italic tracking-widest text-gray-400">Tables</h2>
+            </div>
+            <div id="tableList" class="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
+                <div class="p-2 text-xs text-gray-500 animate-pulse">Loading tables...</div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="flex-1 flex flex-col overflow-hidden p-4 space-y-4">
+            <!-- Query Editor -->
+            <div class="glass-panel rounded-xl p-4 flex flex-col gap-3">
+                <div class="flex justify-between items-center">
+                    <h3 class="text-xs font-bold uppercase text-gray-400">SQL Editor</h3>
+                    <button id="runBtn" class="bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black px-4 py-1.5 rounded-full transition-all uppercase italic tracking-tighter">Run Query</button>
+                </div>
+                <textarea id="sqlInput" class="bg-black/50 border border-white/10 rounded-lg p-3 text-sm font-mono text-blue-400 outline-none focus:border-blue-500/50 h-32 resize-none custom-scrollbar" placeholder="SELECT * FROM ticks LIMIT 100"></textarea>
+            </div>
+
+            <!-- Results -->
+            <div class="flex-1 glass-panel rounded-xl overflow-hidden flex flex-col">
+                <div class="p-3 border-b border-white/5 flex justify-between items-center bg-white/5">
+                    <h3 class="text-xs font-bold uppercase text-gray-400">Results</h3>
+                    <span id="rowCount" class="text-[10px] font-mono text-gray-500">0 rows</span>
+                </div>
+                <div id="resultsContainer" class="flex-1 overflow-auto custom-scrollbar">
+                    <table id="resultsTable" class="w-full text-left text-[11px] border-collapse">
+                        <thead id="tableHead" class="sticky top-0 bg-gray-900 z-10">
+                            <!-- Headers injected here -->
+                        </thead>
+                        <tbody id="tableBody" class="divide-y divide-white/5">
+                            <!-- Data injected here -->
+                            <tr>
+                                <td colspan="100" class="p-8 text-center text-gray-600 italic">No data to display. Run a query to see results.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const tableList = document.getElementById('tableList');
+        const sqlInput = document.getElementById('sqlInput');
+        const runBtn = document.getElementById('runBtn');
+        const tableHead = document.getElementById('tableHead');
+        const tableBody = document.getElementById('tableBody');
+        const rowCount = document.getElementById('rowCount');
+
+        async function fetchTables() {
+            try {
+                const res = await fetch('/api/db/tables');
+                const data = await res.json();
+
+                tableList.innerHTML = '';
+                data.tables.forEach(table => {
+                    const btn = document.createElement('div');
+                    btn.className = 'group p-2 rounded-lg hover:bg-white/5 cursor-pointer transition-all';
+                    btn.innerHTML = `
+                        <div class="text-xs font-bold text-gray-300 group-hover:text-blue-400">${table.name}</div>
+                        <div class="text-[9px] text-gray-600 truncate">${table.schema.map(c => c.column_name).join(', ')}</div>
+                    `;
+                    btn.onclick = () => {
+                        sqlInput.value = `SELECT * FROM ${table.name} LIMIT 100`;
+                        runQuery();
+                    };
+                    tableList.appendChild(btn);
+                });
+            } catch (err) {
+                tableList.innerHTML = `<div class="p-2 text-xs text-red-500">Error: ${err.message}</div>`;
+            }
+        }
+
+        async function runQuery() {
+            const sql = sqlInput.value.trim();
+            if (!sql) return;
+
+            runBtn.disabled = true;
+            runBtn.innerText = 'Running...';
+            tableBody.innerHTML = '<tr><td colspan="100" class="p-8 text-center animate-pulse text-blue-500 italic">Executing query...</td></tr>';
+            tableHead.innerHTML = '';
+            rowCount.innerText = '0 rows';
+
+            try {
+                const res = await fetch('/api/db/query', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sql })
+                });
+                const data = await res.json();
+
+                if (data.error) {
+                    tableBody.innerHTML = `<tr><td colspan="100" class="p-8 text-red-500 font-mono text-xs whitespace-pre-wrap">${data.error}</td></tr>`;
+                    return;
+                }
+
+                const results = data.results;
+                if (!results || results.length === 0) {
+                    tableBody.innerHTML = '<tr><td colspan="100" class="p-8 text-center text-gray-600 italic">Query executed successfully, but returned no rows.</td></tr>';
+                    return;
+                }
+
+                rowCount.innerText = `${results.length} rows`;
+
+                // Build Headers
+                const cols = Object.keys(results[0]);
+                const trHead = document.createElement('tr');
+                cols.forEach(col => {
+                    const th = document.createElement('th');
+                    th.className = 'p-3 border-b border-white/10 font-black text-gray-200 uppercase tracking-tighter';
+                    th.innerText = col;
+                    trHead.appendChild(th);
+                });
+                tableHead.appendChild(trHead);
+
+                // Build Body
+                tableBody.innerHTML = '';
+                results.forEach(row => {
+                    const tr = document.createElement('tr');
+                    tr.className = 'hover:bg-white/5 transition-colors';
+                    cols.forEach(col => {
+                        const td = document.createElement('td');
+                        td.className = 'p-3 text-gray-400 font-mono border-b border-white/5 truncate max-w-xs';
+                        let val = row[col];
+                        if (typeof val === 'object' && val !== null) val = JSON.stringify(val);
+                        td.innerText = val;
+                        td.title = val;
+                        tr.appendChild(td);
+                    });
+                    tableBody.appendChild(tr);
+                });
+
+            } catch (err) {
+                tableBody.innerHTML = `<tr><td colspan="100" class="p-8 text-red-500 font-mono text-xs text-center">Fetch Error: ${err.message}</td></tr>`;
+            } finally {
+                runBtn.disabled = false;
+                runBtn.innerText = 'Run Query';
+            }
+        }
+
+        runBtn.onclick = runQuery;
+        sqlInput.onkeydown = (e) => {
+            if (e.ctrlKey && e.key === 'Enter') runQuery();
+        };
+
+        fetchTables();
+    </script>
+</body>
+</html>
