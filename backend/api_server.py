@@ -322,6 +322,8 @@ async def get_intraday(instrument_key: str, interval: str = '1'):
                 logger.error(f"Error building indicators for intraday: {e}")
 
         return {
+            "instrumentKey": clean_key,
+            "hrn": hrn,
             "candles": tv_candles or [],
             "indicators": valid_indicators
         }
