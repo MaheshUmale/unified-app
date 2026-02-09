@@ -292,7 +292,7 @@ class OptionsManager:
             body = data.get('body', {})
             oi_data = body.get('oiData', {})
 
-            timestamp = datetime.utcnow()
+            timestamp = datetime.now(pytz.utc)
             rows = []
             for strike_str, strike_data in oi_data.items():
                 strike = float(strike_str)
@@ -344,7 +344,7 @@ class OptionsManager:
         if not data or 'symbols' not in data:
             return
 
-        timestamp = datetime.utcnow()
+        timestamp = datetime.now(pytz.utc)
         rows = []
         symbols = []
         if underlying not in self.symbol_map_cache:
