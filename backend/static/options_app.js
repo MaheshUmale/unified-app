@@ -43,7 +43,7 @@ async function loadChain() {
         body.innerHTML = '';
 
         if (data.timestamp) {
-            document.getElementById('lastUpdateTime').innerText = `Last Updated: ${new Date(data.timestamp).toLocaleTimeString()}`;
+            document.getElementById('lastUpdateTime').innerText = `${new Date(data.timestamp).toLocaleTimeString()}`;
         }
 
         // Group by strike
@@ -114,14 +114,22 @@ async function loadPCRTrend() {
         const data = await res.json();
         const history = data.history;
 
+        if (history.length > 0) {
+            const last = history[history.length - 1];
+            document.getElementById('maxPainVal').innerText = last.max_pain?.toFixed(0) || '-';
+            document.getElementById('spotPriceVal').innerText = last.spot_price?.toFixed(2) || '-';
+        }
+
         const labels = history.map(h => new Date(h.timestamp).toLocaleTimeString());
         const pcrOI = history.map(h => h.pcr_oi);
         const pcrVol = history.map(h => h.pcr_vol);
         const price = history.map(h => h.underlying_price);
+        const maxPain = history.map(h => h.max_pain);
 
         renderLineChart('pcrTrendChart', labels, [
             { label: 'PCR (OI)', data: pcrOI, borderColor: '#3b82f6', yAxisID: 'y' },
             { label: 'PCR (Vol)', data: pcrVol, borderColor: '#10b981', yAxisID: 'y' },
+            { label: 'Max Pain', data: maxPain, borderColor: '#ef4444', yAxisID: 'y1', borderDash: [5, 5] },
             { label: 'Underlying Price', data: price, borderColor: '#f59e0b', yAxisID: 'y1' }
         ]);
 

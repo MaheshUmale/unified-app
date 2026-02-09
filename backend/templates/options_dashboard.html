@@ -21,13 +21,23 @@
         <div class="flex items-center gap-6">
             <a href="/" class="text-sm font-black text-white italic tracking-tighter uppercase shrink-0">PRO<span class="text-blue-500">DESK</span> <span class="text-xs ml-2 text-gray-500 not-italic font-normal">OPTIONS ANALYSIS</span></a>
 
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-4">
                 <select id="underlyingSelect" class="bg-gray-900 border border-white/10 rounded-lg px-3 py-1 text-xs font-bold text-blue-400 outline-none focus:border-blue-500/50">
                     <option value="NSE:NIFTY">NIFTY</option>
                     <option value="NSE:BANKNIFTY">BANKNIFTY</option>
                     <option value="NSE:FINNIFTY">FINNIFTY</option>
                 </select>
-                <div id="lastUpdateTime" class="text-[10px] text-gray-500 font-mono">Loading...</div>
+                <div class="flex items-center gap-3">
+                    <div class="flex flex-col">
+                        <span class="text-[8px] text-gray-600 font-black uppercase">Max Pain</span>
+                        <span id="maxPainVal" class="text-[11px] text-yellow-500 font-black">-</span>
+                    </div>
+                    <div class="flex flex-col">
+                        <span class="text-[8px] text-gray-600 font-black uppercase">Spot</span>
+                        <span id="spotPriceVal" class="text-[11px] text-blue-400 font-black">-</span>
+                    </div>
+                    <div id="lastUpdateTime" class="text-[9px] text-gray-500 font-mono mt-auto">Loading...</div>
+                </div>
             </div>
         </div>
 

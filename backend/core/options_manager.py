@@ -182,33 +182,87 @@ class OptionsManager:
             await asyncio.sleep(300)
 
     async def take_snapshot(self, underlying: str):
+        # We prefer Trendlyne for snapshots because it provides accurate OI and Max Pain
+        symbol_map = {"NSE:NIFTY": "NIFTY", "NSE:BANKNIFTY": "BANKNIFTY", "NSE:FINNIFTY": "FINNIFTY"}
+        tl_symbol = symbol_map.get(underlying)
+        if not tl_symbol: return
+
+        try:
+            stock_id = await trendlyne_api.get_stock_id(tl_symbol)
+            if not stock_id: return
+
+            expiries = await trendlyne_api.get_expiry_dates(stock_id)
+            if not expiries: return
+            default_expiry = expiries[0]
+
+            ist = pytz.timezone('Asia/Kolkata')
+            now_ist = datetime.now(ist)
+            ts_str = now_ist.strftime("%H:%M")
+
+            data = await trendlyne_api.get_oi_data(stock_id, default_expiry, ts_str)
+            if not data or data.get('head', {}).get('status') != '0':
+                # Fallback to TV Scanner for LTP/Volume if Trendlyne fails
+                logger.warning(f"Trendlyne snapshot failed for {underlying}, trying TV Scanner")
+                return await self._take_snapshot_tv(underlying)
+
+            body = data.get('body', {})
+            oi_data = body.get('oiData', {})
+
+            timestamp = datetime.utcnow()
+            rows = []
+            for strike_str, strike_data in oi_data.items():
+                strike = float(strike_str)
+                # Call
+                rows.append({
+                    'timestamp': timestamp,
+                    'underlying': underlying,
+                    'expiry': datetime.strptime(default_expiry, "%Y-%m-%d").date(),
+                    'strike': strike,
+                    'option_type': 'call',
+                    'oi': int(strike_data.get('callOi', 0)),
+                    'oi_change': int(strike_data.get('callOiChange', 0)),
+                    'volume': int(strike_data.get('callVol', 0)),
+                    'ltp': float(strike_data.get('callLtp', 0)),
+                    'iv': 0
+                })
+                # Put
+                rows.append({
+                    'timestamp': timestamp,
+                    'underlying': underlying,
+                    'expiry': datetime.strptime(default_expiry, "%Y-%m-%d").date(),
+                    'strike': strike,
+                    'option_type': 'put',
+                    'oi': int(strike_data.get('putOi', 0)),
+                    'oi_change': int(strike_data.get('putOiChange', 0)),
+                    'volume': int(strike_data.get('putVol', 0)),
+                    'ltp': float(strike_data.get('putLtp', 0)),
+                    'iv': 0
+                })
+
+            if rows:
+                db.insert_options_snapshot(rows)
+                self._calculate_pcr(underlying, timestamp, rows)
+                logger.info(f"Saved Trendlyne snapshot for {underlying} with {len(rows)} rows")
+        except Exception as e:
+            logger.error(f"Error in Trendlyne snapshot for {underlying}: {e}")
+
+    async def _take_snapshot_tv(self, underlying: str):
         data = await fetch_option_chain(underlying)
         if not data or 'data' not in data:
             return
 
-        # Use UTC for storage
         timestamp = datetime.utcnow()
         rows = []
-
-        # Mapping based on columns in tv_options_scanner.py
-        # ["name", "description", "option-type", "strike", "expiry", "open_interest", "open_interest_chg", "volume", "lp", "iv"]
-        # Actually I updated it to:
-        # ["name", "description", "option-type", "strike", "expiry", "open_interest", "open_interest_chg", "volume", "lp", "iv", "ch", "chp"]
-        # Wait, I had an error with "expiry". Let me check what I actually wrote in the file.
-
-        # Column indices:
-        # 0: name, 1: description, 2: option-type, 3: strike, 4: expiry (if valid), 5: oi, 6: oi_chg, 7: vol, 8: ltp, 9: iv
-
         for item in data['data']:
             f = item['f']
             try:
                 rows.append({
                     'timestamp': timestamp,
                     'underlying': underlying,
-                    'expiry': None, # TODO: parse from name
+                    'expiry': None,
                     'strike': float(f[3]) if f[3] is not None else 0,
                     'option_type': str(f[2]),
-                    'oi': 0, # Not available in basic scanner
+                    'oi': 0,
                     'oi_change': 0,
                     'volume': int(f[4]) if f[4] is not None else 0,
                     'ltp': float(f[5]) if f[5] is not None else 0,
@@ -220,7 +274,7 @@ class OptionsManager:
         if rows:
             db.insert_options_snapshot(rows)
             self._calculate_pcr(underlying, timestamp, rows)
-            logger.info(f"Saved snapshot for {underlying} with {len(rows)} rows")
+            logger.info(f"Saved TV snapshot for {underlying} with {len(rows)} rows")
 
     def _calculate_pcr(self, underlying, timestamp, rows):
         calls = [r for r in rows if r['option_type'] == 'call']
@@ -234,19 +288,44 @@ class OptionsManager:
         pcr_oi = total_put_oi / total_call_oi if total_call_oi > 0 else 0
         pcr_vol = total_put_vol / total_call_vol if total_call_vol > 0 else 0
 
-        # We don't have underlying price easily here, maybe fetch from last tick
-        underlying_price = 0
+        # Calculate Max Pain
+        strikes = sorted(list(set(r['strike'] for r in rows)))
+        min_pain = float('inf')
+        max_pain = strikes[0] if strikes else 0
+
+        for s in strikes:
+            pain = 0
+            for r in calls:
+                if s > r['strike']:
+                    pain += (s - r['strike']) * r['oi']
+            for r in puts:
+                if r['strike'] > s:
+                    pain += (r['strike'] - s) * r['oi']
+
+            if pain < min_pain:
+                min_pain = pain
+                max_pain = s
+
+        # Get spot price
+        spot_price = 0
         try:
-            res = db.query("SELECT price FROM ticks WHERE instrumentKey = ? ORDER BY ts_ms DESC LIMIT 1", (underlying,))
-            if res: underlying_price = res[0]['price']
-        except: pass
+            # First try Trendlyne mapped symbol if available in ticks
+            symbol_map = {"NSE:NIFTY": "NIFTY", "NSE:BANKNIFTY": "BANKNIFTY", "NSE:FINNIFTY": "FINNIFTY"}
+            tl_symbol = symbol_map.get(underlying, underlying)
+
+            res = db.query("SELECT price FROM ticks WHERE instrumentKey IN (?, ?) ORDER BY ts_ms DESC LIMIT 1", (underlying, tl_symbol))
+            if res: spot_price = res[0]['price']
+        except Exception as e:
+            logger.error(f"Error fetching spot for PCR: {e}")
 
         db.insert_pcr_history({
             'timestamp': timestamp,
             'underlying': underlying,
             'pcr_oi': pcr_oi,
             'pcr_vol': pcr_vol,
-            'underlying_price': underlying_price
+            'underlying_price': spot_price,
+            'max_pain': max_pain,
+            'spot_price': spot_price
         })
 
 options_manager = OptionsManager()
