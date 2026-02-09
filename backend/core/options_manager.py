@@ -1,11 +1,13 @@
 import asyncio
 import logging
 import json
-from datetime import datetime
+import pytz
+from datetime import datetime, timedelta
 from typing import Dict, Any, List
 import pandas as pd
 from external.tv_options_scanner import fetch_option_chain
 from external.tv_options_wss import OptionsWSS
+from external.trendlyne_api import trendlyne_api
 from db.local_db import db
 
 logger = logging.getLogger(__name__)
@@ -21,6 +23,10 @@ class OptionsManager:
     async def start(self):
         if self.running: return
         self.running = True
+
+        # Trigger backfill in background
+        asyncio.create_task(self.backfill_today())
+
         self._task = asyncio.create_task(self._snapshot_loop())
 
         # Start WSS for active underlyings
@@ -28,6 +34,99 @@ class OptionsManager:
             self.start_wss(underlying)
 
         logger.info("Options management started")
+
+    async def backfill_today(self):
+        logger.info("Starting today's options backfill from Trendlyne...")
+
+        ist = pytz.timezone('Asia/Kolkata')
+        now = datetime.now(ist)
+        market_open = now.replace(hour=9, minute=15, second=0, microsecond=0)
+        market_close = now.replace(hour=15, minute=30, second=0, microsecond=0)
+
+        if now < market_open:
+            logger.info(f"Market not open yet (Current IST: {now.strftime('%H:%M')}), skipping backfill.")
+            return
+
+        end_time = min(now, market_close)
+        current = market_open
+        time_slots = []
+        while current <= end_time:
+            time_slots.append(current.strftime("%H:%M"))
+            current += timedelta(minutes=15)
+
+        if not time_slots: return
+
+        symbol_map = {
+            "NSE:NIFTY": "NIFTY",
+            "NSE:BANKNIFTY": "BANKNIFTY",
+            "NSE:FINNIFTY": "FINNIFTY"
+        }
+
+        for underlying, tl_symbol in symbol_map.items():
+            try:
+                # Check if already backfilled today
+                existing = db.query("SELECT COUNT(*) as count FROM pcr_history WHERE underlying = ? AND CAST(timestamp AS DATE) = CURRENT_DATE", (underlying,))
+                if existing and existing[0]['count'] > (len(time_slots) * 0.8):
+                    logger.info(f"Sufficient data already exists for {underlying} today, skipping backfill.")
+                    continue
+
+                stock_id = await trendlyne_api.get_stock_id(tl_symbol)
+                if not stock_id: continue
+
+                expiries = await trendlyne_api.get_expiry_dates(stock_id)
+                if not expiries: continue
+                default_expiry = expiries[0]
+
+                logger.info(f"Backfilling {underlying} (Expiry: {default_expiry}) for {len(time_slots)} slots")
+
+                for ts_str in time_slots:
+                    data = await trendlyne_api.get_oi_data(stock_id, default_expiry, ts_str)
+                    if not data or data.get('head', {}).get('status') != '0':
+                        continue
+
+                    body = data.get('body', {})
+                    oi_data = body.get('oiData', {})
+
+                    snapshot_time = now.replace(hour=int(ts_str.split(':')[0]), minute=int(ts_str.split(':')[1]), second=0, microsecond=0).astimezone(pytz.utc).replace(tzinfo=None)
+
+                    rows = []
+                    for strike_str, strike_data in oi_data.items():
+                        strike = float(strike_str)
+                        # Call
+                        rows.append({
+                            'timestamp': snapshot_time,
+                            'underlying': underlying,
+                            'expiry': datetime.strptime(default_expiry, "%Y-%m-%d").date(),
+                            'strike': strike,
+                            'option_type': 'call',
+                            'oi': int(strike_data.get('callOi', 0)),
+                            'oi_change': int(strike_data.get('callOiChange', 0)),
+                            'volume': int(strike_data.get('callVol', 0)),
+                            'ltp': float(strike_data.get('callLtp', 0)),
+                            'iv': 0
+                        })
+                        # Put
+                        rows.append({
+                            'timestamp': snapshot_time,
+                            'underlying': underlying,
+                            'expiry': datetime.strptime(default_expiry, "%Y-%m-%d").date(),
+                            'strike': strike,
+                            'option_type': 'put',
+                            'oi': int(strike_data.get('putOi', 0)),
+                            'oi_change': int(strike_data.get('putOiChange', 0)),
+                            'volume': int(strike_data.get('putVol', 0)),
+                            'ltp': float(strike_data.get('putLtp', 0)),
+                            'iv': 0
+                        })
+
+                    if rows:
+                        db.insert_options_snapshot(rows)
+                        self._calculate_pcr(underlying, snapshot_time, rows)
+
+                logger.info(f"Backfill complete for {underlying}")
+                await asyncio.sleep(1) # Be nice to API
+            except Exception as e:
+                logger.error(f"Error backfilling {underlying}: {e}")
 
     async def stop(self):
         self.running = False
@@ -66,8 +165,9 @@ class OptionsManager:
              self.latest_chains[underlying] = data
 
     async def _snapshot_loop(self):
+        ist = pytz.timezone('Asia/Kolkata')
         while self.running:
-            now = datetime.now()
+            now = datetime.now(ist)
             # Market hours 9:15 to 15:30 IST
             # We use UTC in sandbox? No, let's just assume local time for now or check pytz
             # For simplicity, we just run it.
@@ -86,7 +186,8 @@ class OptionsManager:
         if not data or 'data' not in data:
             return
 
-        timestamp = datetime.now()
+        # Use UTC for storage
+        timestamp = datetime.utcnow()
         rows = []
 
         # Mapping based on columns in tv_options_scanner.py
