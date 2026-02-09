@@ -58,6 +58,22 @@ class TradingViewWSS:
             for symbol in symbols:
                 self.ensure_chart_session(symbol, interval)
 
+    def unsubscribe(self, symbol, interval="1"):
+        symbol = symbol.upper()
+        key = (symbol, interval)
+        if key in self.symbol_interval_to_session:
+            session_id = self.symbol_interval_to_session.pop(key)
+            if session_id in self.chart_sessions:
+                del self.chart_sessions[session_id]
+            logger.info(f"Releasing chart session {session_id} for {symbol} ({interval}m)")
+            self._send_message("chart_delete_session", [session_id])
+
+        # Check if symbol is still needed in any other interval for quote session
+        still_needed = any(s == symbol for (s, i) in self.symbol_interval_to_session.keys())
+        if not still_needed and symbol in self.symbols:
+            self.symbols.remove(symbol)
+            self._send_message("quote_remove_symbols", [self.quote_session, symbol])
+
     def ensure_chart_session(self, symbol, interval):
         key = (symbol, interval)
         if key in self.symbol_interval_to_session:

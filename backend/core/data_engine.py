@@ -23,6 +23,8 @@ except ImportError:
 socketio_instance = None
 main_event_loop = None
 latest_total_volumes = {}
+# Track subscribers per (instrumentKey, interval)
+room_subscribers = {} # (hrn, interval) -> set of sids
 
 TICK_BATCH_SIZE = 100
 tick_buffer = []
@@ -40,6 +42,18 @@ def emit_event(event: str, data: Any, room: Optional[str] = None):
         data = json.loads(json.dumps(data, cls=LocalDBJSONEncoder))
     try:
         if main_event_loop and main_event_loop.is_running():
+            # Check if room has active subscribers before emitting/logging
+            if room:
+                # Accessing manager.rooms safely for the default namespace '/'
+                namespace = '/'
+                room_exists = (
+                    hasattr(socketio_instance, 'manager') and
+                    namespace in socketio_instance.manager.rooms and
+                    room in socketio_instance.manager.rooms[namespace]
+                )
+                if not room_exists:
+                    return # No one is listening, skip emission and logging
+
             # Use 'to' for modern python-socketio compatibility
             asyncio.run_coroutine_threadsafe(socketio_instance.emit(event, data, to=room), main_event_loop)
             if room:
@@ -127,15 +141,62 @@ def on_message(message: Union[Dict, str]):
     except Exception as e:
         logger.error(f"Error in data_engine on_message: {e}")
 
-def subscribe_instrument(instrument_key: str, interval: str = "1"):
+def subscribe_instrument(instrument_key: str, sid: str, interval: str = "1"):
+    # Always use HRN for room tracking
+    hrn = symbol_mapper.get_hrn(instrument_key)
+    key = (hrn, str(interval))
+    if key not in room_subscribers:
+        room_subscribers[key] = set()
+
+    if sid not in room_subscribers[key]:
+        room_subscribers[key].add(sid)
+        logger.info(f"Room {hrn} ({interval}m) now has {len(room_subscribers[key])} subscribers")
+
     from external.tv_live_wss import start_tv_wss
     wss = start_tv_wss(on_message)
     # Map common HRNs to WSS symbols
     mapping = {'NIFTY': 'NSE:NIFTY', 'BANKNIFTY': 'NSE:BANKNIFTY', 'FINNIFTY': 'NSE:CNXFINANCE'}
     # Ensure uppercase for mapping lookup and WSS subscription
-    key_upper = instrument_key.upper()
-    target = mapping.get(key_upper, key_upper)
+    target = mapping.get(hrn, instrument_key.upper())
     wss.subscribe([target], interval=interval)
+
+def is_sid_using_hrn(sid: str, hrn: str) -> bool:
+    """Check if a specific client is still using this HRN in any interval."""
+    hrn = hrn.upper()
+    for (r_hrn, r_interval), sids in room_subscribers.items():
+        if r_hrn == hrn and sid in sids:
+            return True
+    return False
+
+def unsubscribe_instrument(instrument_key: str, sid: str, interval: str = "1"):
+    # Ensure mapped HRN for room tracking consistency
+    hrn = symbol_mapper.get_hrn(instrument_key)
+    key = (hrn, str(interval))
+
+    if key in room_subscribers and sid in room_subscribers[key]:
+        room_subscribers[key].remove(sid)
+        logger.info(f"Room {hrn} ({interval}m) now has {len(room_subscribers[key])} subscribers")
+
+        if len(room_subscribers[key]) == 0:
+            logger.info(f"Unsubscribing from {hrn} ({interval}m) as no more subscribers")
+            from external.tv_live_wss import get_tv_wss
+            wss = get_tv_wss()
+            if wss:
+                # Map back to WSS target
+                mapping = {'NIFTY': 'NSE:NIFTY', 'BANKNIFTY': 'NSE:BANKNIFTY', 'FINNIFTY': 'NSE:CNXFINANCE'}
+                target = mapping.get(hrn, instrument_key.upper())
+                wss.unsubscribe(target, interval=interval)
+            del room_subscribers[key]
+
+def handle_disconnect(sid: str):
+    """Cleanup all subscriptions for a disconnected client."""
+    to_cleanup = []
+    for (hrn, interval), sids in room_subscribers.items():
+        if sid in sids:
+            to_cleanup.append((hrn, interval))
+
+    for hrn, interval in to_cleanup:
+        unsubscribe_instrument(hrn, sid, interval)
 
 def start_websocket_thread(token: str, keys: List[str]):
     from external.tv_live_wss import start_tv_wss

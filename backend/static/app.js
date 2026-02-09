@@ -12,6 +12,7 @@ class ChartInstance {
         this.index = index;
         this.symbol = 'NSE:NIFTY';
         this.interval = '1';
+        this.hrn = '';
         this.chart = null;
         this.candleSeries = null;
         this.volumeSeries = null;
@@ -93,10 +94,19 @@ class ChartInstance {
     }
 
     async switchSymbol(symbol, interval = null) {
-        if (symbol) this.symbol = symbol;
+        const oldSymbol = this.symbol;
+        const oldInterval = this.interval;
+
+        if (symbol) this.symbol = symbol.toUpperCase();
         if (interval) this.interval = interval;
 
+        // Unsubscribe from old symbol/interval if changed
+        if (oldSymbol !== this.symbol || oldInterval !== this.interval) {
+            socket.emit('unsubscribe', { instrumentKeys: [oldSymbol], interval: oldInterval });
+        }
+
         this.lastCandle = null;
+        this.hrn = '';
         this.fullHistory = { candles: [], volume: [], indicators: {} };
 
         this.candleSeries.setData([]);
@@ -113,6 +123,7 @@ class ChartInstance {
         setLoading(true);
         try {
             const resData = await fetchIntraday(this.symbol, this.interval);
+            if (resData.hrn) this.hrn = resData.hrn;
             let candles = resData.candles || [];
 
             // Filter market hours for NSE
@@ -688,20 +699,24 @@ function initSocket() {
     });
     socket.on('raw_tick', (data) => {
         for (const [key, quote] of Object.entries(data)) {
-            const norm = normalizeSymbol(key);
+            const incomingHRN = key.toUpperCase();
             charts.forEach(c => {
-                if (normalizeSymbol(c.symbol) === norm || c.symbol.toUpperCase() === key.toUpperCase()) {
+                const matchFound = (c.hrn && c.hrn.toUpperCase() === incomingHRN) ||
+                                   (c.symbol.toUpperCase() === incomingHRN);
+                if (matchFound) {
                     c.updateRealtimeCandle(quote);
                 }
             });
         }
     });
     socket.on('chart_update', (data) => {
-        const updateHRN = data.instrumentKey;
-        const updateInterval = data.interval;
+        const updateHRN = (data.instrumentKey || "").toUpperCase();
+        const updateInterval = String(data.interval || "");
         charts.forEach(c => {
-            const matchesSymbol = !updateHRN || normalizeSymbol(c.symbol) === normalizeSymbol(updateHRN);
-            const matchesInterval = !updateInterval || String(c.interval) === String(updateInterval);
+            const matchesSymbol = !updateHRN ||
+                                 (c.hrn && c.hrn.toUpperCase() === updateHRN) ||
+                                 (c.symbol.toUpperCase() === updateHRN);
+            const matchesInterval = !updateInterval || String(c.interval) === updateInterval;
             if (matchesSymbol && matchesInterval) {
                 c.handleChartUpdate(data);
             }

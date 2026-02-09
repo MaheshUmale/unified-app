@@ -66,6 +66,11 @@ fastapi_app.add_middleware(
 async def connect(sid, environ):
     logger.info(f"Client connected: {sid}")
 
+@sio.event
+async def disconnect(sid):
+    logger.info(f"Client disconnected: {sid}")
+    data_engine.handle_disconnect(sid)
+
 @sio.on('subscribe')
 async def handle_subscribe(sid, data):
     instrument_keys = data.get('instrumentKeys', [])
@@ -77,9 +82,30 @@ async def handle_subscribe(sid, data):
         try:
             await sio.enter_room(sid, hrn)
             # Ensure the technical key is uppercase for consistency
-            data_engine.subscribe_instrument(key.upper(), interval=str(interval))
+            data_engine.subscribe_instrument(key.upper(), sid, interval=str(interval))
         except Exception as e:
             logger.error(f"Subscription error for {key}: {e}")
+            continue
+
+@sio.on('unsubscribe')
+async def handle_unsubscribe(sid, data):
+    instrument_keys = data.get('instrumentKeys', [])
+    interval = data.get('interval', '1')
+    for key in instrument_keys:
+        hrn = symbol_mapper.get_hrn(key)
+        logger.info(f"Client {sid} unsubscribing from: {key} ({interval}m) (Room: {hrn})")
+        try:
+            # First unsubscribe from the engine tracking
+            data_engine.unsubscribe_instrument(key.upper(), sid, interval=str(interval))
+
+            # ONLY leave room if NO other charts for this HRN exist for this client
+            if not data_engine.is_sid_using_hrn(sid, hrn):
+                logger.info(f"Client {sid} leaving room {hrn} (No more charts for this symbol)")
+                await sio.leave_room(sid, hrn)
+            else:
+                logger.info(f"Client {sid} remains in room {hrn} (Other charts still active)")
+        except Exception as e:
+            logger.error(f"Unsubscription error for {key}: {e}")
             continue
 
 @fastapi_app.get("/health")
