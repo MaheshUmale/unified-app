@@ -18,6 +18,7 @@ from core import data_engine
 from core.symbol_mapper import symbol_mapper
 from external.tv_api import tv_api
 from external.tv_scanner import search_options
+from db.local_db import db
 from datetime import datetime
 from urllib.parse import unquote
 
@@ -309,6 +310,37 @@ fastapi_app.mount("/static", StaticFiles(directory="backend/static"), name="stat
 @fastapi_app.get("/")
 async def serve_index(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
+
+@fastapi_app.get("/db-viewer")
+async def db_viewer(request: Request):
+    return templates.TemplateResponse("db_viewer.html", {"request": request})
+
+@fastapi_app.get("/api/db/tables")
+async def get_db_tables():
+    try:
+        tables = db.get_tables()
+        result = []
+        for table in tables:
+            schema = db.get_table_schema(table, json_serialize=True)
+            result.append({"name": table, "schema": schema})
+        return {"tables": result}
+    except Exception as e:
+        logger.error(f"Error fetching tables: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@fastapi_app.post("/api/db/query")
+async def run_db_query(request: Request):
+    try:
+        body = await request.json()
+        sql = body.get("sql")
+        if not sql:
+            raise HTTPException(status_code=400, detail="SQL query is required")
+
+        results = db.query(sql, json_serialize=True)
+        return {"results": results}
+    except Exception as e:
+        logger.error(f"Error running query: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 app = socketio.ASGIApp(sio, fastapi_app)
 

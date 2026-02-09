@@ -100,9 +100,31 @@ class LocalDB:
         if res: return {'hrn': res[0], 'metadata': json.loads(res[1])}
         return None
 
-    def query(self, sql: str, params: tuple = ()) -> List[Dict[str, Any]]:
+    def query(self, sql: str, params: tuple = (), json_serialize: bool = False) -> List[Dict[str, Any]]:
         with self._execute_lock:
             df = self.conn.execute(sql, params).fetch_df()
+
+        if json_serialize:
+            # Use pandas to_json to handle NaN/nulls correctly for API consumption
+            return json.loads(df.to_json(orient='records', date_format='iso'))
+
+        return df.to_dict('records')
+
+    def get_tables(self) -> List[str]:
+        with self._execute_lock:
+            df = self.conn.execute("SHOW TABLES").fetch_df()
+        return df['name'].tolist() if not df.empty else []
+
+    def get_table_schema(self, table_name: str, json_serialize: bool = False) -> List[Dict[str, Any]]:
+        with self._execute_lock:
+            # DESCRIBE returns column_name, column_type, null, key, default, extra
+            # Wrap table name in double quotes for safety
+            df = self.conn.execute(f'DESCRIBE "{table_name}"').fetch_df()
+
+        if json_serialize:
+            # Use pandas to_json to handle NaN/nulls correctly for API consumption
+            return json.loads(df.to_json(orient='records', date_format='iso'))
+
         return df.to_dict('records')
 
 db = LocalDB()
