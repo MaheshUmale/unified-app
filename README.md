@@ -37,6 +37,13 @@ A minimal, high-performance trading terminal featuring TradingView charting, rea
   - **Options Discovery**: Automatically merges results from the TradingView Options Scanner.
   - **Technical Search**: Search using exact technical strings (e.g., `NIFTY260210C25600`) for precise contract selection.
 - **Efficient Backend**: Built with FastAPI and DuckDB for low-latency data handling and persistence.
+- **DuckDB Viewer**: A dedicated SQL-based viewer at `/db-viewer` that shares the application's database connection, allowing real-time table inspection and custom queries without file-locking issues.
+- **Options Analysis Dashboard**:
+  - A specialized dashboard at `/options` for deep-dive options analysis.
+  - **Real-time Option Chain**: Live streaming of LTP, Volume, Bid, and Ask data.
+  - **OI Analysis**: Visual distribution of Call/Put Open Interest and OI Change across all strikes (using Chart.js).
+  - **PCR & Max Pain Trends**: Historical tracking of Put-Call Ratio (OI & Volume), Max Pain, and Underlying Spot Price.
+  - **Automated Data Management**: Background backfilling and periodic snapshots (every 5 minutes) using Trendlyne and TradingView data sources.
 
 ## Architecture
 
@@ -73,7 +80,9 @@ Start the application from the project root:
 python3 backend/api_server.py
 ```
 
-The terminal will be available at `http://localhost:5051`.
+- **Main Terminal**: `http://localhost:5051/`
+- **Options Dashboard**: `http://localhost:5051/options`
+- **DB Viewer**: `http://localhost:5051/db-viewer`
 
 ## User Guide
 
