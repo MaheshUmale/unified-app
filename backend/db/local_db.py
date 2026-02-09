@@ -60,6 +60,35 @@ class LocalDB:
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+
+        # Options data for analysis
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS options_snapshots (
+                timestamp TIMESTAMP,
+                underlying VARCHAR,
+                expiry DATE,
+                strike DOUBLE,
+                option_type VARCHAR,
+                oi BIGINT,
+                oi_change BIGINT,
+                volume BIGINT,
+                ltp DOUBLE,
+                iv DOUBLE
+            )
+        """)
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_opt_snap_ts ON options_snapshots (timestamp, underlying)")
+
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS pcr_history (
+                timestamp TIMESTAMP,
+                underlying VARCHAR,
+                pcr_oi DOUBLE,
+                pcr_vol DOUBLE,
+                underlying_price DOUBLE
+            )
+        """)
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_pcr_hist_ts ON pcr_history (timestamp, underlying)")
+
         logger.info(f"Local DuckDB initialized at {DB_PATH}")
 
     def insert_ticks(self, ticks: List[Dict[str, Any]]):
@@ -126,5 +155,16 @@ class LocalDB:
             return json.loads(df.to_json(orient='records', date_format='iso'))
 
         return df.to_dict('records')
+
+    def insert_options_snapshot(self, data: List[Dict[str, Any]]):
+        if not data: return
+        df = pd.DataFrame(data)
+        with self._execute_lock:
+            self.conn.execute("INSERT INTO options_snapshots SELECT * FROM df")
+
+    def insert_pcr_history(self, record: Dict[str, Any]):
+        df = pd.DataFrame([record])
+        with self._execute_lock:
+            self.conn.execute("INSERT INTO pcr_history SELECT * FROM df")
 
 db = LocalDB()

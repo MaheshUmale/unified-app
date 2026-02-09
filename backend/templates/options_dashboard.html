@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PRODESK | Options Analysis</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #000; color: #d1d5db; }
+        .glass-panel { background: rgba(17, 24, 39, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.05); }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #374151; border-radius: 10px; }
+        .tab-btn.active { color: #3b82f6; border-bottom: 2px solid #3b82f6; }
+    </style>
+</head>
+<body class="h-full flex flex-col overflow-hidden">
+    <header class="h-14 py-2 glass-panel border-b border-white/5 px-4 md:px-6 flex items-center justify-between shrink-0">
+        <div class="flex items-center gap-6">
+            <a href="/" class="text-sm font-black text-white italic tracking-tighter uppercase shrink-0">PRO<span class="text-blue-500">DESK</span> <span class="text-xs ml-2 text-gray-500 not-italic font-normal">OPTIONS ANALYSIS</span></a>
+
+            <div class="flex items-center gap-2">
+                <select id="underlyingSelect" class="bg-gray-900 border border-white/10 rounded-lg px-3 py-1 text-xs font-bold text-blue-400 outline-none focus:border-blue-500/50">
+                    <option value="NSE:NIFTY">NIFTY</option>
+                    <option value="NSE:BANKNIFTY">BANKNIFTY</option>
+                    <option value="NSE:FINNIFTY">FINNIFTY</option>
+                </select>
+                <div id="lastUpdateTime" class="text-[10px] text-gray-500 font-mono">Loading...</div>
+            </div>
+        </div>
+
+        <nav class="flex gap-4">
+            <button onclick="switchTab('chain')" id="tab-chain" class="tab-btn active text-xs font-bold px-2 py-4 transition-all">OPTION CHAIN</button>
+            <button onclick="switchTab('oi')" id="tab-oi" class="tab-btn text-xs font-bold px-2 py-4 transition-all">OI ANALYSIS</button>
+            <button onclick="switchTab('pcr')" id="tab-pcr" class="tab-btn text-xs font-bold px-2 py-4 transition-all">PCR TREND</button>
+        </nav>
+    </header>
+
+    <main class="flex-1 overflow-hidden p-4">
+        <!-- Option Chain Tab -->
+        <div id="content-chain" class="h-full flex flex-col glass-panel rounded-xl overflow-hidden">
+            <div class="flex-1 overflow-auto custom-scrollbar">
+                <table class="w-full text-left text-[11px] border-collapse sticky-header">
+                    <thead class="sticky top-0 bg-gray-900 z-20">
+                        <tr class="text-gray-500 uppercase font-black tracking-tighter border-b border-white/10">
+                            <th colspan="4" class="p-2 text-center bg-blue-900/20 text-blue-400">CALLS</th>
+                            <th class="p-2 text-center bg-gray-800">STRIKE</th>
+                            <th colspan="4" class="p-2 text-center bg-red-900/20 text-red-400">PUTS</th>
+                        </tr>
+                        <tr class="text-gray-600 text-[10px] border-b border-white/5 bg-gray-900/80">
+                            <th class="p-2">OI</th>
+                            <th class="p-2">CHG</th>
+                            <th class="p-2">VOL</th>
+                            <th class="p-2">LTP</th>
+                            <th class="p-2 text-center">PRICE</th>
+                            <th class="p-2">LTP</th>
+                            <th class="p-2">VOL</th>
+                            <th class="p-2">CHG</th>
+                            <th class="p-2">OI</th>
+                        </tr>
+                    </thead>
+                    <tbody id="chainBody" class="divide-y divide-white/5">
+                        <!-- Data rows injected here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- OI Analysis Tab -->
+        <div id="content-oi" class="h-full hidden flex flex-col gap-4 overflow-y-auto custom-scrollbar">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="glass-panel p-4 rounded-xl">
+                    <h3 class="text-xs font-black mb-4 uppercase text-gray-400 italic">OI Distribution</h3>
+                    <canvas id="oiDistChart" class="max-h-[400px]"></canvas>
+                </div>
+                <div class="glass-panel p-4 rounded-xl">
+                    <h3 class="text-xs font-black mb-4 uppercase text-gray-400 italic">Change in OI</h3>
+                    <canvas id="oiChgChart" class="max-h-[400px]"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- PCR Trend Tab -->
+        <div id="content-pcr" class="h-full hidden flex flex-col glass-panel p-4 rounded-xl">
+            <h3 class="text-xs font-black mb-4 uppercase text-gray-400 italic">PCR Trend (OI & Volume)</h3>
+            <div class="flex-1 min-h-0">
+                <canvas id="pcrTrendChart"></canvas>
+            </div>
+        </div>
+    </main>
+
+    <script src="/static/options_app.js"></script>
+</body>
+</html>
