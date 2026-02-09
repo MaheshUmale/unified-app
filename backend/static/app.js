@@ -699,27 +699,21 @@ function initSocket() {
     });
     socket.on('raw_tick', (data) => {
         for (const [key, quote] of Object.entries(data)) {
-            const incomingHRN = key.toUpperCase();
+            const incomingKey = key.toUpperCase();
             charts.forEach(c => {
-                const matchFound = (c.hrn && c.hrn.toUpperCase() === incomingHRN) ||
-                                   (c.symbol.toUpperCase() === incomingHRN) ||
-                                   (normalizeSymbol(c.symbol) === incomingHRN);
-                if (matchFound) {
+                // Strict match on technical instrument key to avoid data mixups
+                if (c.symbol && c.symbol.toUpperCase() === incomingKey) {
                     c.updateRealtimeCandle(quote);
                 }
             });
         }
     });
     socket.on('chart_update', (data) => {
-        const updateHRN = (data.instrumentKey || "").toUpperCase();
+        const updateKey = (data.instrumentKey || "").toUpperCase();
         const updateInterval = String(data.interval || "");
         charts.forEach(c => {
-            const matchesSymbol = !updateHRN ||
-                                 (c.hrn && c.hrn.toUpperCase() === updateHRN) ||
-                                 (c.symbol.toUpperCase() === updateHRN) ||
-                                 (normalizeSymbol(c.symbol) === updateHRN);
-            const matchesInterval = !updateInterval || String(c.interval) === updateInterval;
-            if (matchesSymbol && matchesInterval) {
+            // Strict match on technical instrument key and interval
+            if (c.symbol && c.symbol.toUpperCase() === updateKey && String(c.interval) === updateInterval) {
                 c.handleChartUpdate(data);
             }
         });

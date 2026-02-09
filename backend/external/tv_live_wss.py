@@ -28,7 +28,7 @@ class TradingViewWSS:
         self.last_volumes = {}
         self.last_prices = {}
         self.last_times = {}
-        self.history = {} # (hrn, interval) -> data
+        self.history = {} # (symbol, interval) -> data
         self.indicator_metadata = {}
         self.stop_event = threading.Event()
         self.thread = None
@@ -81,6 +81,7 @@ class TradingViewWSS:
 
         session_id = self._generate_session("cs_")
         self.symbol_interval_to_session[key] = session_id
+        # Use full technical symbol for routing
         self.chart_sessions[session_id] = {'hrn': symbol_mapper.get_hrn(symbol), 'interval': interval, 'symbol': symbol}
 
         logger.info(f"Creating chart session {session_id} for {symbol} ({interval}m)")
@@ -156,8 +157,6 @@ class TradingViewWSS:
         self._send_message("quote_create_session", [self.quote_session])
         self._send_message("quote_set_fields", [self.quote_session, "lp", "lp_time", "volume"])
 
-        # We don't create a default chart session anymore, they are created per subscription.
-
     def on_message(self, ws, message):
         if isinstance(message, bytes): message = message.decode('utf-8')
         payloads = [p for p in re.split(r"~m~\d+~m~", message) if p]
@@ -173,7 +172,6 @@ class TradingViewWSS:
                 if m_type == "qsd" and len(p) > 1:
                     self._handle_qsd(p[1])
                 elif m_type in ["timescale_update", "du"] and len(p) > 1:
-                    logger.info(f"Chart update received for session {p[0]}")
                     self._handle_chart_update(p[0], p[1])
                 elif m_type in ["error", "critical_error"]:
                     logger.error(f"TV WSS Protocol Error: {p}")
@@ -187,58 +185,52 @@ class TradingViewWSS:
         if 'lp' in values: self.last_prices[clean_symbol] = values['lp']
         if 'lp_time' in values: self.last_times[clean_symbol] = values['lp_time']
         if 'volume' in values: self.last_volumes[clean_symbol] = float(values['volume'])
-        hrn = symbol_mapper.get_hrn(clean_symbol)
+
         price = self.last_prices.get(clean_symbol)
         if price is not None:
             ts_ms = int(self.last_times.get(clean_symbol, time.time()) * 1000)
-            feed_msg = {'type': 'live_feed', 'feeds': {hrn: {'last_price': float(price), 'ts_ms': ts_ms, 'tv_volume': self.last_volumes.get(clean_symbol), 'oi': float(values.get('open_interest', 0)), 'source': 'tradingview_wss'}}}
+            # Use full technical symbol for feeds to avoid mixups
+            feed_msg = {
+                'type': 'live_feed',
+                'feeds': {
+                    clean_symbol: {
+                        'last_price': float(price),
+                        'ts_ms': ts_ms,
+                        'tv_volume': self.last_volumes.get(clean_symbol),
+                        'oi': float(values.get('open_interest', 0)),
+                        'source': 'tradingview_wss'
+                    }
+                }
+            }
             self.callback(feed_msg)
 
-    def _map_tv_plot_type(self, tv_type):
-        """Maps TradingView plot type integers to generic chart types."""
-        mapping = {
-            0: "line",
-            1: "histogram",
-            2: "line", # step
-            3: "line",
-            4: "histogram",
-            5: "line", # circles
-            6: "line", # cross
-            7: "area",
-            8: "area"
-        }
-        return mapping.get(tv_type, "line")
-
     def _handle_chart_update(self, session_id, chart_data):
-        logger.info(f"Chart data keys for {session_id}: {list(chart_data.keys())}")
         meta = self.chart_sessions.get(session_id)
         if not meta: return
 
-        hrn = meta['hrn']
+        symbol = meta['symbol']
         interval = meta['interval']
-        update_msg = {'type': 'chart_update', 'instrumentKey': hrn, 'interval': interval, 'data': {}}
+        # Use full technical symbol as instrumentKey
+        update_msg = {'type': 'chart_update', 'instrumentKey': symbol, 'interval': interval, 'data': {}}
 
         series_key = "sds_1" if "sds_1" in chart_data else "$prices" if "$prices" in chart_data else None
         if series_key:
             prices = chart_data[series_key].get("s", [])
             ohlcv = [item['v'] for item in prices]
             update_msg['data']['ohlcv'] = ohlcv
-            hist_key = (hrn, interval)
+            hist_key = (symbol, interval)
             if len(ohlcv) > 10:
                 if hist_key not in self.history: self.history[hist_key] = {}
                 self.history[hist_key]['ohlcv'] = ohlcv
 
         # Recalculate indicators from history
-        hist_key = (hrn, interval)
+        hist_key = (symbol, interval)
         if hist_key in self.history and 'ohlcv' in self.history[hist_key]:
             ohlcv_data = self.history[hist_key]['ohlcv']
             indicators = []
-
             try:
                 import pandas as pd
                 df = pd.DataFrame(ohlcv_data, columns=['ts', 'o', 'h', 'l', 'c', 'v'])
-
-                # EMA 9 (Blue)
                 ema9 = df['c'].ewm(span=9, adjust=False).mean()
                 indicators.append({
                     "id": "ema_9",
@@ -247,8 +239,6 @@ class TradingViewWSS:
                     "style": {"color": "#3b82f6", "lineWidth": 1},
                     "data": [{"time": ohlcv_data[i][0], "value": float(val)} for i, val in enumerate(ema9) if i >= 8]
                 })
-
-                # EMA 20 (Orange)
                 ema20 = df['c'].ewm(span=20, adjust=False).mean()
                 indicators.append({
                     "id": "ema_20",
@@ -258,12 +248,10 @@ class TradingViewWSS:
                     "data": [{"time": ohlcv_data[i][0], "value": float(val)} for i, val in enumerate(ema20) if i >= 19]
                 })
 
-                # Market Psychology Analyzer integration
                 from brain.MarketPsychologyAnalyzer import MarketPsychologyAnalyzer
                 analyzer = MarketPsychologyAnalyzer()
                 zones, signals = analyzer.analyze(ohlcv_data)
 
-                # Add Zones as price lines
                 for i, zone in enumerate(zones):
                     indicators.append({
                         "id": f"battle_zone_{i}",
@@ -271,13 +259,12 @@ class TradingViewWSS:
                         "title": "BATTLE ZONE",
                         "data": {
                             "price": zone['price'],
-                            "color": "rgba(59, 130, 246, 0.4)", # Blue-ish as in plot
+                            "color": "rgba(59, 130, 246, 0.4)",
                             "lineStyle": 2,
                             "title": "BATTLE ZONE"
                         }
                     })
 
-                # Add Signals as markers
                 marker_data = []
                 for ts, sig_type in signals.items():
                     unix_ts = int(ts.timestamp())
@@ -299,7 +286,6 @@ class TradingViewWSS:
 
                 update_msg['data']['indicators'] = indicators
                 self.history[hist_key]['indicators'] = indicators
-
             except Exception as e:
                 logger.error(f"Error calculating indicators live: {e}")
 

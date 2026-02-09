@@ -5,16 +5,67 @@
 let currentUnderlying = 'NSE:NIFTY';
 let currentTab = 'chain';
 let charts = {};
+let socket;
+let symbolToCells = {}; // technical_symbol -> { ltp, bidAsk, volume, tr }
 
 async function init() {
+    initSocket();
+
     const selector = document.getElementById('underlyingSelect');
     selector.addEventListener('change', (e) => {
+        const oldUnderlying = currentUnderlying;
         currentUnderlying = e.target.value;
+
+        if (socket && socket.connected) {
+            socket.emit('unsubscribe_options', { underlying: oldUnderlying });
+            socket.emit('subscribe_options', { underlying: currentUnderlying });
+        }
+
         loadData();
     });
 
     loadData();
-    setInterval(loadData, 60000); // Refresh every minute
+    setInterval(loadData, 300000); // Background refresh every 5 mins for OI data
+}
+
+function initSocket() {
+    socket = io();
+    socket.on('connect', () => {
+        console.log('Socket connected');
+        if (currentUnderlying) {
+            socket.emit('subscribe_options', { underlying: currentUnderlying });
+        }
+    });
+
+    socket.on('options_quote_update', (data) => {
+        // data: { underlying, symbol, lp, volume, bid, ask }
+        if (data.underlying !== currentUnderlying) return;
+
+        const cells = symbolToCells[data.symbol];
+        if (!cells) return;
+
+        if (data.lp !== undefined && data.lp !== null) {
+            const oldLtp = parseFloat(cells.ltp.innerText);
+            cells.ltp.innerText = data.lp.toFixed(2);
+
+            // Flash effect
+            if (oldLtp && oldLtp !== data.lp) {
+                cells.tr.classList.remove('flash-up', 'flash-down');
+                void cells.tr.offsetWidth; // trigger reflow
+                cells.tr.classList.add(data.lp >= oldLtp ? 'flash-up' : 'flash-down');
+            }
+        }
+
+        if (data.volume !== undefined && data.volume !== null) {
+            cells.volume.innerText = data.volume.toLocaleString();
+        }
+
+        if (data.bid !== undefined || data.ask !== undefined) {
+            const bid = data.bid !== undefined ? data.bid.toFixed(2) : (cells.bidAsk.innerText.split(' / ')[0] || '-');
+            const ask = data.ask !== undefined ? data.ask.toFixed(2) : (cells.bidAsk.innerText.split(' / ')[1] || '-');
+            cells.bidAsk.innerText = `${bid} / ${ask}`;
+        }
+    });
 }
 
 function switchTab(tabId) {
@@ -41,6 +92,7 @@ async function loadChain() {
 
         const body = document.getElementById('chainBody');
         body.innerHTML = '';
+        symbolToCells = {};
 
         if (data.timestamp) {
             document.getElementById('lastUpdateTime').innerText = `${new Date(data.timestamp).toLocaleTimeString()}`;
@@ -59,7 +111,7 @@ async function loadChain() {
         sortedStrikes.forEach(strike => {
             const pair = grouped[strike];
             const tr = document.createElement('tr');
-            tr.className = 'hover:bg-white/5 transition-colors';
+            tr.className = 'hover:bg-white/5 transition-colors border-b border-white/5';
 
             const c = pair.call || {};
             const p = pair.put || {};
@@ -67,17 +119,36 @@ async function loadChain() {
             tr.innerHTML = `
                 <td class="p-2 font-mono text-blue-400">${c.oi?.toLocaleString() || '-'}</td>
                 <td class="p-2 font-mono ${c.oi_change >= 0 ? 'text-green-500' : 'text-red-500'}">${c.oi_change?.toLocaleString() || '-'}</td>
-                <td class="p-2 font-mono text-gray-500">${c.volume?.toLocaleString() || '-'}</td>
-                <td class="p-2 font-mono text-gray-300">${c.ltp?.toFixed(2) || '-'}</td>
+                <td id="vol-call-${strike}" class="p-2 font-mono text-gray-500">${c.volume?.toLocaleString() || '-'}</td>
+                <td id="bidAsk-call-${strike}" class="p-2 font-mono text-gray-400 text-[9px]">- / -</td>
+                <td id="ltp-call-${strike}" class="p-2 font-mono text-gray-300 font-bold">${c.ltp?.toFixed(2) || '-'}</td>
 
-                <td class="p-2 text-center font-black bg-gray-900/50 border-x border-white/5">${strike}</td>
+                <td class="p-2 text-center font-black bg-gray-900/50 border-x border-white/5 text-blue-100">${strike}</td>
 
-                <td class="p-2 font-mono text-gray-300 text-right">${p.ltp?.toFixed(2) || '-'}</td>
-                <td class="p-2 font-mono text-gray-500 text-right">${p.volume?.toLocaleString() || '-'}</td>
+                <td id="ltp-put-${strike}" class="p-2 font-mono text-gray-300 font-bold text-right">${p.ltp?.toFixed(2) || '-'}</td>
+                <td id="bidAsk-put-${strike}" class="p-2 font-mono text-gray-400 text-right text-[9px]">- / -</td>
+                <td id="vol-put-${strike}" class="p-2 font-mono text-gray-500 text-right">${p.volume?.toLocaleString() || '-'}</td>
                 <td class="p-2 font-mono ${p.oi_change >= 0 ? 'text-green-500' : 'text-red-500'} text-right">${p.oi_change?.toLocaleString() || '-'}</td>
                 <td class="p-2 font-mono text-red-400 text-right">${p.oi?.toLocaleString() || '-'}</td>
             `;
             body.appendChild(tr);
+
+            if (c.symbol) {
+                symbolToCells[c.symbol] = {
+                    ltp: document.getElementById(`ltp-call-${strike}`),
+                    bidAsk: document.getElementById(`bidAsk-call-${strike}`),
+                    volume: document.getElementById(`vol-call-${strike}`),
+                    tr: tr
+                };
+            }
+            if (p.symbol) {
+                symbolToCells[p.symbol] = {
+                    ltp: document.getElementById(`ltp-put-${strike}`),
+                    bidAsk: document.getElementById(`bidAsk-put-${strike}`),
+                    volume: document.getElementById(`vol-put-${strike}`),
+                    tr: tr
+                };
+            }
         });
 
     } catch (err) { console.error("Load chain failed:", err); }

@@ -10,30 +10,8 @@ import os
 import contextlib
 import io
 import time
-
 from datetime import datetime
 import re
-
-def convert_hrn_to_symbol(symbol_or_hrn):
-    # Match pattern: "NIFTY 03 FEB 2026 CALL 25300"
-    pattern = r"(NIFTY|BANKNIFTY|FINNIFTY)\s+(\d{1,2})\s+([A-Z]{3})\s+(\d{4})\s+(CALL|PUT)\s+(\d+)"
-    match = re.search(pattern, symbol_or_hrn.upper())
-    
-    if match:
-        base, day, month_str, year, opt_type, strike = match.groups()
-        dt = datetime.strptime(f"{day} {month_str} {year}", "%d %b %Y")
-        yy = dt.strftime("%y")
-        mm = dt.strftime("%m")
-        dd = dt.strftime("%d")
-        cp = "C" if opt_type == "CALL" else "P"
-        return f"{base}{yy}{mm}{dd}{cp}{strike}"
-
-    # Handle direct TV option format: NIFTY260210C25500
-    # If it already looks like an option symbol, return as is.
-    if re.search(r"(NIFTY|BANKNIFTY|FINNIFTY)\d{6}[CP]\d+", symbol_or_hrn.upper()):
-        return symbol_or_hrn.upper()
-
-    return symbol_or_hrn
 
 logger = logging.getLogger(__name__)
 
@@ -74,8 +52,6 @@ class TradingViewAPI:
                 meta = self.symbol_map[symbol_or_hrn]
                 tv_symbol = meta['symbol']
                 tv_exchange = meta['exchange']
-            elif any(x in symbol_or_hrn.upper() for x in ['CALL', 'PUT', 'FUT']):
-                tv_symbol = convert_hrn_to_symbol(symbol_or_hrn)
             elif symbol_or_hrn.upper() == 'NIFTY':
                 tv_symbol = 'NIFTY'
             elif symbol_or_hrn.upper() == 'BANKNIFTY':
@@ -88,29 +64,29 @@ class TradingViewAPI:
                 tf = f"{interval_min}m"
                 if interval_min == 'D': tf = '1d'
                 elif interval_min == 'W': tf = '1w'
-                # Ensure tf matches keys in streamer.py timeframe_map
                 if interval_min == '60': tf = '1h'
 
                 logger.info(f"Using timeframe {tf} for Streamer (interval_min={interval_min})")
 
                 with contextlib.redirect_stdout(io.StringIO()):
-                    data = self.streamer.stream(
+                    stream = self.streamer.stream(
                         exchange=tv_exchange,
                         symbol=tv_symbol,
                         timeframe=tf,
                         numb_price_candles=n_bars
                     )
 
+                data = None
+                for item in stream:
+                    if 'ohlc' in item:
+                        data = item
+                        break
+
                 if data and 'ohlc' in data:
                     candles = []
                     for row in data['ohlc']:
-                        # Streamer uses 'timestamp' key
                         ts = row.get('timestamp') or row.get('datetime')
-                        if isinstance(ts, (int, float)):
-                            pass # already unix
-                        else:
-                            # If it's a string, try to parse it.
-                            # Streamer usually returns timestamps or ISO
+                        if not isinstance(ts, (int, float)):
                             try:
                                 ts = int(datetime.fromisoformat(ts.replace('Z', '+00:00')).timestamp())
                             except:
@@ -139,11 +115,9 @@ class TradingViewAPI:
                 df = self.tv.get_hist(symbol=tv_symbol, exchange=tv_exchange, interval=tv_interval, n_bars=n_bars)
                 if df is not None and not df.empty:
                     candles = []
+                    import pytz
+                    ist = pytz.timezone('Asia/Kolkata')
                     for ts, row in df.iterrows():
-                        # tvDatafeed returns naive datetime in exchange timezone (usually IST for NSE)
-                        # We need to treat it as IST and get UTC timestamp
-                        import pytz
-                        ist = pytz.timezone('Asia/Kolkata')
                         try:
                             ts_ist = ist.localize(ts) if ts.tzinfo is None else ts.astimezone(ist)
                             unix_ts = int(ts_ist.timestamp())

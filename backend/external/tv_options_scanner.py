@@ -9,7 +9,7 @@ async def fetch_option_chain(underlying: str):
     Fetches the full option chain for a given underlying from TradingView Scanner.
     underlying: e.g. 'NSE:NIFTY'
     """
-    url = "https://scanner.tradingview.com/options/scan2?label-product=options-builder"
+    url = "https://scanner.tradingview.com/options/scan2?label-product=options-symbol-search"
 
     # Standardize underlying
     if ":" not in underlying:
@@ -28,7 +28,7 @@ async def fetch_option_chain(underlying: str):
             {"left": "root", "operation": "equal", "right": root}
         ],
         "ignore_unknown_fields": False,
-        "sort": {"sortBy": "strike", "sortOrder": "asc"},
+        "sort": {"sortBy": "name", "sortOrder": "asc"},
         "index_filters": [
             {"name": "underlying_symbol", "values": [tv_underlying]}
         ],
@@ -37,7 +37,7 @@ async def fetch_option_chain(underlying: str):
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Content-Type": "text/plain;charset=UTF-8",
+        "Content-Type": "application/json",
         "Referer": "https://www.tradingview.com/",
         "Origin": "https://www.tradingview.com"
     }
@@ -48,12 +48,12 @@ async def fetch_option_chain(underlying: str):
                 url,
                 json=payload,
                 headers=headers,
-                cookies=TV_COOKIE,
                 timeout=30.0
             )
             if response.status_code == 200:
                 data = response.json()
-                logger.info(f"Fetched {len(data.get('data', []))} options for {underlying}")
+                count = len(data.get('symbols', []))
+                logger.info(f"Fetched {count} options for {underlying}")
                 return data
             else:
                 logger.error(f"Options builder failed: {response.status_code} {response.text}")

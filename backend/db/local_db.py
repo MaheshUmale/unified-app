@@ -66,6 +66,7 @@ class LocalDB:
             CREATE TABLE IF NOT EXISTS options_snapshots (
                 timestamp TIMESTAMP,
                 underlying VARCHAR,
+                symbol VARCHAR,
                 expiry DATE,
                 strike DOUBLE,
                 option_type VARCHAR,

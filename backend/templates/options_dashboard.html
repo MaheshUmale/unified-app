@@ -6,6 +6,7 @@
     <title>PRODESK | Options Analysis</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&display=swap');
         body { font-family: 'Inter', sans-serif; background-color: #000; color: #d1d5db; }
@@ -14,6 +15,10 @@
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #374151; border-radius: 10px; }
         .tab-btn.active { color: #3b82f6; border-bottom: 2px solid #3b82f6; }
+        .flash-up { animation: flash-green 0.5s ease-out; }
+        .flash-down { animation: flash-red 0.5s ease-out; }
+        @keyframes flash-green { 0% { background-color: rgba(34, 197, 94, 0.3); } 100% { background-color: transparent; } }
+        @keyframes flash-red { 0% { background-color: rgba(239, 68, 68, 0.3); } 100% { background-color: transparent; } }
     </style>
 </head>
 <body class="h-full flex flex-col overflow-hidden">
@@ -55,20 +60,22 @@
                 <table class="w-full text-left text-[11px] border-collapse sticky-header">
                     <thead class="sticky top-0 bg-gray-900 z-20">
                         <tr class="text-gray-500 uppercase font-black tracking-tighter border-b border-white/10">
-                            <th colspan="4" class="p-2 text-center bg-blue-900/20 text-blue-400">CALLS</th>
+                            <th colspan="5" class="p-2 text-center bg-blue-900/20 text-blue-400">CALLS</th>
                             <th class="p-2 text-center bg-gray-800">STRIKE</th>
-                            <th colspan="4" class="p-2 text-center bg-red-900/20 text-red-400">PUTS</th>
+                            <th colspan="5" class="p-2 text-center bg-red-900/20 text-red-400">PUTS</th>
                         </tr>
                         <tr class="text-gray-600 text-[10px] border-b border-white/5 bg-gray-900/80">
                             <th class="p-2">OI</th>
                             <th class="p-2">CHG</th>
                             <th class="p-2">VOL</th>
+                            <th class="p-2">BID / ASK</th>
                             <th class="p-2">LTP</th>
                             <th class="p-2 text-center">PRICE</th>
-                            <th class="p-2">LTP</th>
-                            <th class="p-2">VOL</th>
-                            <th class="p-2">CHG</th>
-                            <th class="p-2">OI</th>
+                            <th class="p-2 text-right">LTP</th>
+                            <th class="p-2 text-right">BID / ASK</th>
+                            <th class="p-2 text-right">VOL</th>
+                            <th class="p-2 text-right">CHG</th>
+                            <th class="p-2 text-right">OI</th>
                         </tr>
                     </thead>
                     <tbody id="chainBody" class="divide-y divide-white/5">

@@ -45,6 +45,7 @@ async def lifespan(app: FastAPI):
     data_engine.start_websocket_thread(None, INITIAL_INSTRUMENTS)
 
     # Start Options Management
+    options_manager.set_socketio(sio, loop=main_loop)
     await options_manager.start()
 
     yield
@@ -81,34 +82,46 @@ async def handle_subscribe(sid, data):
     instrument_keys = data.get('instrumentKeys', [])
     interval = data.get('interval', '1')
     for key in instrument_keys:
-        # HRN is used as the room name, derived from technical key
-        hrn = symbol_mapper.get_hrn(key)
-        logger.info(f"Client {sid} subscribing to: {key} ({interval}m) (Room: {hrn})")
+        # Use full technical key as the room name to avoid mixups
+        logger.info(f"Client {sid} subscribing to: {key} ({interval}m) (Room: {key.upper()})")
         try:
-            await sio.enter_room(sid, hrn)
+            await sio.enter_room(sid, key.upper())
             # Ensure the technical key is uppercase for consistency
             data_engine.subscribe_instrument(key.upper(), sid, interval=str(interval))
         except Exception as e:
             logger.error(f"Subscription error for {key}: {e}")
             continue
 
+@sio.on('subscribe_options')
+async def handle_subscribe_options(sid, data):
+    underlying = data.get('underlying')
+    if underlying:
+        logger.info(f"Client {sid} subscribing to options: {underlying}")
+        await sio.enter_room(sid, f"options_{underlying}")
+
+@sio.on('unsubscribe_options')
+async def handle_unsubscribe_options(sid, data):
+    underlying = data.get('underlying')
+    if underlying:
+        logger.info(f"Client {sid} unsubscribing from options: {underlying}")
+        await sio.leave_room(sid, f"options_{underlying}")
+
 @sio.on('unsubscribe')
 async def handle_unsubscribe(sid, data):
     instrument_keys = data.get('instrumentKeys', [])
     interval = data.get('interval', '1')
     for key in instrument_keys:
-        hrn = symbol_mapper.get_hrn(key)
-        logger.info(f"Client {sid} unsubscribing from: {key} ({interval}m) (Room: {hrn})")
+        logger.info(f"Client {sid} unsubscribing from: {key} ({interval}m) (Room: {key.upper()})")
         try:
             # First unsubscribe from the engine tracking
             data_engine.unsubscribe_instrument(key.upper(), sid, interval=str(interval))
 
-            # ONLY leave room if NO other charts for this HRN exist for this client
-            if not data_engine.is_sid_using_hrn(sid, hrn):
-                logger.info(f"Client {sid} leaving room {hrn} (No more charts for this symbol)")
-                await sio.leave_room(sid, hrn)
+            # ONLY leave room if NO other charts for this instrument exist for this client
+            if not data_engine.is_sid_using_instrument(sid, key.upper()):
+                logger.info(f"Client {sid} leaving room {key.upper()} (No more charts for this symbol)")
+                await sio.leave_room(sid, key.upper())
             else:
-                logger.info(f"Client {sid} remains in room {hrn} (Other charts still active)")
+                logger.info(f"Client {sid} remains in room {key.upper()} (Other charts still active)")
         except Exception as e:
             logger.error(f"Unsubscription error for {key}: {e}")
             continue
