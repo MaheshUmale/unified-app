@@ -74,12 +74,14 @@ class TradingViewAPI:
                 meta = self.symbol_map[symbol_or_hrn]
                 tv_symbol = meta['symbol']
                 tv_exchange = meta['exchange']
-            elif any(x in symbol_or_hrn.upper() for x in ['CALL', 'PUT']):
+            elif any(x in symbol_or_hrn.upper() for x in ['CALL', 'PUT', 'FUT']):
                 tv_symbol = convert_hrn_to_symbol(symbol_or_hrn)
-            elif 'NIFTY' in symbol_or_hrn.upper() and ' ' not in symbol_or_hrn:
+            elif symbol_or_hrn.upper() == 'NIFTY':
                 tv_symbol = 'NIFTY'
-            elif 'BANK' in symbol_or_hrn.upper() and ' ' not in symbol_or_hrn:
+            elif symbol_or_hrn.upper() == 'BANKNIFTY':
                 tv_symbol = 'BANKNIFTY'
+            elif symbol_or_hrn.upper() == 'FINNIFTY':
+                tv_symbol = 'CNXFINANCE'
 
             # Try Streamer first
             try:

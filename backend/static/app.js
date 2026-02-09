@@ -702,7 +702,8 @@ function initSocket() {
             const incomingHRN = key.toUpperCase();
             charts.forEach(c => {
                 const matchFound = (c.hrn && c.hrn.toUpperCase() === incomingHRN) ||
-                                   (c.symbol.toUpperCase() === incomingHRN);
+                                   (c.symbol.toUpperCase() === incomingHRN) ||
+                                   (normalizeSymbol(c.symbol) === incomingHRN);
                 if (matchFound) {
                     c.updateRealtimeCandle(quote);
                 }
@@ -715,7 +716,8 @@ function initSocket() {
         charts.forEach(c => {
             const matchesSymbol = !updateHRN ||
                                  (c.hrn && c.hrn.toUpperCase() === updateHRN) ||
-                                 (c.symbol.toUpperCase() === updateHRN);
+                                 (c.symbol.toUpperCase() === updateHRN) ||
+                                 (normalizeSymbol(c.symbol) === updateHRN);
             const matchesInterval = !updateInterval || String(c.interval) === updateInterval;
             if (matchesSymbol && matchesInterval) {
                 c.handleChartUpdate(data);
@@ -728,13 +730,13 @@ async function fetchIntraday(key, interval) {
     try {
         const res = await fetch(`/api/tv/intraday/${encodeURIComponent(key)}?interval=${interval}`);
         const data = await res.json();
-        if (data && data.candles && data.candles.length > 0) {
+        if (data && data.candles) {
             data.candles = data.candles.map(c => ({
                 timestamp: c[0], open: c[1], high: c[2], low: c[3], close: c[4], volume: c[5]
             })).reverse();
             return data;
         }
-        return { candles: [], indicators: [] };
+        return { hrn: '', candles: [], indicators: [] };
     } catch (err) {
         console.warn("Fetch intraday failed:", err);
         return { candles: [], indicators: [] };
