@@ -15,6 +15,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from config import LOGGING_CONFIG, INITIAL_INSTRUMENTS
 from core import data_engine
+from core.options_manager import options_manager
 from core.symbol_mapper import symbol_mapper
 from external.tv_api import tv_api
 from external.tv_scanner import search_options
@@ -43,9 +44,13 @@ async def lifespan(app: FastAPI):
     logger.info("Starting TradingView WebSocket thread...")
     data_engine.start_websocket_thread(None, INITIAL_INSTRUMENTS)
 
+    # Start Options Management
+    await options_manager.start()
+
     yield
     logger.info("Shutting down ProTrade Terminal...")
     try:
+        await options_manager.stop()
         data_engine.flush_tick_buffer()
     except Exception as e:
         logger.error(f"Error flushing tick buffers: {e}")
@@ -369,6 +374,62 @@ async def run_db_query(request: Request):
     except Exception as e:
         logger.error(f"Error running query: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+# --- Options Analysis Endpoints ---
+
+@fastapi_app.get("/options")
+async def serve_options_dashboard(request: Request):
+    return templates.TemplateResponse("options_dashboard.html", {"request": request})
+
+@fastapi_app.get("/api/options/chain/{underlying}")
+async def get_options_chain(underlying: str):
+    """Returns the latest option chain snapshot for the given underlying."""
+    # Find latest timestamp
+    latest_ts_res = db.query("SELECT MAX(timestamp) as ts FROM options_snapshots WHERE underlying = ?", (underlying,))
+    if not latest_ts_res or latest_ts_res[0]['ts'] is None:
+        return {"chain": []}
+
+    latest_ts = latest_ts_res[0]['ts']
+    chain = db.query("""
+        SELECT * FROM options_snapshots
+        WHERE underlying = ? AND timestamp = ?
+        ORDER BY strike ASC
+    """, (underlying, latest_ts), json_serialize=True)
+
+    return {"timestamp": latest_ts, "chain": chain}
+
+@fastapi_app.get("/api/options/pcr-trend/{underlying}")
+async def get_pcr_trend(underlying: str):
+    """Returns historical PCR and underlying price data."""
+    history = db.query("""
+        SELECT timestamp, pcr_oi, pcr_vol, underlying_price
+        FROM pcr_history
+        WHERE underlying = ?
+        ORDER BY timestamp ASC
+    """, (underlying,), json_serialize=True)
+    return {"history": history}
+
+@fastapi_app.get("/api/options/oi-analysis/{underlying}")
+async def get_oi_analysis(underlying: str):
+    """Returns OI distribution data for the latest snapshot."""
+    latest_ts_res = db.query("SELECT MAX(timestamp) as ts FROM options_snapshots WHERE underlying = ?", (underlying,))
+    if not latest_ts_res or latest_ts_res[0]['ts'] is None:
+        return {"data": []}
+
+    latest_ts = latest_ts_res[0]['ts']
+    data = db.query("""
+        SELECT strike,
+               SUM(CASE WHEN option_type = 'call' THEN oi ELSE 0 END) as call_oi,
+               SUM(CASE WHEN option_type = 'put' THEN oi ELSE 0 END) as put_oi,
+               SUM(CASE WHEN option_type = 'call' THEN oi_change ELSE 0 END) as call_oi_change,
+               SUM(CASE WHEN option_type = 'put' THEN oi_change ELSE 0 END) as put_oi_change
+        FROM options_snapshots
+        WHERE underlying = ? AND timestamp = ?
+        GROUP BY strike
+        ORDER BY strike ASC
+    """, (underlying, latest_ts), json_serialize=True)
+
+    return {"timestamp": latest_ts, "data": data}
 
 app = socketio.ASGIApp(sio, fastapi_app)
 
