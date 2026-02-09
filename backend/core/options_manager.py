@@ -230,20 +230,25 @@ class OptionsManager:
             if self.loop:
                 asyncio.run_coroutine_threadsafe(emit(), self.loop)
 
-    async def _snapshot_loop(self):
+    def is_market_open(self):
         ist = pytz.timezone('Asia/Kolkata')
+        now = datetime.now(ist)
+        if now.weekday() >= 5: return False
+        start = now.replace(hour=9, minute=15, second=0, microsecond=0)
+        end = now.replace(hour=15, minute=30, second=0, microsecond=0)
+        return start <= now <= end
+
+    async def _snapshot_loop(self):
         while self.running:
-            # Check if it is market hours
-            now = datetime.now(ist)
-            if now.hour >= 9 and now.hour <= 15: # Simplified check
+            if self.is_market_open():
                 for underlying in self.active_underlyings:
                     try:
                         await self.take_snapshot(underlying)
                     except Exception as e:
                         logger.error(f"Error taking snapshot for {underlying}: {e}")
 
-            # Wait 5 minutes
-            await asyncio.sleep(300)
+            # Wait 3 minutes (matching Trendlyne update frequency)
+            await asyncio.sleep(180)
 
     async def take_snapshot(self, underlying: str):
         tl_symbol = self.tl_symbol_map.get(underlying)
@@ -258,22 +263,14 @@ class OptionsManager:
             logger.error(f"Error fetching spot for snapshot: {e}")
 
         try:
-            # 1. Fetch TV Chain for Volume, LTP and Symbols
-            tv_data = await fetch_option_chain(underlying)
-            tv_snapshot = {} # key -> {volume, ltp, symbol}
-            if tv_data and 'symbols' in tv_data:
-                for item in tv_data['symbols']:
-                    f = item['f']
-                    try:
-                        sym = f[0]
-                        opt_type = str(f[2]).lower()
-                        strike = float(f[3])
-                        vol = int(f[4]) if f[4] is not None else 0
-                        ltp = float(f[5]) if f[5] is not None else 0
-                        tv_snapshot[f"{strike}_{opt_type}"] = {"symbol": sym, "volume": vol, "ltp": ltp}
-                    except: continue
+            # 1. Fetch TV Chain for Symbols (if not already cached)
+            if underlying not in self.symbol_map_cache or not self.symbol_map_cache[underlying]:
+                await self._refresh_wss_symbols(underlying)
 
-            # 2. Fetch Trendlyne for OI
+            # 2. Prepare latest LTP/Volume from WSS cache
+            wss_data = self.latest_chains.get(underlying, {})
+
+            # 3. Fetch Trendlyne for OI
             stock_id = await trendlyne_api.get_stock_id(tl_symbol)
             if not stock_id: return
 
@@ -287,6 +284,7 @@ class OptionsManager:
 
             data = await trendlyne_api.get_oi_data(stock_id, default_expiry, ts_str)
             if not data or data.get('head', {}).get('status') != '0':
+                # If trendlyne fails, fallback to TV-only but with WSS data merged
                 return await self._take_snapshot_tv(underlying)
 
             body = data.get('body', {})
@@ -297,43 +295,47 @@ class OptionsManager:
             for strike_str, strike_data in oi_data.items():
                 strike = float(strike_str)
 
-                # Merge with TV data
-                c_tv = tv_snapshot.get(f"{strike}_call", {})
-                p_tv = tv_snapshot.get(f"{strike}_put", {})
+                # Get technical symbols from cache
+                c_sym = self.symbol_map_cache.get(underlying, {}).get(f"{strike}_call")
+                p_sym = self.symbol_map_cache.get(underlying, {}).get(f"{strike}_put")
+
+                # Merge with WSS real-time data
+                c_wss = wss_data.get(c_sym, {}) if c_sym else {}
+                p_wss = wss_data.get(p_sym, {}) if p_sym else {}
 
                 # Call
                 rows.append({
                     'timestamp': timestamp,
                     'underlying': underlying,
-                    'symbol': c_tv.get('symbol'),
+                    'symbol': c_sym,
                     'expiry': datetime.strptime(default_expiry, "%Y-%m-%d").date(),
                     'strike': strike,
                     'option_type': 'call',
                     'oi': int(strike_data.get('callOi', 0)),
                     'oi_change': int(strike_data.get('callOiChange', 0)),
-                    'volume': c_tv.get('volume', 0) or int(strike_data.get('callVol', 0) or strike_data.get('callVolume', 0)),
-                    'ltp': c_tv.get('ltp', 0.0) or float(strike_data.get('callLtp', 0) or strike_data.get('callLastPrice', 0)),
+                    'volume': c_wss.get('volume', 0) or int(strike_data.get('callVol', 0) or 0),
+                    'ltp': c_wss.get('lp', 0.0) or float(strike_data.get('callLtp', 0) or 0),
                     'iv': 0
                 })
                 # Put
                 rows.append({
                     'timestamp': timestamp,
                     'underlying': underlying,
-                    'symbol': p_tv.get('symbol'),
+                    'symbol': p_sym,
                     'expiry': datetime.strptime(default_expiry, "%Y-%m-%d").date(),
                     'strike': strike,
                     'option_type': 'put',
                     'oi': int(strike_data.get('putOi', 0)),
                     'oi_change': int(strike_data.get('putOiChange', 0)),
-                    'volume': p_tv.get('volume', 0) or int(strike_data.get('putVol', 0) or strike_data.get('putVolume', 0)),
-                    'ltp': p_tv.get('ltp', 0.0) or float(strike_data.get('putLtp', 0) or strike_data.get('putLastPrice', 0)),
+                    'volume': p_wss.get('volume', 0) or int(strike_data.get('putVol', 0) or 0),
+                    'ltp': p_wss.get('lp', 0.0) or float(strike_data.get('putLtp', 0) or 0),
                     'iv': 0
                 })
 
             if rows:
                 db.insert_options_snapshot(rows)
                 self._calculate_pcr(underlying, timestamp, rows, spot_price=spot_price)
-                logger.info(f"Saved merged Trendlyne+TV snapshot for {underlying} with {len(rows)} rows")
+                logger.info(f"Saved merged Trendlyne+WSS snapshot for {underlying} with {len(rows)} rows")
 
         except Exception as e:
             logger.error(f"Error in Trendlyne snapshot for {underlying}: {e}")
@@ -452,7 +454,7 @@ class OptionsManager:
             'underlying': underlying,
             'pcr_oi': pcr_oi,
             'pcr_vol': pcr_vol,
-            'underlying_price': spot_price,
+            'underlying_price': underlying_price or spot_price,
             'max_pain': max_pain,
             'spot_price': spot_price
         })
