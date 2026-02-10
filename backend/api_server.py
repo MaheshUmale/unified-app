@@ -413,11 +413,17 @@ async def get_options_chain(underlying: str):
 
 @fastapi_app.get("/api/options/pcr-trend/{underlying}")
 async def get_pcr_trend(underlying: str):
-    """Returns historical PCR and underlying price data."""
+    """Returns historical PCR and underlying price data for the current IST trading day."""
+    # Use SQL-based timezone filtering for robustness
+    # This ensures we get data where the IST date matches the current IST date
     history = db.query("""
-        SELECT timestamp, pcr_oi, pcr_vol, underlying_price
+        SELECT
+            timestamp,
+            pcr_oi, pcr_vol, underlying_price, max_pain, spot_price
         FROM pcr_history
         WHERE underlying = ?
+        AND CAST((timestamp AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata' AS DATE) =
+            CAST(now() AT TIME ZONE 'Asia/Kolkata' AS DATE)
         ORDER BY timestamp ASC
     """, (underlying,), json_serialize=True)
     return {"history": history}

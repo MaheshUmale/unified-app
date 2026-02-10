@@ -42,16 +42,6 @@ def emit_event(event: str, data: Any, room: Optional[str] = None):
         data = json.loads(json.dumps(data, cls=LocalDBJSONEncoder))
     try:
         if main_event_loop and main_event_loop.is_running():
-            if room:
-                namespace = '/'
-                room_exists = (
-                    hasattr(socketio_instance, 'manager') and
-                    namespace in socketio_instance.manager.rooms and
-                    room in socketio_instance.manager.rooms[namespace]
-                )
-                if not room_exists:
-                    return
-
             asyncio.run_coroutine_threadsafe(socketio_instance.emit(event, data, to=room), main_event_loop)
             if room:
                 logger.info(f"Emitted {event} to room {room}")

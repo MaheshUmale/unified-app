@@ -38,6 +38,7 @@ class LocalDB:
         self.conn.execute("SET memory_limit = '1GB'")
         self.conn.execute("SET threads = 4")
         self.conn.execute("INSTALL json; LOAD json;")
+        self.conn.execute("INSTALL icu; LOAD icu;")
 
         self.conn.execute("""
             CREATE TABLE IF NOT EXISTS ticks (

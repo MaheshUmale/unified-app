@@ -5,6 +5,15 @@ from typing import Optional, List, Dict, Any
 logger = logging.getLogger(__name__)
 
 class TrendlyneAPI:
+    FALLBACK_IDS = {
+        'NIFTY': 1887,
+        'NIFTY 50': 1887,
+        'BANKNIFTY': 1898,
+        'BANK NIFTY': 1898,
+        'FINNIFTY': 1900,
+        'FIN NIFTY': 1900
+    }
+
     def __init__(self):
         self.base_url = "https://smartoptions.trendlyne.com/phoenix/api"
         self.headers = {
@@ -13,6 +22,12 @@ class TrendlyneAPI:
         self.stock_id_cache = {}
 
     async def get_stock_id(self, symbol: str) -> Optional[int]:
+        # Clean symbol for lookup
+        clean_symbol = symbol.upper().replace("NSE:", "").strip()
+
+        if clean_symbol in self.FALLBACK_IDS:
+            return self.FALLBACK_IDS[clean_symbol]
+
         if symbol in self.stock_id_cache:
             return self.stock_id_cache[symbol]
 
@@ -45,16 +60,17 @@ class TrendlyneAPI:
         return None
 
     async def get_expiry_dates(self, stock_id: int) -> List[str]:
-        url = f"{self.base_url}/fno/get-expiry-dates/"
-        params = {'mtype': 'options', 'stock_id': stock_id}
+        url = f"{self.base_url}/search-contract-expiry-dates/"
+        params = {'stock_pk': stock_id}
 
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.get(url, params=params, headers=self.headers, timeout=10)
                 if response.status_code == 200:
                     data = response.json()
-                    if 'body' in data and 'expiryDates' in data['body']:
-                        return data['body']['expiryDates']
+                    # Structure in reference repo: body.data.all_exp_list
+                    if data and 'body' in data and 'data' in data['body']:
+                        return data['body']['data'].get('all_exp_list', [])
         except Exception as e:
             logger.error(f"Error getting expiry dates for stock_id {stock_id}: {e}")
         return []
@@ -69,7 +85,8 @@ class TrendlyneAPI:
             'stockId': stock_id,
             'expDateList': expiry,
             'minTime': "09:15",
-            'maxTime': max_time
+            'maxTime': max_time,
+            'format': 'json'
         }
 
         try:

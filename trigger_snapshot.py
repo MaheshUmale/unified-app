@@ -1,22 +1,14 @@
 import asyncio
-from backend.core.options_manager import options_manager
-from backend.api_server import fastapi_app
 import logging
+from core.options_manager import options_manager
+from db.local_db import db
 
-logging.basicConfig(level=logging.INFO)
-
-async def main():
-    print("Triggering snapshot for NSE:NIFTY...")
-    # We need to mock some things if server is not running or use the existing singleton if it is.
-    # But DuckDB lock prevents us from running another process.
-    # So we should ideally hit an API that triggers it, but there isn't one.
-    # However, I can just check the DuckDB after the periodic loop triggers,
-    # OR I can kill the server, run this script, then restart.
-
-    # Let's just check the existing data first to see if my change worked for the next periodic cycle.
-    # Actually, I'll just use the curl to check the latest timestamp in a few minutes.
-    pass
+async def manual_snapshot():
+    logging.basicConfig(level=logging.INFO)
+    await options_manager.take_snapshot("NSE:NIFTY")
+    res = db.query("SELECT * FROM pcr_history ORDER BY timestamp DESC LIMIT 1", json_serialize=True)
+    import json
+    print(json.dumps(res, indent=2))
 
 if __name__ == "__main__":
-    # asyncio.run(main())
-    pass
+    asyncio.run(manual_snapshot())
