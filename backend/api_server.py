@@ -368,10 +368,47 @@ async def get_db_tables():
         result = []
         for table in tables:
             schema = db.get_table_schema(table, json_serialize=True)
-            result.append({"name": table, "schema": schema})
+            # Fetch row count
+            count_res = db.query(f'SELECT COUNT(*) as count FROM "{table}"')
+            row_count = count_res[0]['count'] if count_res else 0
+            result.append({
+                "name": table,
+                "schema": schema,
+                "row_count": row_count
+            })
         return {"tables": result}
     except Exception as e:
         logger.error(f"Error fetching tables: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@fastapi_app.post("/api/db/export")
+async def export_db_query(request: Request):
+    try:
+        body = await request.json()
+        sql = body.get("sql")
+        if not sql:
+            raise HTTPException(status_code=400, detail="SQL query is required")
+
+        # We'll use pandas to easily convert to CSV
+        results = db.query(sql, json_serialize=False)
+        if not results:
+            return {"error": "No data to export"}
+
+        import pandas as pd
+        import io
+        from fastapi.responses import StreamingResponse
+
+        df = pd.DataFrame(results)
+        stream = io.StringIO()
+        df.to_csv(stream, index=False)
+        response = StreamingResponse(
+            iter([stream.getvalue()]),
+            media_type="text/csv"
+        )
+        response.headers["Content-Disposition"] = "attachment; filename=export.csv"
+        return response
+    except Exception as e:
+        logger.error(f"Error exporting query: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @fastapi_app.post("/api/db/query")

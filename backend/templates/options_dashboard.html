@@ -3,107 +3,155 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PRODESK | Options Analysis</title>
+    <title>PRODESK | Options Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&display=swap');
-        body { font-family: 'Inter', sans-serif; background-color: #000; color: #d1d5db; }
-        .glass-panel { background: rgba(17, 24, 39, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.05); }
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
+        body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: #f8fafc; }
+        .glass-panel { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.05); }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #374151; border-radius: 10px; }
-        .tab-btn.active { color: #3b82f6; border-bottom: 2px solid #3b82f6; }
-        .flash-up { animation: flash-green 0.5s ease-out; }
-        .flash-down { animation: flash-red 0.5s ease-out; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+        .flash-up { animation: flash-green 0.8s ease-out; }
+        .flash-down { animation: flash-red 0.8s ease-out; }
         @keyframes flash-green { 0% { background-color: rgba(34, 197, 94, 0.3); } 100% { background-color: transparent; } }
         @keyframes flash-red { 0% { background-color: rgba(239, 68, 68, 0.3); } 100% { background-color: transparent; } }
+        .sticky-header th { position: sticky; top: 0; z-index: 10; background: #1e293b; }
     </style>
 </head>
-<body class="h-full flex flex-col overflow-hidden">
+<body class="h-full flex flex-col overflow-hidden custom-scrollbar">
+    <!-- Header -->
     <header class="h-14 py-2 glass-panel border-b border-white/5 px-4 md:px-6 flex items-center justify-between shrink-0">
         <div class="flex items-center gap-6">
-            <a href="/" class="text-sm font-black text-white italic tracking-tighter uppercase shrink-0">PRO<span class="text-blue-500">DESK</span> <span class="text-xs ml-2 text-gray-500 not-italic font-normal">OPTIONS ANALYSIS</span></a>
-
-            <div class="flex items-center gap-4">
-                <select id="underlyingSelect" class="bg-gray-900 border border-white/10 rounded-lg px-3 py-1 text-xs font-bold text-blue-400 outline-none focus:border-blue-500/50">
-                    <option value="NSE:NIFTY">NIFTY</option>
+            <div class="flex flex-col">
+                <a href="/" class="text-sm font-black text-white italic tracking-tighter uppercase shrink-0">NSE <span class="text-blue-500">Option Chain Analyzer</span></a>
+                <span class="text-[9px] text-gray-500 font-bold">v2.1 Backfill</span>
+            </div>
+            <div class="flex items-center gap-4 text-[10px] text-gray-400">
+                <span>Last Updated: <span id="lastUpdated" class="text-blue-400 font-bold">-</span></span>
+                <select id="underlyingSelect" class="bg-slate-900 border border-white/10 rounded px-2 py-0.5 text-xs font-bold text-blue-400 outline-none">
+                    <option value="NSE:NIFTY">NIFTY 50</option>
                     <option value="NSE:BANKNIFTY">BANKNIFTY</option>
                     <option value="NSE:FINNIFTY">FINNIFTY</option>
                 </select>
-                <div class="flex items-center gap-3">
-                    <div class="flex flex-col">
-                        <span class="text-[8px] text-gray-600 font-black uppercase">Max Pain</span>
-                        <span id="maxPainVal" class="text-[11px] text-yellow-500 font-black">-</span>
-                    </div>
-                    <div class="flex flex-col">
-                        <span class="text-[8px] text-gray-600 font-black uppercase">Spot</span>
-                        <span id="spotPriceVal" class="text-[11px] text-blue-400 font-black">-</span>
-                    </div>
-                    <div id="lastUpdateTime" class="text-[9px] text-gray-500 font-mono mt-auto">Loading...</div>
+            </div>
+        </div>
+        <div class="flex items-center gap-2">
+            <div class="flex items-center gap-1 bg-slate-900/50 p-1 rounded-md border border-white/5">
+                <span class="text-[9px] font-bold px-2 text-gray-500">Auto: OFF</span>
+                <button id="refreshBtn" class="bg-blue-600 hover:bg-blue-700 text-white text-[9px] font-bold px-3 py-1 rounded transition-all">Refresh</button>
+                <button id="backfillBtn" class="bg-yellow-600 hover:bg-yellow-700 text-white text-[9px] font-bold px-3 py-1 rounded transition-all">Backfill</button>
+                <button id="exportApiBtn" class="bg-slate-700 hover:bg-slate-600 text-white text-[9px] font-bold px-3 py-1 rounded transition-all">Export API</button>
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+        <!-- Summary Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div class="glass-panel rounded-xl p-4 flex flex-col justify-between">
+                <div class="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Spot Price</div>
+                <div class="flex items-end justify-between mt-2">
+                    <div id="spotPrice" class="text-2xl font-black text-white">0.00</div>
+                    <div id="spotSentiment" class="text-[10px] font-black bg-green-500/20 text-green-500 px-2 py-0.5 rounded uppercase">BULLISH</div>
+                </div>
+                <div class="text-[9px] text-gray-500 mt-1">AIM: <span id="aimSpot">-</span></div>
+            </div>
+            <div class="glass-panel rounded-xl p-4 flex flex-col justify-between">
+                <div class="text-[10px] text-gray-400 font-bold uppercase tracking-wider">PCR (OI)</div>
+                <div class="flex items-end justify-between mt-2">
+                    <div id="pcrOi" class="text-2xl font-black text-white">0.0</div>
+                    <div id="pcrSentiment" class="text-[10px] font-black bg-green-500/20 text-green-500 px-2 py-0.5 rounded uppercase">BULLISH</div>
+                </div>
+                <div class="text-[9px] text-gray-500 mt-1">Vol PCR: <span id="pcrVol">0</span></div>
+            </div>
+            <div class="glass-panel rounded-xl p-4 flex flex-col justify-between">
+                <div class="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Max Pain</div>
+                <div class="flex items-end justify-between mt-2">
+                    <div id="maxPain" class="text-2xl font-black text-red-400">0</div>
+                </div>
+                <div class="text-[9px] text-gray-500 mt-1">Expiry Pain Level</div>
+            </div>
+            <div class="glass-panel rounded-xl p-4 flex flex-col justify-between">
+                <div class="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Support / Resistance</div>
+                <div class="flex items-end justify-between mt-2">
+                    <div id="supportResistance" class="text-xl font-black text-white">0 / 0</div>
+                </div>
+                <div class="text-[9px] text-gray-500 mt-1">Based on Max OI</div>
+            </div>
+        </div>
+
+        <!-- Charts Grid -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 h-[400px]">
+            <div class="lg:col-span-2 glass-panel rounded-xl p-4 flex flex-col">
+                <h3 class="text-xs font-black uppercase text-gray-400 mb-4 italic">Open Interest Distribution</h3>
+                <div class="flex-1 min-h-0">
+                    <canvas id="oiDistChart"></canvas>
+                </div>
+            </div>
+            <div class="glass-panel rounded-xl p-4 flex flex-col">
+                <h3 class="text-xs font-black uppercase text-gray-400 mb-4 italic">PCR Trend (Today)</h3>
+                <div class="flex-1 min-h-0">
+                    <canvas id="pcrTrendChart"></canvas>
                 </div>
             </div>
         </div>
 
-        <nav class="flex gap-4">
-            <button onclick="switchTab('chain')" id="tab-chain" class="tab-btn active text-xs font-bold px-2 py-4 transition-all">OPTION CHAIN</button>
-            <button onclick="switchTab('oi')" id="tab-oi" class="tab-btn text-xs font-bold px-2 py-4 transition-all">OI ANALYSIS</button>
-            <button onclick="switchTab('pcr')" id="tab-pcr" class="tab-btn text-xs font-bold px-2 py-4 transition-all">PCR TREND</button>
-        </nav>
-    </header>
-
-    <main class="flex-1 overflow-hidden p-4">
-        <!-- Option Chain Tab -->
-        <div id="content-chain" class="h-full flex flex-col glass-panel rounded-xl overflow-hidden">
+        <!-- Historical Snapshots -->
+        <div class="glass-panel rounded-xl overflow-hidden flex flex-col max-h-64">
+            <div class="p-3 border-b border-white/5 flex justify-between items-center bg-white/5">
+                <h3 class="text-xs font-black uppercase text-gray-400 italic">Historical Snapshots</h3>
+                <button id="clearHistoryBtn" class="text-[9px] font-bold text-red-400 hover:text-red-300 transition-colors uppercase">Clear History</button>
+            </div>
             <div class="flex-1 overflow-auto custom-scrollbar">
-                <table class="w-full text-left text-[11px] border-collapse sticky-header">
-                    <thead class="sticky top-0 bg-gray-900 z-20">
-                        <tr class="text-gray-500 uppercase font-black tracking-tighter border-b border-white/10">
-                            <th colspan="5" class="p-2 text-center bg-blue-900/20 text-blue-400">CALLS</th>
-                            <th class="p-2 text-center bg-gray-800">STRIKE</th>
-                            <th colspan="5" class="p-2 text-center bg-red-900/20 text-red-400">PUTS</th>
-                        </tr>
-                        <tr class="text-gray-600 text-[10px] border-b border-white/5 bg-gray-900/80">
-                            <th class="p-2">OI</th>
-                            <th class="p-2">CHG</th>
-                            <th class="p-2">VOL</th>
-                            <th class="p-2">BID / ASK</th>
-                            <th class="p-2">LTP</th>
-                            <th class="p-2 text-center">PRICE</th>
-                            <th class="p-2 text-right">LTP</th>
-                            <th class="p-2 text-right">BID / ASK</th>
-                            <th class="p-2 text-right">VOL</th>
-                            <th class="p-2 text-right">CHG</th>
-                            <th class="p-2 text-right">OI</th>
+                <table class="w-full text-left text-[11px] border-collapse">
+                    <thead class="sticky top-0 bg-slate-900 z-10">
+                        <tr class="text-gray-500 uppercase font-black border-b border-white/10">
+                            <th class="p-2">Time</th>
+                            <th class="p-2">Spot</th>
+                            <th class="p-2">PCR (Total)</th>
+                            <th class="p-2">PCR (Change)</th>
+                            <th class="p-2">Max Pain</th>
                         </tr>
                     </thead>
-                    <tbody id="chainBody" class="divide-y divide-white/5">
-                        <!-- Data rows injected here -->
+                    <tbody id="snapshotBody" class="divide-y divide-white/5">
+                        <!-- Snapshots injected here -->
                     </tbody>
                 </table>
             </div>
         </div>
 
-        <!-- OI Analysis Tab -->
-        <div id="content-oi" class="h-full hidden flex flex-col gap-4 overflow-y-auto custom-scrollbar">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div class="glass-panel p-4 rounded-xl">
-                    <h3 class="text-xs font-black mb-4 uppercase text-gray-400 italic">OI Distribution</h3>
-                    <canvas id="oiDistChart" class="max-h-[400px]"></canvas>
-                </div>
-                <div class="glass-panel p-4 rounded-xl">
-                    <h3 class="text-xs font-black mb-4 uppercase text-gray-400 italic">Change in OI</h3>
-                    <canvas id="oiChgChart" class="max-h-[400px]"></canvas>
-                </div>
+        <!-- Option Chain -->
+        <div class="glass-panel rounded-xl overflow-hidden flex flex-col">
+            <div class="p-3 border-b border-white/5 bg-white/5">
+                <h3 class="text-xs font-black uppercase text-gray-400 italic">Option Chain (ATM ± 20 Strikes)</h3>
             </div>
-        </div>
-
-        <!-- PCR Trend Tab -->
-        <div id="content-pcr" class="h-full hidden flex flex-col glass-panel p-4 rounded-xl">
-            <h3 class="text-xs font-black mb-4 uppercase text-gray-400 italic">PCR Trend (OI & Volume)</h3>
-            <div class="flex-1 min-h-0">
-                <canvas id="pcrTrendChart"></canvas>
+            <div class="flex-1 overflow-auto custom-scrollbar">
+                <table class="w-full text-left text-[11px] border-collapse">
+                    <thead class="sticky top-0 bg-slate-900 z-20">
+                        <tr class="text-gray-500 uppercase font-black border-b border-white/10">
+                            <th colspan="4" class="p-2 text-center bg-green-900/20 text-green-500 border-r border-white/5 uppercase">Calls (Resistance)</th>
+                            <th class="p-2 text-center bg-slate-800">Strike</th>
+                            <th colspan="4" class="p-2 text-center bg-red-900/20 text-red-500 border-l border-white/5 uppercase">Puts (Support)</th>
+                        </tr>
+                        <tr class="text-gray-600 text-[10px] border-b border-white/5 bg-slate-900/80">
+                            <th class="p-2 text-right">OI</th>
+                            <th class="p-2 text-right">CHNG OI</th>
+                            <th class="p-2 text-right">VOL</th>
+                            <th class="p-2 text-right">LTP</th>
+                            <th class="p-2 text-center border-x border-white/5 bg-slate-800">PRICE</th>
+                            <th class="p-2">LTP</th>
+                            <th class="p-2">VOL</th>
+                            <th class="p-2">CHNG OI</th>
+                            <th class="p-2">OI</th>
+                        </tr>
+                    </thead>
+                    <tbody id="chainBody" class="divide-y divide-white/5">
+                        <!-- Option chain injected here -->
+                    </tbody>
+                </table>
             </div>
         </div>
     </main>

@@ -24,8 +24,11 @@
     <div class="flex-1 flex overflow-hidden">
         <!-- Sidebar -->
         <aside class="w-64 border-r border-white/5 flex flex-col glass-panel overflow-hidden shrink-0">
-            <div class="p-4 border-b border-white/5">
+            <div class="p-4 border-b border-white/5 flex justify-between items-center">
                 <h2 class="text-xs font-black uppercase italic tracking-widest text-gray-400">Tables</h2>
+                <button onclick="fetchTables()" class="text-gray-500 hover:text-white transition-colors">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                </button>
             </div>
             <div id="tableList" class="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
                 <div class="p-2 text-xs text-gray-500 animate-pulse">Loading tables...</div>
@@ -37,7 +40,14 @@
             <!-- Query Editor -->
             <div class="glass-panel rounded-xl p-4 flex flex-col gap-3">
                 <div class="flex justify-between items-center">
-                    <h3 class="text-xs font-bold uppercase text-gray-400">SQL Editor</h3>
+                    <div class="flex items-center gap-4">
+                        <h3 class="text-xs font-bold uppercase text-gray-400">SQL Editor</h3>
+                        <div class="flex gap-2">
+                            <button onclick="setQuery('SELECT * FROM ticks ORDER BY ts_ms DESC LIMIT 100')" class="text-[9px] bg-white/5 hover:bg-white/10 px-2 py-0.5 rounded text-gray-400 border border-white/5">Latest Ticks</button>
+                            <button onclick="setQuery('SELECT * FROM options_snapshots ORDER BY timestamp DESC LIMIT 100')" class="text-[9px] bg-white/5 hover:bg-white/10 px-2 py-0.5 rounded text-gray-400 border border-white/5">Latest Options</button>
+                            <button onclick="setQuery('SELECT * FROM pcr_history ORDER BY timestamp DESC LIMIT 100')" class="text-[9px] bg-white/5 hover:bg-white/10 px-2 py-0.5 rounded text-gray-400 border border-white/5">PCR Hist</button>
+                        </div>
+                    </div>
                     <button id="runBtn" class="bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black px-4 py-1.5 rounded-full transition-all uppercase italic tracking-tighter">Run Query</button>
                 </div>
                 <textarea id="sqlInput" class="bg-black/50 border border-white/10 rounded-lg p-3 text-sm font-mono text-blue-400 outline-none focus:border-blue-500/50 h-32 resize-none custom-scrollbar" placeholder="SELECT * FROM ticks LIMIT 100"></textarea>
@@ -46,8 +56,14 @@
             <!-- Results -->
             <div class="flex-1 glass-panel rounded-xl overflow-hidden flex flex-col">
                 <div class="p-3 border-b border-white/5 flex justify-between items-center bg-white/5">
-                    <h3 class="text-xs font-bold uppercase text-gray-400">Results</h3>
-                    <span id="rowCount" class="text-[10px] font-mono text-gray-500">0 rows</span>
+                    <div class="flex items-center gap-3">
+                        <h3 class="text-xs font-bold uppercase text-gray-400">Results</h3>
+                        <span id="rowCount" class="text-[10px] font-mono text-blue-500 font-bold bg-blue-500/10 px-2 py-0.5 rounded">0 rows</span>
+                    </div>
+                    <button id="exportBtn" class="text-[10px] font-bold text-gray-400 hover:text-white flex items-center gap-1 transition-colors uppercase italic tracking-tighter">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                        Export CSV
+                    </button>
                 </div>
                 <div id="resultsContainer" class="flex-1 overflow-auto custom-scrollbar">
                     <table id="resultsTable" class="w-full text-left text-[11px] border-collapse">
@@ -70,9 +86,15 @@
         const tableList = document.getElementById('tableList');
         const sqlInput = document.getElementById('sqlInput');
         const runBtn = document.getElementById('runBtn');
+        const exportBtn = document.getElementById('exportBtn');
         const tableHead = document.getElementById('tableHead');
         const tableBody = document.getElementById('tableBody');
         const rowCount = document.getElementById('rowCount');
+
+        function setQuery(sql) {
+            sqlInput.value = sql;
+            runQuery();
+        }
 
         async function fetchTables() {
             try {
@@ -84,11 +106,14 @@
                     const btn = document.createElement('div');
                     btn.className = 'group p-2 rounded-lg hover:bg-white/5 cursor-pointer transition-all';
                     btn.innerHTML = `
-                        <div class="text-xs font-bold text-gray-300 group-hover:text-blue-400">${table.name}</div>
+                        <div class="flex justify-between items-center mb-0.5">
+                            <div class="text-xs font-bold text-gray-300 group-hover:text-blue-400">${table.name}</div>
+                            <div class="text-[9px] font-mono text-gray-600">${table.row_count.toLocaleString()}</div>
+                        </div>
                         <div class="text-[9px] text-gray-600 truncate">${table.schema.map(c => c.column_name).join(', ')}</div>
                     `;
                     btn.onclick = () => {
-                        sqlInput.value = `SELECT * FROM ${table.name} LIMIT 100`;
+                        sqlInput.value = `SELECT * FROM "${table.name}" LIMIT 100`;
                         runQuery();
                     };
                     tableList.appendChild(btn);
@@ -169,7 +194,45 @@
             }
         }
 
+        async function exportCSV() {
+            const sql = sqlInput.value.trim();
+            if (!sql) return;
+
+            exportBtn.disabled = true;
+            const originalText = exportBtn.innerHTML;
+            exportBtn.innerText = 'Exporting...';
+
+            try {
+                const res = await fetch('/api/db/export', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sql })
+                });
+
+                if (res.ok) {
+                    const blob = await res.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `query_export_${new Date().getTime()}.csv`;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                } else {
+                    const data = await res.json();
+                    alert(`Export failed: ${data.detail || data.error || 'Unknown error'}`);
+                }
+            } catch (err) {
+                alert(`Export Error: ${err.message}`);
+            } finally {
+                exportBtn.disabled = false;
+                exportBtn.innerHTML = originalText;
+            }
+        }
+
         runBtn.onclick = runQuery;
+        exportBtn.onclick = exportCSV;
         sqlInput.onkeydown = (e) => {
             if (e.ctrlKey && e.key === 'Enter') runQuery();
         };
