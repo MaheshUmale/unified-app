@@ -105,19 +105,32 @@ class OptionsManager:
         logger.info("Enhanced Options management started")
     
     async def backfill_today(self):
-        """Backfill today's options data with enhanced metrics."""
-        logger.info("Starting today's enhanced options backfill...")
+        """Backfill today's (or most recent) options data with enhanced metrics."""
+        logger.info("Starting enhanced options backfill...")
         
         ist = pytz.timezone('Asia/Kolkata')
         now = datetime.now(ist)
+
+        # If weekend, go back to Friday
+        if now.weekday() == 5: # Saturday
+            now = now - timedelta(days=1)
+        elif now.weekday() == 6: # Sunday
+            now = now - timedelta(days=2)
+
         market_open = now.replace(hour=9, minute=15, second=0, microsecond=0)
         market_close = now.replace(hour=15, minute=30, second=0, microsecond=0)
         
+        # If before market open, try previous day
         if now < market_open:
-            logger.info(f"Market not open yet (Current IST: {now.strftime('%H:%M')}), skipping backfill.")
-            return
-        
-        end_time = min(now, market_close)
+            now = now - timedelta(days=1)
+            # Skip if previous day was weekend
+            if now.weekday() == 5: now = now - timedelta(days=1)
+            if now.weekday() == 6: now = now - timedelta(days=2)
+            market_open = now.replace(hour=9, minute=15, second=0, microsecond=0)
+            market_close = now.replace(hour=15, minute=30, second=0, microsecond=0)
+            logger.info(f"Market not open yet. Trying backfill for {now.strftime('%Y-%m-%d')}")
+
+        end_time = min(datetime.now(ist), market_close)
         current = market_open
         time_slots = []
         while current <= end_time:
@@ -125,20 +138,23 @@ class OptionsManager:
             current += timedelta(minutes=15)
         
         if not time_slots:
+            logger.warning("No time slots to backfill.")
             return
         
+        target_date_str = now.strftime('%Y-%m-%d')
+
         for underlying in self.active_underlyings:
             tl_symbol = self.tl_symbol_map.get(underlying)
             try:
-                logger.info(f"Processing backfill for {underlying}")
+                logger.info(f"Processing backfill for {underlying} on {target_date_str}")
                 
-                # Check if already backfilled today
+                # Check if already backfilled for this date
                 existing = db.query(
-                    "SELECT COUNT(*) as count FROM pcr_history WHERE underlying = ? AND CAST(timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata' AS DATE) = CURRENT_DATE AT TIME ZONE 'Asia/Kolkata'",
-                    (underlying,)
+                    "SELECT COUNT(*) as count FROM pcr_history WHERE underlying = ? AND CAST(timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata' AS DATE) = ?",
+                    (underlying, target_date_str)
                 )
                 if existing and existing[0]['count'] > (len(time_slots) * 0.8):
-                    logger.info(f"Sufficient data already exists for {underlying} today, skipping backfill.")
+                    logger.info(f"Sufficient data already exists for {underlying} on {target_date_str}, skipping.")
                     continue
                 
                 # Get historical spot prices
