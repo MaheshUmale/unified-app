@@ -18,7 +18,11 @@ class ChartInstance {
         this.volumeSeries = null;
         this.indicatorSeries = {};
         this.lastCandle = null;
-        this.fullHistory = { candles: [], volume: [], indicators: {} };
+        this.fullHistory = {
+            candles: new Map(), // Use Map for efficient merging by timestamp
+            volume: new Map(),
+            indicators: {}
+        };
         this.drawings = [];
         this.markers = [];
         this.showIndicators = true;
@@ -44,10 +48,39 @@ class ChartInstance {
             crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
             localization: {
                 locale: 'en-IN',
-                timeFormatter: (ts) => new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(ts * 1000))
+                timeFormatter: (ts) => {
+                    return new Intl.DateTimeFormat('en-IN', {
+                        timeZone: 'Asia/Kolkata',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit',
+                        hour12: false
+                    }).format(new Date(ts * 1000));
+                }
             },
             rightPriceScale: { borderColor: '#1f2937', autoScale: true, scaleMargins: { top: 0.2, bottom: 0.2 } },
-            timeScale: { borderColor: '#1f2937', timeVisible: true, secondsVisible: false, rightOffset: 10 }
+            timeScale: {
+                borderColor: '#1f2937',
+                timeVisible: true,
+                secondsVisible: false,
+                rightOffset: 10,
+                tickMarkFormatter: (time, tickMarkType, locale) => {
+                    const date = new Date(time * 1000);
+                    const options = { timeZone: 'Asia/Kolkata', hour12: false };
+                    if (tickMarkType >= 3) {
+                        options.hour = '2-digit';
+                        options.minute = '2-digit';
+                    } else if (tickMarkType === 2) {
+                        options.day = '2-digit';
+                        options.month = 'short';
+                    } else if (tickMarkType === 1) {
+                        options.month = 'short';
+                    } else {
+                        options.year = 'numeric';
+                    }
+                    return new Intl.DateTimeFormat('en-IN', options).format(date);
+                }
+            }
         });
 
         this.candleSeries = this.chart.addCandlestickSeries({
@@ -107,7 +140,11 @@ class ChartInstance {
 
         this.lastCandle = null;
         this.hrn = '';
-        this.fullHistory = { candles: [], volume: [], indicators: {} };
+        this.fullHistory = {
+            candles: new Map(),
+            volume: new Map(),
+            indicators: {}
+        };
 
         this.candleSeries.setData([]);
         this.volumeSeries.setData([]);
@@ -147,15 +184,17 @@ class ChartInstance {
                     open: Number(c.open), high: Number(c.high), low: Number(c.low), close: Number(c.close), volume: Number(c.volume)
                 })).filter(c => !isNaN(c.open) && c.open > 0).sort((a, b) => a.time - b.time);
 
-                this.fullHistory.candles = chartData;
+                chartData.forEach(c => this.fullHistory.candles.set(c.time, c));
                 this.lastCandle = chartData[chartData.length - 1];
 
-                const volData = candles.map(c => ({
-                    time: typeof c.timestamp === 'number' ? c.timestamp : Math.floor(new Date(c.timestamp).getTime() / 1000),
-                    value: Number(c.volume),
-                    color: Number(c.close) >= Number(c.open) ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'
-                })).sort((a, b) => a.time - b.time);
-                this.fullHistory.volume = volData;
+                candles.forEach(c => {
+                    const ts = typeof c.timestamp === 'number' ? c.timestamp : Math.floor(new Date(c.timestamp).getTime() / 1000);
+                    this.fullHistory.volume.set(ts, {
+                        time: ts,
+                        value: Number(c.volume),
+                        color: Number(c.close) >= Number(c.open) ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'
+                    });
+                });
 
                 this.renderData();
 
@@ -186,13 +225,13 @@ class ChartInstance {
     }
 
     renderData() {
-        if (this.fullHistory.candles.length === 0) return;
-        let displayCandles = [...this.fullHistory.candles].sort((a, b) => a.time - b.time);
+        if (this.fullHistory.candles.size === 0) return;
+        let displayCandles = Array.from(this.fullHistory.candles.values()).sort((a, b) => a.time - b.time);
         if (!displayCandles.some(c => c.hasExplicitColor)) {
             displayCandles = applyRvolColoring(displayCandles);
         }
         this.candleSeries.setData(displayCandles);
-        this.volumeSeries.setData([...this.fullHistory.volume].sort((a, b) => a.time - b.time));
+        this.volumeSeries.setData(Array.from(this.fullHistory.volume.values()).sort((a, b) => a.time - b.time));
 
         // Restore indicators
         Object.entries(this.fullHistory.indicators).forEach(([id, data]) => {
@@ -217,9 +256,9 @@ class ChartInstance {
         const ltq = Number(quote.ltq || 0);
 
         if (!this.lastCandle || candleTime > this.lastCandle.time) {
-            if (this.lastCandle && !this.fullHistory.candles.some(c => c.time === this.lastCandle.time)) {
-                this.fullHistory.candles.push({ ...this.lastCandle });
-                this.fullHistory.volume.push({
+            if (this.lastCandle) {
+                this.fullHistory.candles.set(this.lastCandle.time, { ...this.lastCandle });
+                this.fullHistory.volume.set(this.lastCandle.time, {
                     time: this.lastCandle.time, value: this.lastCandle.volume,
                     color: this.lastCandle.close >= this.lastCandle.open ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'
                 });
@@ -252,21 +291,31 @@ class ChartInstance {
                     color: Number(v[4]) >= Number(v[1]) ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'
                 }));
 
-                if (candles.length > 1) {
-                    this.fullHistory.candles = candles;
-                    this.fullHistory.volume = vol;
-                    this.lastCandle = { ...candles[candles.length - 1], volume: data.ohlcv[data.ohlcv.length - 1][5] };
-                    if (!this.isReplayMode) this.renderData();
-                } else if (candles.length === 1) {
-                    const newCandle = candles[0];
-                    const newVol = vol[0];
-                    if (this.lastCandle && newCandle.time >= this.lastCandle.time) {
-                        this.candleSeries.update(newCandle);
-                        this.volumeSeries.update(newVol);
-                        const idx = this.fullHistory.candles.findIndex(c => c.time === newCandle.time);
-                        if (idx !== -1) { this.fullHistory.candles[idx] = newCandle; this.fullHistory.volume[idx] = newVol; }
-                        else { this.fullHistory.candles.push(newCandle); this.fullHistory.volume.push(newVol); }
-                        this.lastCandle = { ...newCandle, volume: newVol.value };
+                candles.forEach((c, idx) => {
+                    this.fullHistory.candles.set(c.time, c);
+                    this.fullHistory.volume.set(vol[idx].time, vol[idx]);
+                });
+
+                // Maintain history limit
+                if (this.fullHistory.candles.size > 2000) {
+                    const keys = Array.from(this.fullHistory.candles.keys()).sort((a,b) => a-b);
+                    const toDelete = keys.slice(0, keys.length - 2000);
+                    toDelete.forEach(k => {
+                        this.fullHistory.candles.delete(k);
+                        this.fullHistory.volume.delete(k);
+                    });
+                }
+
+                if (candles.length > 0) {
+                    this.lastCandle = { ...candles[candles.length - 1], volume: vol[vol.length - 1].value };
+                    if (!this.isReplayMode) {
+                        if (candles.length > 10) this.renderData();
+                        else {
+                            candles.forEach((c, idx) => {
+                                this.candleSeries.update(c);
+                                this.volumeSeries.update(vol[idx]);
+                            });
+                        }
                     }
                 }
             }
@@ -284,7 +333,7 @@ class ChartInstance {
     applyBarColors(barColors) {
         barColors.forEach(bc => {
             const time = Math.floor(bc.time);
-            const candle = this.fullHistory.candles.find(c => c.time === time);
+            const candle = this.fullHistory.candles.get(time);
             if (candle) {
                 const color = tvColorToRGBA(bc.color);
                 candle.color = color; candle.wickColor = color; candle.borderColor = color; candle.hasExplicitColor = true;
@@ -431,10 +480,13 @@ class ChartInstance {
 
     stepReplay(delta) {
         const newIdx = this.replayIndex + delta;
-        if (newIdx >= 0 && newIdx < this.fullHistory.candles.length) {
+        const allCandles = Array.from(this.fullHistory.candles.values()).sort((a,b) => a.time - b.time);
+        const allVolume = Array.from(this.fullHistory.volume.values()).sort((a,b) => a.time - b.time);
+
+        if (newIdx >= 0 && newIdx < allCandles.length) {
             this.replayIndex = newIdx;
-            const vC = this.fullHistory.candles.slice(0, this.replayIndex + 1);
-            const vV = this.fullHistory.volume.slice(0, this.replayIndex + 1);
+            const vC = allCandles.slice(0, this.replayIndex + 1);
+            const vV = allVolume.slice(0, this.replayIndex + 1);
             const currentTime = vC[vC.length - 1].time;
 
             this.candleSeries.setData(vC);
@@ -1122,7 +1174,7 @@ function updateReplayUI(chart) {
     document.getElementById('playIcon').classList.toggle('hidden', chart.isPlaying);
     document.getElementById('pauseIcon').classList.toggle('hidden', !chart.isPlaying);
     if (chart.replayIndex !== -1) {
-        document.getElementById('replayStatus').innerText = `BAR ${chart.replayIndex + 1} / ${chart.fullHistory.candles.length}`;
+        document.getElementById('replayStatus').innerText = `BAR ${chart.replayIndex + 1} / ${chart.fullHistory.candles.size}`;
     }
 }
 

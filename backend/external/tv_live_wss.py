@@ -29,6 +29,7 @@ class TradingViewWSS:
         self.last_prices = {}
         self.last_times = {}
         self.history = {} # (symbol, interval) -> data
+        self.ohlcv_map = {} # (symbol, interval) -> {timestamp: candle}
         self.indicator_metadata = {}
         self.stop_event = threading.Event()
         self.thread = None
@@ -210,21 +211,42 @@ class TradingViewWSS:
 
         symbol = meta['symbol']
         interval = meta['interval']
+        hist_key = (symbol, interval)
         # Use full technical symbol as instrumentKey
         update_msg = {'type': 'chart_update', 'instrumentKey': symbol, 'interval': interval, 'data': {}}
 
         series_key = "sds_1" if "sds_1" in chart_data else "$prices" if "$prices" in chart_data else None
         if series_key:
             prices = chart_data[series_key].get("s", [])
-            ohlcv = [item['v'] for item in prices]
-            update_msg['data']['ohlcv'] = ohlcv
-            hist_key = (symbol, interval)
-            if len(ohlcv) > 10:
+            candles = [item['v'] for item in prices]
+
+            if candles:
+                if hist_key not in self.ohlcv_map: self.ohlcv_map[hist_key] = {}
                 if hist_key not in self.history: self.history[hist_key] = {}
-                self.history[hist_key]['ohlcv'] = ohlcv
+
+                # Use the map to ensure we have unique candles by timestamp
+                # and that we don't lose history when updates come in
+                for c in candles:
+                    ts = c[0]
+                    # Only store candles with valid timestamps
+                    if ts > 1e9:
+                        self.ohlcv_map[hist_key][ts] = c
+
+                # Get sorted list of candles
+                full_ohlcv = [self.ohlcv_map[hist_key][ts] for ts in sorted(self.ohlcv_map[hist_key].keys())]
+
+                # Limit history to 2000 candles to avoid memory bloat
+                if len(full_ohlcv) > 2000:
+                    full_ohlcv = full_ohlcv[-2000:]
+                    # Cleanup map
+                    valid_ts = {c[0] for c in full_ohlcv}
+                    self.ohlcv_map[hist_key] = {ts: c for ts, c in self.ohlcv_map[hist_key].items() if ts in valid_ts}
+
+                # Save back to history
+                self.history[hist_key]['ohlcv'] = full_ohlcv
+                update_msg['data']['ohlcv'] = full_ohlcv if len(candles) > 10 else candles
 
         # Recalculate indicators from history
-        hist_key = (symbol, interval)
         if hist_key in self.history and 'ohlcv' in self.history[hist_key]:
             ohlcv_data = self.history[hist_key]['ohlcv']
             indicators = []

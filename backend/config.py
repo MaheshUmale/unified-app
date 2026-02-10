@@ -22,6 +22,7 @@ DUCKDB_PATH = os.getenv('DUCKDB_PATH', 'pro_trade.db')
 
 # --- Strategy Configuration ---
 INITIAL_INSTRUMENTS = ["NSE_INDEX|Nifty 50", "NSE_INDEX|Nifty Bank", "NSE_INDEX|India VIX"]
+OPTIONS_UNDERLYINGS = ["NSE:NIFTY", "NSE:BANKNIFTY", "NSE:FINNIFTY"]
 
 # --- Logging Configuration ---
 LOGGING_CONFIG = {
