@@ -448,6 +448,16 @@ async def get_options_chain(underlying: str):
 
     return {"timestamp": latest_ts, "chain": chain}
 
+@fastapi_app.post("/api/options/backfill")
+async def trigger_options_backfill():
+    """Manually triggers the options backfill process."""
+    try:
+        asyncio.create_task(options_manager.backfill_today())
+        return {"status": "success", "message": "Backfill task started in background"}
+    except Exception as e:
+        logger.error(f"Error triggering backfill: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @fastapi_app.get("/api/options/pcr-trend/{underlying}")
 async def get_pcr_trend(underlying: str):
     """Returns historical PCR and underlying price data for the current IST trading day."""
@@ -456,7 +466,7 @@ async def get_pcr_trend(underlying: str):
     history = db.query("""
         SELECT
             timestamp,
-            pcr_oi, pcr_vol, underlying_price, max_pain, spot_price
+            pcr_oi, pcr_vol, pcr_oi_change, underlying_price, max_pain, spot_price
         FROM pcr_history
         WHERE underlying = ?
         AND CAST((timestamp AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata' AS DATE) =
