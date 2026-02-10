@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PRODESK | Options Dashboard</title>
+    <title>PRODESK | Enhanced Options Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
         body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: #f8fafc; }
         .glass-panel { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.05); }
         .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -19,6 +19,9 @@
         @keyframes flash-green { 0% { background-color: rgba(34, 197, 94, 0.3); } 100% { background-color: transparent; } }
         @keyframes flash-red { 0% { background-color: rgba(239, 68, 68, 0.3); } 100% { background-color: transparent; } }
         .sticky-header th { position: sticky; top: 0; z-index: 10; background: #1e293b; }
+        .tab-active { border-bottom: 2px solid #3b82f6; color: #3b82f6; }
+        .greek-positive { color: #22c55e; }
+        .greek-negative { color: #ef4444; }
     </style>
 </head>
 <body class="h-full flex flex-col overflow-hidden custom-scrollbar">
@@ -26,8 +29,10 @@
     <header class="h-14 py-2 glass-panel border-b border-white/5 px-4 md:px-6 flex items-center justify-between shrink-0">
         <div class="flex items-center gap-6">
             <div class="flex flex-col">
-                <a href="/" class="text-sm font-black text-white italic tracking-tighter uppercase shrink-0">NSE <span class="text-blue-500">Option Chain Analyzer</span></a>
-                <span class="text-[9px] text-gray-500 font-bold">v2.1 Backfill</span>
+                <a href="/" class="text-sm font-black text-white italic tracking-tighter uppercase shrink-0">
+                    NSE<span class="text-blue-500">Option Chain Analyzer</span>
+                </a>
+                <span class="text-[9px] text-gray-500 font-bold">v3.0 Enhanced with Greeks & IV</span>
             </div>
             <div class="flex items-center gap-4 text-[10px] text-gray-400">
                 <span>Last Updated: <span id="lastUpdated" class="text-blue-400 font-bold">-</span></span>
@@ -40,17 +45,27 @@
         </div>
         <div class="flex items-center gap-2">
             <div class="flex items-center gap-1 bg-slate-900/50 p-1 rounded-md border border-white/5">
-                <span class="text-[9px] font-bold px-2 text-gray-500">Auto: OFF</span>
-                <button id="refreshBtn" class="bg-blue-600 hover:bg-blue-700 text-white text-[9px] font-bold px-3 py-1 rounded transition-all">Refresh</button>
-                <button id="backfillBtn" class="bg-yellow-600 hover:bg-yellow-700 text-white text-[9px] font-bold px-3 py-1 rounded transition-all">Backfill</button>
-                <button id="exportApiBtn" class="bg-slate-700 hover:bg-slate-600 text-white text-[9px] font-bold px-3 py-1 rounded transition-all">Export API</button>
+                <button id="refreshBtn" class="bg-blue-600 hover:bg-blue-700 text-white text-[9px] font-bold px-3 py-1 rounded transition-all">
+                    Refresh
+                </button>
+                <button id="backfillBtn" class="bg-yellow-600 hover:bg-yellow-700 text-white text-[9px] font-bold px-3 py-1 rounded transition-all">
+                    Backfill
+                </button>
+                <button id="alertsBtn" class="bg-purple-600 hover:bg-purple-700 text-white text-[9px] font-bold px-3 py-1 rounded transition-all">
+                    Alerts
+                </button>
+                <button id="strategyBtn" class="bg-green-600 hover:bg-green-700 text-white text-[9px] font-bold px-3 py-1 rounded transition-all">
+                    Strategy
+                </button>
             </div>
         </div>
     </header>
 
+    <!-- Main Content -->
     <main class="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
         <!-- Summary Cards -->
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
+            <!-- Spot Price -->
             <div class="glass-panel rounded-xl p-4 flex flex-col justify-between">
                 <div class="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Spot Price</div>
                 <div class="flex items-end justify-between mt-2">
@@ -59,103 +74,837 @@
                 </div>
                 <div class="text-[9px] text-gray-500 mt-1">AIM: <span id="aimSpot">-</span></div>
             </div>
+
+            <!-- PCR -->
             <div class="glass-panel rounded-xl p-4 flex flex-col justify-between">
                 <div class="text-[10px] text-gray-400 font-bold uppercase tracking-wider">PCR (OI)</div>
                 <div class="flex items-end justify-between mt-2">
-                    <div id="pcrOi" class="text-2xl font-black text-white">0.0</div>
-                    <div id="pcrSentiment" class="text-[10px] font-black bg-green-500/20 text-green-500 px-2 py-0.5 rounded uppercase">BULLISH</div>
+                    <div id="pcrValue" class="text-2xl font-black text-white">0.00</div>
+                    <div id="pcrSignal" class="text-[10px] font-black bg-gray-500/20 text-gray-400 px-2 py-0.5 rounded uppercase">NEUTRAL</div>
                 </div>
-                <div class="text-[9px] text-gray-500 mt-1">Vol PCR: <span id="pcrVol">0</span></div>
+                <div class="text-[9px] text-gray-500 mt-1">Vol PCR: <span id="pcrVol">-</span></div>
             </div>
+
+            <!-- Max Pain -->
             <div class="glass-panel rounded-xl p-4 flex flex-col justify-between">
                 <div class="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Max Pain</div>
                 <div class="flex items-end justify-between mt-2">
-                    <div id="maxPain" class="text-2xl font-black text-red-400">0</div>
+                    <div id="maxPain" class="text-2xl font-black text-white">0.00</div>
+                    <div id="maxPainDiff" class="text-[10px] font-black text-gray-400">-</div>
                 </div>
-                <div class="text-[9px] text-gray-500 mt-1">Expiry Pain Level</div>
+                <div class="text-[9px] text-gray-500 mt-1">Expiry: <span id="expiryDate">-</span></div>
             </div>
+
+            <!-- IV Rank -->
             <div class="glass-panel rounded-xl p-4 flex flex-col justify-between">
-                <div class="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Support / Resistance</div>
+                <div class="text-[10px] text-gray-400 font-bold uppercase tracking-wider">IV Rank</div>
                 <div class="flex items-end justify-between mt-2">
-                    <div id="supportResistance" class="text-xl font-black text-white">0 / 0</div>
+                    <div id="ivRank" class="text-2xl font-black text-white">-</div>
+                    <div id="ivSignal" class="text-[10px] font-black bg-gray-500/20 text-gray-400 px-2 py-0.5 rounded uppercase">-</div>
                 </div>
-                <div class="text-[9px] text-gray-500 mt-1">Based on Max OI</div>
+                <div class="text-[9px] text-gray-500 mt-1">IV %: <span id="ivValue">-</span></div>
+            </div>
+
+            <!-- Net Greeks -->
+            <div class="glass-panel rounded-xl p-4 flex flex-col justify-between">
+                <div class="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Net Delta</div>
+                <div class="flex items-end justify-between mt-2">
+                    <div id="netDelta" class="text-2xl font-black text-white">-</div>
+                    <div id="deltaSignal" class="text-[10px] font-black bg-gray-500/20 text-gray-400 px-2 py-0.5 rounded uppercase">-</div>
+                </div>
+                <div class="text-[9px] text-gray-500 mt-1">Theta: <span id="netTheta">-</span></div>
             </div>
         </div>
 
-        <!-- Charts Grid -->
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 h-[400px]">
-            <div class="lg:col-span-2 glass-panel rounded-xl p-4 flex flex-col">
-                <h3 class="text-xs font-black uppercase text-gray-400 mb-4 italic">Open Interest Distribution</h3>
-                <div class="flex-1 min-h-0">
-                    <canvas id="oiDistChart"></canvas>
-                </div>
-            </div>
-            <div class="glass-panel rounded-xl p-4 flex flex-col">
-                <h3 class="text-xs font-black uppercase text-gray-400 mb-4 italic">PCR Trend (Today)</h3>
-                <div class="flex-1 min-h-0">
-                    <canvas id="pcrTrendChart"></canvas>
-                </div>
-            </div>
+        <!-- Tabs -->
+        <div class="flex gap-6 border-b border-white/10">
+            <button class="tab-btn tab-active pb-2 text-xs font-bold uppercase tracking-wider" data-tab="chain">Option Chain</button>
+            <button class="tab-btn pb-2 text-xs font-bold text-gray-500 uppercase tracking-wider hover:text-white transition-colors" data-tab="oi-analysis">OI Analysis</button>
+            <button class="tab-btn pb-2 text-xs font-bold text-gray-500 uppercase tracking-wider hover:text-white transition-colors" data-tab="pcr-trend">PCR Trend</button>
+            <button class="tab-btn pb-2 text-xs font-bold text-gray-500 uppercase tracking-wider hover:text-white transition-colors" data-tab="greeks">Greeks</button>
+            <button class="tab-btn pb-2 text-xs font-bold text-gray-500 uppercase tracking-wider hover:text-white transition-colors" data-tab="buildup">OI Buildup</button>
+            <button class="tab-btn pb-2 text-xs font-bold text-gray-500 uppercase tracking-wider hover:text-white transition-colors" data-tab="strategies">Strategies</button>
         </div>
 
-        <!-- Historical Snapshots -->
-        <div class="glass-panel rounded-xl overflow-hidden flex flex-col max-h-64">
-            <div class="p-3 border-b border-white/5 flex justify-between items-center bg-white/5">
-                <h3 class="text-xs font-black uppercase text-gray-400 italic">Historical Snapshots</h3>
-                <button id="clearHistoryBtn" class="text-[9px] font-bold text-red-400 hover:text-red-300 transition-colors uppercase">Clear History</button>
+        <!-- Tab Content -->
+        <div id="tabContent">
+            <!-- Option Chain Tab -->
+            <div id="chainTab" class="tab-pane">
+                <div class="glass-panel rounded-xl overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-[10px]">
+                            <thead class="sticky-header">
+                                <tr class="bg-slate-800 text-gray-400">
+                                    <th colspan="6" class="py-2 px-3 text-center text-green-500 font-bold border-r border-white/5">CALLS</th>
+                                    <th class="py-2 px-3 text-center bg-slate-700 text-white border-r border-white/5">STRIKE</th>
+                                    <th colspan="6" class="py-2 px-3 text-center text-red-500 font-bold">PUTS</th>
+                                </tr>
+                                <tr class="bg-slate-900 text-gray-500">
+                                    <th class="py-2 px-3 text-right">IV</th>
+                                    <th class="py-2 px-3 text-right">Delta</th>
+                                    <th class="py-2 px-3 text-right">Theta</th>
+                                    <th class="py-2 px-3 text-right">LTP</th>
+                                    <th class="py-2 px-3 text-right">OI Chg</th>
+                                    <th class="py-2 px-3 text-right border-r border-white/5">OI</th>
+                                    <th class="py-2 px-3 text-center bg-slate-800"></th>
+                                    <th class="py-2 px-3 text-left">OI</th>
+                                    <th class="py-2 px-3 text-left">OI Chg</th>
+                                    <th class="py-2 px-3 text-left">LTP</th>
+                                    <th class="py-2 px-3 text-left">Theta</th>
+                                    <th class="py-2 px-3 text-left">Delta</th>
+                                    <th class="py-2 px-3 text-left">IV</th>
+                                </tr>
+                            </thead>
+                            <tbody id="optionChainBody" class="divide-y divide-white/5">
+                                <!-- Dynamic content -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
-            <div class="flex-1 overflow-auto custom-scrollbar">
-                <table class="w-full text-left text-[11px] border-collapse">
-                    <thead class="sticky top-0 bg-slate-900 z-10">
-                        <tr class="text-gray-500 uppercase font-black border-b border-white/10">
-                            <th class="p-2">Time</th>
-                            <th class="p-2">Spot</th>
-                            <th class="p-2">PCR (Total)</th>
-                            <th class="p-2">PCR (Change)</th>
-                            <th class="p-2">Max Pain</th>
-                        </tr>
-                    </thead>
-                    <tbody id="snapshotBody" class="divide-y divide-white/5">
-                        <!-- Snapshots injected here -->
-                    </tbody>
-                </table>
-            </div>
-        </div>
 
-        <!-- Option Chain -->
-        <div class="glass-panel rounded-xl overflow-hidden flex flex-col">
-            <div class="p-3 border-b border-white/5 bg-white/5">
-                <h3 class="text-xs font-black uppercase text-gray-400 italic">Option Chain (ATM ± 20 Strikes)</h3>
+            <!-- OI Analysis Tab -->
+            <div id="oi-analysisTab" class="tab-pane hidden">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div class="glass-panel rounded-xl p-4">
+                        <h3 class="text-xs font-bold uppercase tracking-wider mb-4">OI Distribution</h3>
+                        <canvas id="oiChart" height="250"></canvas>
+                    </div>
+                    <div class="glass-panel rounded-xl p-4">
+                        <h3 class="text-xs font-bold uppercase tracking-wider mb-4">Support & Resistance</h3>
+                        <div id="supportResistance" class="space-y-2">
+                            <!-- Dynamic content -->
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div class="flex-1 overflow-auto custom-scrollbar">
-                <table class="w-full text-left text-[11px] border-collapse">
-                    <thead class="sticky top-0 bg-slate-900 z-20">
-                        <tr class="text-gray-500 uppercase font-black border-b border-white/10">
-                            <th colspan="4" class="p-2 text-center bg-green-900/20 text-green-500 border-r border-white/5 uppercase">Calls (Resistance)</th>
-                            <th class="p-2 text-center bg-slate-800">Strike</th>
-                            <th colspan="4" class="p-2 text-center bg-red-900/20 text-red-500 border-l border-white/5 uppercase">Puts (Support)</th>
-                        </tr>
-                        <tr class="text-gray-600 text-[10px] border-b border-white/5 bg-slate-900/80">
-                            <th class="p-2 text-right">OI</th>
-                            <th class="p-2 text-right">CHNG OI</th>
-                            <th class="p-2 text-right">VOL</th>
-                            <th class="p-2 text-right">LTP</th>
-                            <th class="p-2 text-center border-x border-white/5 bg-slate-800">PRICE</th>
-                            <th class="p-2">LTP</th>
-                            <th class="p-2">VOL</th>
-                            <th class="p-2">CHNG OI</th>
-                            <th class="p-2">OI</th>
-                        </tr>
-                    </thead>
-                    <tbody id="chainBody" class="divide-y divide-white/5">
-                        <!-- Option chain injected here -->
-                    </tbody>
-                </table>
+
+            <!-- PCR Trend Tab -->
+            <div id="pcr-trendTab" class="tab-pane hidden">
+                <div class="glass-panel rounded-xl p-4">
+                    <h3 class="text-xs font-bold uppercase tracking-wider mb-4">PCR Trend (Today)</h3>
+                    <canvas id="pcrChart" height="300"></canvas>
+                </div>
+            </div>
+
+            <!-- Greeks Tab -->
+            <div id="greeksTab" class="tab-pane hidden">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div class="glass-panel rounded-xl p-4">
+                        <h3 class="text-xs font-bold uppercase tracking-wider mb-4">Delta Distribution</h3>
+                        <canvas id="deltaChart" height="250"></canvas>
+                    </div>
+                    <div class="glass-panel rounded-xl p-4">
+                        <h3 class="text-xs font-bold uppercase tracking-wider mb-4">Theta (Time Decay)</h3>
+                        <canvas id="thetaChart" height="250"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- OI Buildup Tab -->
+            <div id="buildupTab" class="tab-pane hidden">
+                <div class="glass-panel rounded-xl p-4">
+                    <h3 class="text-xs font-bold uppercase tracking-wider mb-4">OI Buildup Analysis</h3>
+                    <div id="buildupAnalysis" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <!-- Dynamic content -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Strategies Tab -->
+            <div id="strategiesTab" class="tab-pane hidden">
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                    <div class="glass-panel rounded-xl p-4">
+                        <h3 class="text-xs font-bold uppercase tracking-wider mb-4">Strategy Builder</h3>
+                        <div class="space-y-3">
+                            <select id="strategyType" class="w-full bg-slate-900 border border-white/10 rounded px-3 py-2 text-xs">
+                                <option value="bull_call_spread">Bull Call Spread</option>
+                                <option value="bear_put_spread">Bear Put Spread</option>
+                                <option value="iron_condor">Iron Condor</option>
+                                <option value="long_straddle">Long Straddle</option>
+                                <option value="long_strangle">Long Strangle</option>
+                            </select>
+                            <button id="buildStrategyBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2 rounded transition-all">
+                                Build Strategy
+                            </button>
+                        </div>
+                    </div>
+                    <div class="glass-panel rounded-xl p-4 lg:col-span-2">
+                        <h3 class="text-xs font-bold uppercase tracking-wider mb-4">Strategy Analysis</h3>
+                        <div id="strategyAnalysis">
+                            <p class="text-gray-500 text-xs">Select a strategy to see analysis</p>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </main>
 
-    <script src="/static/options_app.js"></script>
+    <script>
+        // Global state
+        let currentUnderlying = 'NSE:NIFTY';
+        let socket = null;
+        let charts = {};
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            initSocket();
+            loadData();
+            setupEventListeners();
+        });
+
+        function initSocket() {
+            socket = io();
+            
+            socket.on('connect', () => {
+                console.log('Socket connected');
+                socket.emit('subscribe_options', { underlying: currentUnderlying });
+            });
+
+            socket.on('options_quote_update', (data) => {
+                // Handle real-time quote updates
+                console.log('Quote update:', data);
+            });
+
+            socket.on('options_alert', (data) => {
+                showAlert(data.message);
+            });
+        }
+
+        function setupEventListeners() {
+            // Underlying selector
+            document.getElementById('underlyingSelect').addEventListener('change', (e) => {
+                currentUnderlying = e.target.value;
+                socket.emit('subscribe_options', { underlying: currentUnderlying });
+                loadData();
+            });
+
+            // Refresh button
+            document.getElementById('refreshBtn').addEventListener('click', loadData);
+
+            // Backfill button
+            document.getElementById('backfillBtn').addEventListener('click', async () => {
+                try {
+                    const response = await fetch('/api/options/backfill', { method: 'POST' });
+                    const data = await response.json();
+                    showAlert(data.message);
+                } catch (error) {
+                    console.error('Backfill error:', error);
+                }
+            });
+
+            // Tab switching
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const tabId = btn.dataset.tab;
+                    switchTab(tabId);
+                });
+            });
+
+            // Strategy builder
+            document.getElementById('buildStrategyBtn')?.addEventListener('click', buildStrategy);
+        }
+
+        function switchTab(tabId) {
+            // Update active tab button
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('tab-active');
+                if (btn.dataset.tab === tabId) {
+                    btn.classList.add('tab-active');
+                }
+            });
+
+            // Show active tab content
+            document.querySelectorAll('.tab-pane').forEach(pane => {
+                pane.classList.add('hidden');
+            });
+            document.getElementById(tabId + 'Tab').classList.remove('hidden');
+
+            // Load tab-specific data
+            if (tabId === 'oi-analysis') loadOIAnalysis();
+            if (tabId === 'pcr-trend') loadPCRTrend();
+            if (tabId === 'greeks') loadGreeks();
+            if (tabId === 'buildup') loadBuildupAnalysis();
+        }
+
+        async function loadData() {
+            try {
+                // Load option chain
+                const chainResponse = await fetch(`/api/options/chain/${currentUnderlying}/with-greeks`);
+                const chainData = await chainResponse.json();
+                renderOptionChain(chainData);
+
+                // Load summary data
+                const oiResponse = await fetch(`/api/options/oi-analysis/${currentUnderlying}`);
+                const oiData = await oiResponse.json();
+                updateSummaryCards(oiData);
+
+                // Load IV analysis
+                const ivResponse = await fetch(`/api/options/iv-analysis/${currentUnderlying}`);
+                const ivData = await ivResponse.json();
+                updateIVCard(ivData);
+
+                // Update timestamp
+                document.getElementById('lastUpdated').textContent = new Date().toLocaleTimeString();
+            } catch (error) {
+                console.error('Error loading data:', error);
+            }
+        }
+
+        function renderOptionChain(data) {
+            const tbody = document.getElementById('optionChainBody');
+            tbody.innerHTML = '';
+
+            const chain = data.chain || [];
+            const spotPrice = data.spot_price || 0;
+
+            // Group by strike
+            const strikes = {};
+            chain.forEach(item => {
+                if (!strikes[item.strike]) {
+                    strikes[item.strike] = { call: null, put: null };
+                }
+                strikes[item.strike][item.option_type] = item;
+            });
+
+            // Sort strikes
+            const sortedStrikes = Object.keys(strikes).sort((a, b) => parseFloat(a) - parseFloat(b));
+
+            sortedStrikes.forEach(strike => {
+                const data = strikes[strike];
+                const call = data.call || {};
+                const put = data.put || {};
+
+                const isATM = Math.abs(parseFloat(strike) - spotPrice) / spotPrice < 0.01;
+                const rowClass = isATM ? 'bg-blue-500/10' : '';
+
+                const row = document.createElement('tr');
+                row.className = `${rowClass} hover:bg-white/5 transition-colors`;
+                row.innerHTML = `
+                    <td class="py-2 px-3 text-right text-gray-400">${call.iv || '-'}</td>
+                    <td class="py-2 px-3 text-right ${call.delta > 0 ? 'greek-positive' : 'greek-negative'}">${call.delta?.toFixed(2) || '-'}</td>
+                    <td class="py-2 px-3 text-right text-gray-400">${call.theta?.toFixed(2) || '-'}</td>
+                    <td class="py-2 px-3 text-right font-bold text-green-400">${call.ltp?.toFixed(2) || '-'}</td>
+                    <td class="py-2 px-3 text-right ${call.oi_change > 0 ? 'text-green-400' : 'text-red-400'}">${call.oi_change || '-'}</td>
+                    <td class="py-2 px-3 text-right border-r border-white/5">${call.oi?.toLocaleString() || '-'}</td>
+                    <td class="py-2 px-3 text-center font-black text-sm ${isATM ? 'text-blue-400' : 'text-white'} bg-slate-800">${strike}</td>
+                    <td class="py-2 px-3 text-left">${put.oi?.toLocaleString() || '-'}</td>
+                    <td class="py-2 px-3 text-left ${put.oi_change > 0 ? 'text-green-400' : 'text-red-400'}">${put.oi_change || '-'}</td>
+                    <td class="py-2 px-3 text-left font-bold text-red-400">${put.ltp?.toFixed(2) || '-'}</td>
+                    <td class="py-2 px-3 text-left text-gray-400">${put.theta?.toFixed(2) || '-'}</td>
+                    <td class="py-2 px-3 text-left ${put.delta > 0 ? 'greek-positive' : 'greek-negative'}">${put.delta?.toFixed(2) || '-'}</td>
+                    <td class="py-2 px-3 text-left text-gray-400">${put.iv || '-'}</td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function updateSummaryCards(data) {
+            const oiData = data.data || [];
+            
+            // Calculate totals
+            let totalCallOI = 0, totalPutOI = 0;
+            let totalCallOIChange = 0, totalPutOIChange = 0;
+
+            oiData.forEach(item => {
+                totalCallOI += item.call_oi || 0;
+                totalPutOI += item.put_oi || 0;
+                totalCallOIChange += item.call_oi_change || 0;
+                totalPutOIChange += item.put_oi_change || 0;
+            });
+
+            const pcr = totalCallOI > 0 ? (totalPutOI / totalCallOI).toFixed(2) : '0.00';
+            const pcrVol = totalCallOIChange > 0 ? (totalPutOIChange / totalCallOIChange).toFixed(2) : '0.00';
+
+            document.getElementById('pcrValue').textContent = pcr;
+            document.getElementById('pcrVol').textContent = pcrVol;
+
+            // PCR Signal
+            const pcrSignal = document.getElementById('pcrSignal');
+            if (pcr > 1.2) {
+                pcrSignal.textContent = 'BEARISH';
+                pcrSignal.className = 'text-[10px] font-black bg-red-500/20 text-red-500 px-2 py-0.5 rounded uppercase';
+            } else if (pcr < 0.8) {
+                pcrSignal.textContent = 'BULLISH';
+                pcrSignal.className = 'text-[10px] font-black bg-green-500/20 text-green-500 px-2 py-0.5 rounded uppercase';
+            } else {
+                pcrSignal.textContent = 'NEUTRAL';
+                pcrSignal.className = 'text-[10px] font-black bg-gray-500/20 text-gray-400 px-2 py-0.5 rounded uppercase';
+            }
+        }
+
+        function updateIVCard(data) {
+            document.getElementById('ivRank').textContent = data.iv_rank !== undefined ? data.iv_rank + '%' : '-';
+            document.getElementById('ivValue').textContent = data.current_iv !== undefined ? data.current_iv + '%' : '-';
+
+            const ivSignal = document.getElementById('ivSignal');
+            if (data.iv_rank > 70) {
+                ivSignal.textContent = 'HIGH';
+                ivSignal.className = 'text-[10px] font-black bg-red-500/20 text-red-500 px-2 py-0.5 rounded uppercase';
+            } else if (data.iv_rank < 30) {
+                ivSignal.textContent = 'LOW';
+                ivSignal.className = 'text-[10px] font-black bg-green-500/20 text-green-500 px-2 py-0.5 rounded uppercase';
+            } else {
+                ivSignal.textContent = 'NORMAL';
+                ivSignal.className = 'text-[10px] font-black bg-gray-500/20 text-gray-400 px-2 py-0.5 rounded uppercase';
+            }
+        }
+
+        async function loadOIAnalysis() {
+            try {
+                const response = await fetch(`/api/options/oi-analysis/${currentUnderlying}`);
+                const data = await response.json();
+                renderOIChart(data);
+
+                // Load support/resistance
+                const srResponse = await fetch(`/api/options/support-resistance/${currentUnderlying}`);
+                const srData = await srResponse.json();
+                renderSupportResistance(srData);
+            } catch (error) {
+                console.error('Error loading OI analysis:', error);
+            }
+        }
+
+        function renderOIChart(data) {
+            const ctx = document.getElementById('oiChart').getContext('2d');
+            
+            if (charts.oi) {
+                charts.oi.destroy();
+            }
+
+            const oiData = data.data || [];
+            const strikes = oiData.map(d => d.strike);
+            const callOI = oiData.map(d => d.call_oi);
+            const putOI = oiData.map(d => d.put_oi);
+
+            charts.oi = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: strikes,
+                    datasets: [
+                        {
+                            label: 'Call OI',
+                            data: callOI,
+                            backgroundColor: 'rgba(34, 197, 94, 0.6)',
+                            borderColor: 'rgba(34, 197, 94, 1)',
+                            borderWidth: 1
+                        },
+                        {
+                            label: 'Put OI',
+                            data: putOI,
+                            backgroundColor: 'rgba(239, 68, 68, 0.6)',
+                            borderColor: 'rgba(239, 68, 68, 1)',
+                            borderWidth: 1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { ticks: { color: '#94a3b8', font: { size: 9 } } },
+                        y: { ticks: { color: '#94a3b8', font: { size: 9 } } }
+                    },
+                    plugins: {
+                        legend: { labels: { color: '#f8fafc', font: { size: 10 } } }
+                    }
+                }
+            });
+        }
+
+        function renderSupportResistance(data) {
+            const container = document.getElementById('supportResistance');
+            container.innerHTML = '';
+
+            const resistance = data.resistance_levels || [];
+            const support = data.support_levels || [];
+
+            // Support levels
+            const supportDiv = document.createElement('div');
+            supportDiv.innerHTML = '<h4 class="text-[10px] font-bold text-green-500 uppercase mb-2">Support Levels</h4>';
+            support.forEach(level => {
+                supportDiv.innerHTML += `
+                    <div class="flex justify-between items-center py-1 px-2 bg-green-500/10 rounded mb-1">
+                        <span class="text-xs font-bold">${level.strike}</span>
+                        <span class="text-[9px] text-gray-400">OI: ${level.oi?.toLocaleString()}</span>
+                    </div>
+                `;
+            });
+            container.appendChild(supportDiv);
+
+            // Resistance levels
+            const resistanceDiv = document.createElement('div');
+            resistanceDiv.innerHTML = '<h4 class="text-[10px] font-bold text-red-500 uppercase mb-2 mt-4">Resistance Levels</h4>';
+            resistance.forEach(level => {
+                resistanceDiv.innerHTML += `
+                    <div class="flex justify-between items-center py-1 px-2 bg-red-500/10 rounded mb-1">
+                        <span class="text-xs font-bold">${level.strike}</span>
+                        <span class="text-[9px] text-gray-400">OI: ${level.oi?.toLocaleString()}</span>
+                    </div>
+                `;
+            });
+            container.appendChild(resistanceDiv);
+        }
+
+        async function loadPCRTrend() {
+            try {
+                const response = await fetch(`/api/options/pcr-trend/${currentUnderlying}`);
+                const data = await response.json();
+                renderPCRChart(data);
+            } catch (error) {
+                console.error('Error loading PCR trend:', error);
+            }
+        }
+
+        function renderPCRChart(data) {
+            const ctx = document.getElementById('pcrChart').getContext('2d');
+            
+            if (charts.pcr) {
+                charts.pcr.destroy();
+            }
+
+            const history = data.history || [];
+            const timestamps = history.map(h => new Date(h.timestamp).toLocaleTimeString());
+            const pcrOI = history.map(h => h.pcr_oi);
+            const pcrVol = history.map(h => h.pcr_vol);
+
+            charts.pcr = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: timestamps,
+                    datasets: [
+                        {
+                            label: 'PCR (OI)',
+                            data: pcrOI,
+                            borderColor: 'rgba(59, 130, 246, 1)',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            fill: true,
+                            tension: 0.4
+                        },
+                        {
+                            label: 'PCR (Volume)',
+                            data: pcrVol,
+                            borderColor: 'rgba(168, 85, 247, 1)',
+                            backgroundColor: 'rgba(168, 85, 247, 0.1)',
+                            fill: true,
+                            tension: 0.4
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { ticks: { color: '#94a3b8', font: { size: 9 } } },
+                        y: { 
+                            ticks: { color: '#94a3b8', font: { size: 9 } },
+                            suggestedMin: 0.5,
+                            suggestedMax: 1.5
+                        }
+                    },
+                    plugins: {
+                        legend: { labels: { color: '#f8fafc', font: { size: 10 } } }
+                    }
+                }
+            });
+        }
+
+        async function loadGreeks() {
+            try {
+                const response = await fetch(`/api/options/chain/${currentUnderlying}/with-greeks`);
+                const data = await response.json();
+                renderGreeksCharts(data);
+            } catch (error) {
+                console.error('Error loading Greeks:', error);
+            }
+        }
+
+        function renderGreeksCharts(data) {
+            const chain = data.chain || [];
+            const strikes = [...new Set(chain.map(c => c.strike))].sort((a, b) => a - b);
+
+            // Delta chart
+            const deltaCtx = document.getElementById('deltaChart').getContext('2d');
+            if (charts.delta) charts.delta.destroy();
+
+            const callDeltas = strikes.map(s => {
+                const item = chain.find(c => c.strike === s && c.option_type === 'call');
+                return item ? item.delta : 0;
+            });
+            const putDeltas = strikes.map(s => {
+                const item = chain.find(c => c.strike === s && c.option_type === 'put');
+                return item ? item.delta : 0;
+            });
+
+            charts.delta = new Chart(deltaCtx, {
+                type: 'line',
+                data: {
+                    labels: strikes,
+                    datasets: [
+                        {
+                            label: 'Call Delta',
+                            data: callDeltas,
+                            borderColor: 'rgba(34, 197, 94, 1)',
+                            backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                            fill: false
+                        },
+                        {
+                            label: 'Put Delta',
+                            data: putDeltas,
+                            borderColor: 'rgba(239, 68, 68, 1)',
+                            backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                            fill: false
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { ticks: { color: '#94a3b8', font: { size: 9 } } },
+                        y: { ticks: { color: '#94a3b8', font: { size: 9 } } }
+                    },
+                    plugins: {
+                        legend: { labels: { color: '#f8fafc', font: { size: 10 } } }
+                    }
+                }
+            });
+
+            // Theta chart
+            const thetaCtx = document.getElementById('thetaChart').getContext('2d');
+            if (charts.theta) charts.theta.destroy();
+
+            const callThetas = strikes.map(s => {
+                const item = chain.find(c => c.strike === s && c.option_type === 'call');
+                return item ? item.theta : 0;
+            });
+            const putThetas = strikes.map(s => {
+                const item = chain.find(c => c.strike === s && c.option_type === 'put');
+                return item ? item.theta : 0;
+            });
+
+            charts.theta = new Chart(thetaCtx, {
+                type: 'bar',
+                data: {
+                    labels: strikes,
+                    datasets: [
+                        {
+                            label: 'Call Theta',
+                            data: callThetas,
+                            backgroundColor: 'rgba(34, 197, 94, 0.6)'
+                        },
+                        {
+                            label: 'Put Theta',
+                            data: putThetas,
+                            backgroundColor: 'rgba(239, 68, 68, 0.6)'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { ticks: { color: '#94a3b8', font: { size: 9 } } },
+                        y: { ticks: { color: '#94a3b8', font: { size: 9 } } }
+                    },
+                    plugins: {
+                        legend: { labels: { color: '#f8fafc', font: { size: 10 } } }
+                    }
+                }
+            });
+        }
+
+        async function loadBuildupAnalysis() {
+            try {
+                const response = await fetch(`/api/options/oi-buildup/${currentUnderlying}`);
+                const data = await response.json();
+                renderBuildupAnalysis(data);
+            } catch (error) {
+                console.error('Error loading buildup analysis:', error);
+            }
+        }
+
+        function renderBuildupAnalysis(data) {
+            const container = document.getElementById('buildupAnalysis');
+            container.innerHTML = '';
+
+            const summary = data.summary || {};
+            const signals = data.signals || [];
+
+            // Pattern distribution
+            const patterns = summary.pattern_distribution || {};
+            
+            const patternColors = {
+                'Long Buildup': 'bg-green-500/20 text-green-500',
+                'Short Buildup': 'bg-red-500/20 text-red-500',
+                'Long Unwinding': 'bg-orange-500/20 text-orange-500',
+                'Short Covering': 'bg-blue-500/20 text-blue-500',
+                'Neutral': 'bg-gray-500/20 text-gray-500'
+            };
+
+            Object.entries(patterns).forEach(([pattern, count]) => {
+                const div = document.createElement('div');
+                div.className = 'glass-panel rounded-xl p-3';
+                div.innerHTML = `
+                    <div class="text-[10px] text-gray-400 uppercase">${pattern}</div>
+                    <div class="text-2xl font-black ${patternColors[pattern] || 'text-white'} rounded px-2 py-1 mt-1 inline-block">${count}</div>
+                `;
+                container.appendChild(div);
+            });
+
+            // Strong signals
+            const strongSignals = signals.filter(s => s.strength === 'strong').slice(0, 5);
+            if (strongSignals.length > 0) {
+                const signalsDiv = document.createElement('div');
+                signalsDiv.className = 'glass-panel rounded-xl p-3 lg:col-span-2';
+                signalsDiv.innerHTML = '<div class="text-[10px] text-gray-400 uppercase mb-2">Strong Signals</div>';
+                
+                strongSignals.forEach(signal => {
+                    const color = signal.buildup_type.includes('Long') ? 'text-green-500' : 
+                                  signal.buildup_type.includes('Short') ? 'text-red-500' : 'text-gray-400';
+                    signalsDiv.innerHTML += `
+                        <div class="flex justify-between items-center py-1 text-xs">
+                            <span class="font-bold">${signal.strike} ${signal.option_type.toUpperCase()}</span>
+                            <span class="${color}">${signal.buildup_type}</span>
+                        </div>
+                    `;
+                });
+                
+                container.appendChild(signalsDiv);
+            }
+        }
+
+        async function buildStrategy() {
+            const strategyType = document.getElementById('strategyType').value;
+            
+            try {
+                let endpoint = '';
+                let body = {};
+
+                // Get current spot price
+                const chainResponse = await fetch(`/api/options/chain/${currentUnderlying}/with-greeks`);
+                const chainData = await chainResponse.json();
+                const spotPrice = chainData.spot_price || 0;
+
+                switch(strategyType) {
+                    case 'bull_call_spread':
+                        endpoint = '/api/strategy/bull-call-spread';
+                        body = {
+                            underlying: currentUnderlying,
+                            spot_price: spotPrice,
+                            lower_strike: Math.floor(spotPrice / 100) * 100,
+                            higher_strike: Math.ceil((spotPrice + 200) / 100) * 100,
+                            lower_premium: 50,
+                            higher_premium: 20,
+                            expiry: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+                        };
+                        break;
+                    case 'iron_condor':
+                        endpoint = '/api/strategy/iron-condor';
+                        body = {
+                            underlying: currentUnderlying,
+                            spot_price: spotPrice,
+                            put_sell_strike: Math.floor((spotPrice - 200) / 100) * 100,
+                            put_buy_strike: Math.floor((spotPrice - 400) / 100) * 100,
+                            call_sell_strike: Math.ceil((spotPrice + 200) / 100) * 100,
+                            call_buy_strike: Math.ceil((spotPrice + 400) / 100) * 100,
+                            premiums: { put_buy: 10, put_sell: 25, call_sell: 25, call_buy: 10 },
+                            expiry: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+                        };
+                        break;
+                    case 'long_straddle':
+                        endpoint = '/api/strategy/long-straddle';
+                        body = {
+                            underlying: currentUnderlying,
+                            spot_price: spotPrice,
+                            strike: Math.round(spotPrice / 100) * 100,
+                            call_premium: 80,
+                            put_premium: 70,
+                            expiry: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+                        };
+                        break;
+                }
+
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+
+                const data = await response.json();
+                renderStrategyAnalysis(data.analysis);
+            } catch (error) {
+                console.error('Error building strategy:', error);
+            }
+        }
+
+        function renderStrategyAnalysis(analysis) {
+            const container = document.getElementById('strategyAnalysis');
+            
+            if (!analysis || analysis.error) {
+                container.innerHTML = '<p class="text-gray-500 text-xs">Error loading strategy analysis</p>';
+                return;
+            }
+
+            container.innerHTML = `
+                <div class="space-y-4">
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div class="bg-slate-900/50 rounded p-3">
+                            <div class="text-[9px] text-gray-500 uppercase">Net Premium</div>
+                            <div class="text-lg font-bold ${analysis.net_premium >= 0 ? 'text-green-500' : 'text-red-500'}">${analysis.net_premium > 0 ? '+' : ''}${analysis.net_premium}</div>
+                        </div>
+                        <div class="bg-slate-900/50 rounded p-3">
+                            <div class="text-[9px] text-gray-500 uppercase">Max Profit</div>
+                            <div class="text-lg font-bold text-green-500">${analysis.max_profit}</div>
+                        </div>
+                        <div class="bg-slate-900/50 rounded p-3">
+                            <div class="text-[9px] text-gray-500 uppercase">Max Loss</div>
+                            <div class="text-lg font-bold text-red-500">${analysis.max_loss}</div>
+                        </div>
+                        <div class="bg-slate-900/50 rounded p-3">
+                            <div class="text-[9px] text-gray-500 uppercase">Breakeven</div>
+                            <div class="text-lg font-bold text-blue-500">${analysis.breakeven_points?.join(', ') || '-'}</div>
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div class="bg-slate-900/50 rounded p-3">
+                            <div class="text-[9px] text-gray-500 uppercase">Net Delta</div>
+                            <div class="text-lg font-bold">${analysis.net_delta}</div>
+                        </div>
+                        <div class="bg-slate-900/50 rounded p-3">
+                            <div class="text-[9px] text-gray-500 uppercase">Net Gamma</div>
+                            <div class="text-lg font-bold">${analysis.net_gamma}</div>
+                        </div>
+                        <div class="bg-slate-900/50 rounded p-3">
+                            <div class="text-[9px] text-gray-500 uppercase">Net Theta</div>
+                            <div class="text-lg font-bold ${analysis.net_theta >= 0 ? 'text-green-500' : 'text-red-500'}">${analysis.net_theta}</div>
+                        </div>
+                        <div class="bg-slate-900/50 rounded p-3">
+                            <div class="text-[9px] text-gray-500 uppercase">Net Vega</div>
+                            <div class="text-lg font-bold">${analysis.net_vega}</div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <h4 class="text-[10px] text-gray-400 uppercase mb-2">Legs</h4>
+                        <div class="space-y-2">
+                            ${analysis.legs?.map(leg => `
+                                <div class="flex justify-between items-center bg-slate-900/50 rounded p-2 text-xs">
+                                    <span class="font-bold">${leg.position.toUpperCase()} ${leg.strike} ${leg.option_type.toUpperCase()}</span>
+                                    <span class="${leg.position === 'long' ? 'text-red-500' : 'text-green-500'}">${leg.net_premium}</span>
+                                </div>
+                            `).join('') || ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function showAlert(message) {
+            // Simple alert - can be enhanced with toast notifications
+            console.log('Alert:', message);
+        }
+    </script>
 </body>
 </html>
