@@ -37,6 +37,7 @@ class LocalDB:
         self.conn = duckdb.connect(DB_PATH)
         self.conn.execute("SET memory_limit = '1GB'")
         self.conn.execute("SET threads = 4")
+        self.conn.execute("SET TimeZone='UTC'")
 
         # Check and load extensions to avoid slow INSTALL calls on every boot
         try:
@@ -164,11 +165,14 @@ class LocalDB:
         with self._execute_lock:
             df = self.conn.execute(sql, params).fetch_df()
 
+        # Ensure all datetime columns are UTC-aware
+        for col in df.select_dtypes(include=['datetime64']).columns:
+            if df[col].dt.tz is None:
+                df[col] = df[col].dt.tz_localize('UTC')
+            else:
+                df[col] = df[col].dt.tz_convert('UTC')
+
         if json_serialize:
-            # Ensure datetime columns are UTC-aware for correct ISO serialization (with 'Z')
-            for col in df.select_dtypes(include=['datetime64']).columns:
-                if df[col].dt.tz is None:
-                    df[col] = df[col].dt.tz_localize('UTC')
             # Use pandas to_json to handle NaN/nulls correctly for API consumption
             return json.loads(df.to_json(orient='records', date_format='iso'))
 
