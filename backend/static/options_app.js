@@ -1,12 +1,11 @@
 /**
- * PRODESK Options Analysis Dashboard
+ * PRODESK Options Analysis Dashboard - One Glance Optimized
  */
 
 let currentUnderlying = 'NSE:NIFTY';
-let currentTab = 'chain';
 let charts = {};
 let socket;
-let symbolToCells = {}; // technical_symbol -> { ltp, bidAsk, volume, tr }
+let symbolToCells = {};
 
 async function init() {
     initSocket();
@@ -21,255 +20,244 @@ async function init() {
             socket.emit('subscribe_options', { underlying: currentUnderlying });
         }
 
-        loadData();
+        loadAllData();
     });
 
-    loadData();
-    setInterval(loadData, 300000); // Background refresh every 5 mins for OI data
+    document.getElementById('refreshBtn').onclick = loadAllData;
+    document.getElementById('backfillBtn').onclick = triggerBackfill;
+
+    loadAllData();
+    setInterval(loadAllData, 300000); // 5 min refresh
 }
 
 function initSocket() {
     socket = io();
     socket.on('connect', () => {
-        console.log('Socket connected');
         if (currentUnderlying) {
             socket.emit('subscribe_options', { underlying: currentUnderlying });
         }
     });
 
     socket.on('options_quote_update', (data) => {
-        // data: { underlying, symbol, lp, volume, bid, ask }
         if (data.underlying !== currentUnderlying) return;
-
         const cells = symbolToCells[data.symbol];
         if (!cells) return;
 
         if (data.lp !== undefined && data.lp !== null) {
             const oldLtp = parseFloat(cells.ltp.innerText);
             cells.ltp.innerText = data.lp.toFixed(2);
-
-            // Flash effect
-            if (oldLtp && oldLtp !== data.lp) {
+            if (oldLtp && Math.abs(oldLtp - data.lp) > 0.01) {
                 cells.tr.classList.remove('flash-up', 'flash-down');
-                void cells.tr.offsetWidth; // trigger reflow
+                void cells.tr.offsetWidth;
                 cells.tr.classList.add(data.lp >= oldLtp ? 'flash-up' : 'flash-down');
             }
         }
-
         if (data.volume !== undefined && data.volume !== null) {
             cells.volume.innerText = data.volume.toLocaleString();
-        }
-
-        if (data.bid !== undefined || data.ask !== undefined) {
-            const bid = data.bid !== undefined ? data.bid.toFixed(2) : (cells.bidAsk.innerText.split(' / ')[0] || '-');
-            const ask = data.ask !== undefined ? data.ask.toFixed(2) : (cells.bidAsk.innerText.split(' / ')[1] || '-');
-            cells.bidAsk.innerText = `${bid} / ${ask}`;
         }
     });
 }
 
-function switchTab(tabId) {
-    currentTab = tabId;
-    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-    document.getElementById(`tab-${tabId}`).classList.add('active');
-
-    document.querySelectorAll('main > div').forEach(div => div.classList.add('hidden'));
-    document.getElementById(`content-${tabId}`).classList.remove('hidden');
-
-    loadData();
+async function triggerBackfill() {
+    const btn = document.getElementById('backfillBtn');
+    btn.disabled = true;
+    btn.innerText = 'Processing...';
+    try {
+        await fetch('/api/options/backfill', { method: 'POST' }); // Hypothetical or direct backfill trigger
+        setTimeout(loadAllData, 2000);
+    } catch (e) { console.error(e); }
+    finally {
+        btn.disabled = false;
+        btn.innerText = 'Backfill';
+    }
 }
 
-async function loadData() {
-    if (currentTab === 'chain') await loadChain();
-    else if (currentTab === 'oi') await loadOIAnalysis();
-    else if (currentTab === 'pcr') await loadPCRTrend();
+async function loadAllData() {
+    try {
+        const [chainRes, oiRes, trendRes] = await Promise.all([
+            fetch(`/api/options/chain/${encodeURIComponent(currentUnderlying)}`),
+            fetch(`/api/options/oi-analysis/${encodeURIComponent(currentUnderlying)}`),
+            fetch(`/api/options/pcr-trend/${encodeURIComponent(currentUnderlying)}`)
+        ]);
+
+        const chainData = await chainRes.json();
+        const oiData = await oiRes.json();
+        const trendData = await trendRes.json();
+
+        updateHeader(chainData);
+        renderOptionChain(chainData);
+        renderOICharts(oiData);
+        renderPCRTrend(trendData);
+        updateSummary(trendData, oiData);
+        renderSnapshots(trendData);
+
+    } catch (err) { console.error("Load failed:", err); }
+}
+
+function updateHeader(data) {
+    if (data.timestamp) {
+        document.getElementById('lastUpdated').innerText = formatIST(data.timestamp);
+    }
 }
 
 function formatIST(ts) {
     if (!ts) return '-';
     const date = new Date(ts);
     return new Intl.DateTimeFormat('en-IN', {
-        timeZone: 'Asia/Kolkata',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false
+        timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
     }).format(date);
 }
 
-async function loadChain() {
-    try {
-        const res = await fetch(`/api/options/chain/${encodeURIComponent(currentUnderlying)}`);
-        const data = await res.json();
+function renderOptionChain(data) {
+    const body = document.getElementById('chainBody');
+    body.innerHTML = '';
+    symbolToCells = {};
 
-        const body = document.getElementById('chainBody');
-        body.innerHTML = '';
-        symbolToCells = {};
+    const grouped = {};
+    data.chain.forEach(opt => {
+        if (!grouped[opt.strike]) grouped[opt.strike] = { call: null, put: null };
+        if (opt.option_type === 'call') grouped[opt.strike].call = opt;
+        else grouped[opt.strike].put = opt;
+    });
 
-        if (data.timestamp) {
-            document.getElementById('lastUpdateTime').innerText = formatIST(data.timestamp);
-        }
+    const strikes = Object.keys(grouped).map(Number).sort((a, b) => a - b);
+    strikes.forEach(strike => {
+        const pair = grouped[strike];
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-white/5 border-b border-white/5';
 
-        // Group by strike
-        const grouped = {};
-        data.chain.forEach(opt => {
-            if (!grouped[opt.strike]) grouped[opt.strike] = { call: null, put: null };
-            if (opt.option_type === 'call') grouped[opt.strike].call = opt;
-            else grouped[opt.strike].put = opt;
-        });
+        const c = pair.call || {};
+        const p = pair.put || {};
 
-        const sortedStrikes = Object.keys(grouped).map(Number).sort((a, b) => a - b);
+        tr.innerHTML = `
+            <td class="p-2 text-right font-mono text-green-400">${c.oi?.toLocaleString() || '0'}</td>
+            <td class="p-2 text-right font-mono ${c.oi_change >= 0 ? 'text-green-500' : 'text-red-500'}">${c.oi_change?.toLocaleString() || '0'}</td>
+            <td id="vol-call-${strike}" class="p-2 text-right font-mono text-gray-500">${c.volume?.toLocaleString() || '0'}</td>
+            <td id="ltp-call-${strike}" class="p-2 text-right font-mono text-gray-300 font-bold">${c.ltp?.toFixed(2) || '0.00'}</td>
 
-        sortedStrikes.forEach(strike => {
-            const pair = grouped[strike];
-            const tr = document.createElement('tr');
-            tr.className = 'hover:bg-white/5 transition-colors border-b border-white/5';
+            <td class="p-2 text-center font-black bg-slate-800 border-x border-white/5 text-yellow-500">${strike}</td>
 
-            const c = pair.call || {};
-            const p = pair.put || {};
+            <td id="ltp-put-${strike}" class="p-2 font-mono text-gray-300 font-bold">${p.ltp?.toFixed(2) || '0.00'}</td>
+            <td id="vol-put-${strike}" class="p-2 font-mono text-gray-500">${p.volume?.toLocaleString() || '0'}</td>
+            <td class="p-2 font-mono ${p.oi_change >= 0 ? 'text-green-500' : 'text-red-500'}">${p.oi_change?.toLocaleString() || '0'}</td>
+            <td class="p-2 font-mono text-red-400">${p.oi?.toLocaleString() || '0'}</td>
+        `;
+        body.appendChild(tr);
 
-            tr.innerHTML = `
-                <td class="p-2 font-mono text-blue-400">${c.oi?.toLocaleString() || '-'}</td>
-                <td class="p-2 font-mono ${c.oi_change >= 0 ? 'text-green-500' : 'text-red-500'}">${c.oi_change?.toLocaleString() || '-'}</td>
-                <td id="vol-call-${strike}" class="p-2 font-mono text-gray-500">${c.volume?.toLocaleString() || '-'}</td>
-                <td id="bidAsk-call-${strike}" class="p-2 font-mono text-gray-400 text-[9px]">- / -</td>
-                <td id="ltp-call-${strike}" class="p-2 font-mono text-gray-300 font-bold">${c.ltp?.toFixed(2) || '-'}</td>
-
-                <td class="p-2 text-center font-black bg-gray-900/50 border-x border-white/5 text-blue-100">${strike}</td>
-
-                <td id="ltp-put-${strike}" class="p-2 font-mono text-gray-300 font-bold text-right">${p.ltp?.toFixed(2) || '-'}</td>
-                <td id="bidAsk-put-${strike}" class="p-2 font-mono text-gray-400 text-right text-[9px]">- / -</td>
-                <td id="vol-put-${strike}" class="p-2 font-mono text-gray-500 text-right">${p.volume?.toLocaleString() || '-'}</td>
-                <td class="p-2 font-mono ${p.oi_change >= 0 ? 'text-green-500' : 'text-red-500'} text-right">${p.oi_change?.toLocaleString() || '-'}</td>
-                <td class="p-2 font-mono text-red-400 text-right">${p.oi?.toLocaleString() || '-'}</td>
-            `;
-            body.appendChild(tr);
-
-            if (c.symbol) {
-                symbolToCells[c.symbol] = {
-                    ltp: document.getElementById(`ltp-call-${strike}`),
-                    bidAsk: document.getElementById(`bidAsk-call-${strike}`),
-                    volume: document.getElementById(`vol-call-${strike}`),
-                    tr: tr
-                };
-            }
-            if (p.symbol) {
-                symbolToCells[p.symbol] = {
-                    ltp: document.getElementById(`ltp-put-${strike}`),
-                    bidAsk: document.getElementById(`bidAsk-put-${strike}`),
-                    volume: document.getElementById(`vol-put-${strike}`),
-                    tr: tr
-                };
-            }
-        });
-
-    } catch (err) { console.error("Load chain failed:", err); }
+        if (c.symbol) symbolToCells[c.symbol] = { ltp: document.getElementById(`ltp-call-${strike}`), volume: document.getElementById(`vol-call-${strike}`), tr };
+        if (p.symbol) symbolToCells[p.symbol] = { ltp: document.getElementById(`ltp-put-${strike}`), volume: document.getElementById(`vol-put-${strike}`), tr };
+    });
 }
 
-async function loadOIAnalysis() {
-    try {
-        const res = await fetch(`/api/options/oi-analysis/${encodeURIComponent(currentUnderlying)}`);
-        const result = await res.json();
-        const data = result.data;
+function renderOICharts(result) {
+    const data = result.data;
+    const labels = data.map(d => d.strike);
+    const callOI = data.map(d => d.call_oi);
+    const putOI = data.map(d => d.put_oi);
 
-        const labels = data.map(d => d.strike);
-        const callOI = data.map(d => d.call_oi);
-        const putOI = data.map(d => d.put_oi);
-        const callChg = data.map(d => d.call_oi_change);
-        const putChg = data.map(d => d.put_oi_change);
-
-        renderBarChart('oiDistChart', labels, [
-            { label: 'Call OI', data: callOI, backgroundColor: 'rgba(59, 130, 246, 0.6)' },
-            { label: 'Put OI', data: putOI, backgroundColor: 'rgba(239, 68, 68, 0.6)' }
-        ]);
-
-        renderBarChart('oiChgChart', labels, [
-            { label: 'Call OI Chg', data: callChg, backgroundColor: 'rgba(59, 130, 246, 0.8)' },
-            { label: 'Put OI Chg', data: putChg, backgroundColor: 'rgba(239, 68, 68, 0.8)' }
-        ]);
-
-    } catch (err) { console.error("Load OI analysis failed:", err); }
-}
-
-async function loadPCRTrend() {
-    try {
-        const res = await fetch(`/api/options/pcr-trend/${encodeURIComponent(currentUnderlying)}`);
-        const data = await res.json();
-        const history = data.history;
-
-        if (history.length > 0) {
-            const last = history[history.length - 1];
-            document.getElementById('maxPainVal').innerText = last.max_pain?.toFixed(0) || '-';
-            document.getElementById('spotPriceVal').innerText = last.spot_price?.toFixed(2) || '-';
-        }
-
-        const labels = history.map(h => formatIST(h.timestamp));
-        const pcrOI = history.map(h => h.pcr_oi);
-        const pcrVol = history.map(h => h.pcr_vol);
-        const price = history.map(h => h.underlying_price);
-        const maxPain = history.map(h => h.max_pain);
-
-        renderLineChart('pcrTrendChart', labels, [
-            { label: 'PCR (OI)', data: pcrOI, borderColor: '#3b82f6', yAxisID: 'y' },
-            { label: 'PCR (Vol)', data: pcrVol, borderColor: '#10b981', yAxisID: 'y' },
-            { label: 'Max Pain', data: maxPain, borderColor: '#ef4444', yAxisID: 'y1', borderDash: [5, 5] },
-            { label: 'Underlying Price', data: price, borderColor: '#f59e0b', yAxisID: 'y1' }
-        ]);
-
-    } catch (err) { console.error("Load PCR trend failed:", err); }
-}
-
-function renderBarChart(canvasId, labels, datasets) {
-    if (charts[canvasId]) charts[canvasId].destroy();
-
-    const ctx = document.getElementById(canvasId).getContext('2d');
-    charts[canvasId] = new Chart(ctx, {
+    if (charts.oiDistChart) charts.oiDistChart.destroy();
+    const ctx = document.getElementById('oiDistChart').getContext('2d');
+    charts.oiDistChart = new Chart(ctx, {
         type: 'bar',
-        data: { labels, datasets },
+        data: {
+            labels,
+            datasets: [
+                { label: 'Call OI', data: callOI, backgroundColor: '#3b82f6' },
+                { label: 'Put OI', data: putOI, backgroundColor: '#ef4444' }
+            ]
+        },
         options: {
-            responsive: true,
-            maintainAspectRatio: false,
+            responsive: true, maintainAspectRatio: false,
             scales: {
-                x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#9ca3af', font: { size: 10 } } },
-                y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#9ca3af', font: { size: 10 } } }
+                x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#64748b', font: { size: 9 } } },
+                y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#64748b', font: { size: 9 } } }
             },
-            plugins: {
-                legend: { labels: { color: '#d1d5db', font: { size: 10, weight: 'bold' } } }
-            }
+            plugins: { legend: { position: 'top', align: 'end', labels: { color: '#94a3b8', font: { size: 9, weight: 'bold' }, usePointStyle: true, boxWidth: 6 } } }
         }
     });
 }
 
-function renderLineChart(canvasId, labels, datasets) {
-    if (charts[canvasId]) charts[canvasId].destroy();
+function renderPCRTrend(result) {
+    const history = result.history;
+    const labels = history.map(h => formatIST(h.timestamp).split(':')[0] + ':' + formatIST(h.timestamp).split(':')[1]);
+    const pcrOI = history.map(h => h.pcr_oi);
 
-    const ctx = document.getElementById(canvasId).getContext('2d');
-    charts[canvasId] = new Chart(ctx, {
+    if (charts.pcrTrendChart) charts.pcrTrendChart.destroy();
+    const ctx = document.getElementById('pcrTrendChart').getContext('2d');
+    charts.pcrTrendChart = new Chart(ctx, {
         type: 'line',
-        data: { labels, datasets },
+        data: {
+            labels,
+            datasets: [{ label: 'PCR (Total OI)', data: pcrOI, borderColor: '#818cf8', backgroundColor: 'rgba(129, 140, 248, 0.1)', fill: true, tension: 0.4, pointRadius: 2 }]
+        },
         options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            elements: { point: { radius: 0 }, line: { borderWidth: 2, tension: 0.3 } },
+            responsive: true, maintainAspectRatio: false,
             scales: {
-                x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#9ca3af', font: { size: 10 } } },
-                y: {
-                    grid: { color: 'rgba(255,255,255,0.05)' },
-                    ticks: { color: '#3b82f6', font: { size: 10 } },
-                    position: 'left',
-                    title: { display: true, text: 'PCR', color: '#3b82f6' }
-                },
-                y1: {
-                    grid: { drawOnChartArea: false },
-                    ticks: { color: '#f59e0b', font: { size: 10 } },
-                    position: 'right',
-                    title: { display: true, text: 'Price', color: '#f59e0b' }
-                }
+                x: { grid: { display: false }, ticks: { color: '#64748b', font: { size: 8 } } },
+                y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#64748b', font: { size: 8 } } }
             },
-            plugins: {
-                legend: { labels: { color: '#d1d5db', font: { size: 10, weight: 'bold' } } }
-            }
+            plugins: { legend: { display: true, position: 'top', align: 'end', labels: { color: '#94a3b8', font: { size: 9 }, usePointStyle: true, boxWidth: 6 } } }
         }
+    });
+}
+
+function updateSummary(trendData, oiData) {
+    const history = trendData.history;
+    if (history.length === 0) return;
+    const last = history[history.length - 1];
+
+    document.getElementById('spotPrice').innerText = last.spot_price?.toFixed(2) || '0.00';
+    document.getElementById('pcrOi').innerText = last.pcr_oi?.toFixed(2) || '0.0';
+    document.getElementById('pcrVol').innerText = last.pcr_vol?.toFixed(2) || '0.0';
+    document.getElementById('maxPain').innerText = last.max_pain?.toFixed(0) || '0';
+
+    // Sentiment
+    const spotSent = document.getElementById('spotSentiment');
+    const prevSpot = history.length > 1 ? history[history.length - 2].spot_price : last.spot_price;
+    if (last.spot_price >= prevSpot) {
+        spotSent.innerText = 'BULLISH';
+        spotSent.className = 'text-[10px] font-black bg-green-500/20 text-green-500 px-2 py-0.5 rounded uppercase';
+    } else {
+        spotSent.innerText = 'BEARISH';
+        spotSent.className = 'text-[10px] font-black bg-red-500/20 text-red-500 px-2 py-0.5 rounded uppercase';
+    }
+
+    const pcrSent = document.getElementById('pcrSentiment');
+    if (last.pcr_oi > 1.0) {
+        pcrSent.innerText = 'BULLISH';
+        pcrSent.className = 'text-[10px] font-black bg-green-500/20 text-green-500 px-2 py-0.5 rounded uppercase';
+    } else {
+        pcrSent.innerText = 'BEARISH';
+        pcrSent.className = 'text-[10px] font-black bg-red-500/20 text-red-500 px-2 py-0.5 rounded uppercase';
+    }
+
+    // Support/Resistance
+    const sortedOI = [...oiData.data].sort((a, b) => (b.call_oi + b.put_oi) - (a.call_oi + a.put_oi));
+    if (sortedOI.length > 0) {
+        const maxCall = [...oiData.data].sort((a, b) => b.call_oi - a.call_oi)[0];
+        const maxPut = [...oiData.data].sort((a, b) => b.put_oi - a.put_oi)[0];
+        document.getElementById('supportResistance').innerText = `${maxPut.strike} / ${maxCall.strike}`;
+    }
+}
+
+function renderSnapshots(result) {
+    const body = document.getElementById('snapshotBody');
+    body.innerHTML = '';
+    const history = [...result.history].reverse().slice(0, 20);
+
+    history.forEach((h, i) => {
+        const tr = document.createElement('tr');
+        const nextH = history[i+1];
+        const pcrChg = nextH ? (h.pcr_oi / nextH.pcr_oi).toFixed(2) : '1.00';
+
+        tr.innerHTML = `
+            <td class="p-2 text-gray-400">${formatIST(h.timestamp)}</td>
+            <td class="p-2 font-bold">${h.spot_price?.toFixed(2)}</td>
+            <td class="p-2 text-green-500 font-bold">${h.pcr_oi?.toFixed(2)}</td>
+            <td class="p-2 text-blue-400">${pcrChg}</td>
+            <td class="p-2 text-gray-300">${h.max_pain}</td>
+        `;
+        body.appendChild(tr);
     });
 }
 
