@@ -17,7 +17,9 @@ async function init() {
 
         if (socket && socket.connected) {
             socket.emit('unsubscribe_options', { underlying: oldUnderlying });
+            socket.emit('unsubscribe', { instrumentKeys: [oldUnderlying], interval: '1' });
             socket.emit('subscribe_options', { underlying: currentUnderlying });
+            socket.emit('subscribe', { instrumentKeys: [currentUnderlying], interval: '1' });
         }
 
         loadAllData();
@@ -35,6 +37,17 @@ function initSocket() {
     socket.on('connect', () => {
         if (currentUnderlying) {
             socket.emit('subscribe_options', { underlying: currentUnderlying });
+            socket.emit('subscribe', { instrumentKeys: [currentUnderlying], interval: '1' });
+        }
+    });
+
+    socket.on('chart_update', (data) => {
+        if (data.instrumentKey === currentUnderlying && data.ohlcv && data.ohlcv.length > 0) {
+            const candles = data.ohlcv;
+            // Technical TV feed newest may be at end or beginning depending on source
+            // But data_engine usually sends single point for live updates
+            const latestPrice = candles[0][4];
+            document.getElementById('spotPrice').innerText = latestPrice.toFixed(2);
         }
     });
 
@@ -63,7 +76,7 @@ async function triggerBackfill() {
     btn.disabled = true;
     btn.innerText = 'Processing...';
     try {
-        await fetch('/api/options/backfill', { method: 'POST' }); // Hypothetical or direct backfill trigger
+        await fetch('/api/options/backfill', { method: 'POST' });
         setTimeout(loadAllData, 2000);
     } catch (e) { console.error(e); }
     finally {
@@ -181,6 +194,7 @@ function renderPCRTrend(result) {
     const history = result.history;
     const labels = history.map(h => formatIST(h.timestamp).split(':')[0] + ':' + formatIST(h.timestamp).split(':')[1]);
     const pcrOI = history.map(h => h.pcr_oi);
+    const pcrChg = history.map(h => h.pcr_oi_change);
 
     if (charts.pcrTrendChart) charts.pcrTrendChart.destroy();
     const ctx = document.getElementById('pcrTrendChart').getContext('2d');
@@ -188,7 +202,10 @@ function renderPCRTrend(result) {
         type: 'line',
         data: {
             labels,
-            datasets: [{ label: 'PCR (Total OI)', data: pcrOI, borderColor: '#818cf8', backgroundColor: 'rgba(129, 140, 248, 0.1)', fill: true, tension: 0.4, pointRadius: 2 }]
+            datasets: [
+                { label: 'PCR (Total)', data: pcrOI, borderColor: '#818cf8', backgroundColor: 'rgba(129, 140, 248, 0.1)', fill: true, tension: 0.4, pointRadius: 2 },
+                { label: 'PCR (Change)', data: pcrChg, borderColor: '#c084fc', backgroundColor: 'transparent', fill: false, tension: 0.4, pointRadius: 2 }
+            ]
         },
         options: {
             responsive: true, maintainAspectRatio: false,
@@ -206,7 +223,9 @@ function updateSummary(trendData, oiData) {
     if (history.length === 0) return;
     const last = history[history.length - 1];
 
-    document.getElementById('spotPrice').innerText = last.spot_price?.toFixed(2) || '0.00';
+    if (parseFloat(last.spot_price) > 0) {
+        document.getElementById('spotPrice').innerText = last.spot_price?.toFixed(2);
+    }
     document.getElementById('pcrOi').innerText = last.pcr_oi?.toFixed(2) || '0.0';
     document.getElementById('pcrVol').innerText = last.pcr_vol?.toFixed(2) || '0.0';
     document.getElementById('maxPain').innerText = last.max_pain?.toFixed(0) || '0';
@@ -247,15 +266,14 @@ function renderSnapshots(result) {
 
     history.forEach((h, i) => {
         const tr = document.createElement('tr');
-        const nextH = history[i+1];
-        const pcrChg = nextH ? (h.pcr_oi / nextH.pcr_oi).toFixed(2) : '1.00';
+        const pcrChg = h.pcr_oi_change ? h.pcr_oi_change.toFixed(2) : '0.00';
 
         tr.innerHTML = `
             <td class="p-2 text-gray-400">${formatIST(h.timestamp)}</td>
-            <td class="p-2 font-bold">${h.spot_price?.toFixed(2)}</td>
-            <td class="p-2 text-green-500 font-bold">${h.pcr_oi?.toFixed(2)}</td>
+            <td class="p-2 font-bold">${h.spot_price?.toFixed(2) || '0.00'}</td>
+            <td class="p-2 text-green-500 font-bold">${h.pcr_oi?.toFixed(2) || '0.00'}</td>
             <td class="p-2 text-blue-400">${pcrChg}</td>
-            <td class="p-2 text-gray-300">${h.max_pain}</td>
+            <td class="p-2 text-gray-300">${h.max_pain || '0'}</td>
         `;
         body.appendChild(tr);
     });

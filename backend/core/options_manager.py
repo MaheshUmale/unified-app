@@ -247,7 +247,21 @@ class OptionsManager:
         if not tl_symbol: return
         spot_price = 0
         try:
-            res = db.query("SELECT price FROM ticks WHERE instrumentKey = ? ORDER BY ts_ms DESC LIMIT 1", (underlying,))
+            # Try to find spot price using various possible keys
+            search_keys = [underlying, underlying.replace(':', '|'), underlying.replace('NSE:', 'NSE_INDEX|') + ' 50' if 'NIFTY' in underlying and 'BANK' not in underlying else None]
+            search_keys = [k for k in search_keys if k]
+
+            # Use symbol_mapper to find relevant keys in ticks table if possible
+            from core.symbol_mapper import symbol_mapper
+            hrn = symbol_mapper.get_hrn(underlying)
+
+            res = db.query("""
+                SELECT price FROM ticks
+                WHERE instrumentKey IN (?, ?, ?)
+                OR instrumentKey LIKE ?
+                ORDER BY ts_ms DESC LIMIT 1
+            """, (underlying, underlying.replace(':', '|'), "NSE_INDEX|NIFTY 50" if hrn == "NIFTY" else "NSE_INDEX|NIFTY BANK" if hrn == "BANKNIFTY" else hrn, f"%{hrn}%"))
+
             if res: spot_price = res[0]['price']
         except Exception as e:
             logger.error(f"Error fetching spot for snapshot: {e}")
@@ -361,12 +375,19 @@ class OptionsManager:
     async def _calculate_pcr(self, underlying, timestamp, rows, spot_price=0):
         calls = [r for r in rows if r['option_type'] == 'call']
         puts = [r for r in rows if r['option_type'] == 'put']
+
         total_call_oi = sum(r['oi'] for r in calls)
         total_put_oi = sum(r['oi'] for r in puts)
         total_call_vol = sum(r['volume'] for r in calls)
         total_put_vol = sum(r['volume'] for r in puts)
+
+        total_call_oi_chg = sum(r['oi_change'] for r in calls)
+        total_put_oi_chg = sum(r['oi_change'] for r in puts)
+
         pcr_oi = total_put_oi / total_call_oi if total_call_oi > 0 else 0
         pcr_vol = total_put_vol / total_call_vol if total_call_vol > 0 else 0
+        pcr_oi_change = total_put_oi_chg / total_call_oi_chg if total_call_oi_chg != 0 else 0
+
         strikes = sorted(list(set(r['strike'] for r in rows)))
         min_pain = float('inf'); max_pain = strikes[0] if strikes else 0
         for s in strikes:
@@ -389,8 +410,9 @@ class OptionsManager:
                     if hist: underlying_price = hist[0][4]
         except Exception as e: logger.error(f"Error fetching spot for PCR: {e}")
         db.insert_pcr_history({
-            'timestamp': timestamp, 'underlying': underlying, 'pcr_oi': pcr_oi, 'pcr_vol': pcr_vol,
-            'underlying_price': underlying_price or spot_price, 'max_pain': max_pain, 'spot_price': spot_price
+            'timestamp': timestamp, 'underlying': underlying,
+            'pcr_oi': pcr_oi, 'pcr_vol': pcr_vol, 'pcr_oi_change': pcr_oi_change,
+            'underlying_price': underlying_price or spot_price, 'max_pain': max_pain, 'spot_price': spot_price or underlying_price
         })
 
 options_manager = OptionsManager()

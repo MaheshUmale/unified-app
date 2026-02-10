@@ -106,11 +106,18 @@ class LocalDB:
                 underlying VARCHAR,
                 pcr_oi DOUBLE,
                 pcr_vol DOUBLE,
+                pcr_oi_change DOUBLE,
                 underlying_price DOUBLE,
                 max_pain DOUBLE,
                 spot_price DOUBLE
             )
         """)
+        # Ensure column exists if table was already created
+        try:
+            self.conn.execute("ALTER TABLE pcr_history ADD COLUMN pcr_oi_change DOUBLE")
+        except:
+            pass
+
         self.conn.execute("CREATE INDEX IF NOT EXISTS idx_pcr_hist_ts ON pcr_history (timestamp, underlying)")
 
         logger.info(f"Local DuckDB initialized at {DB_PATH}")
@@ -191,8 +198,13 @@ class LocalDB:
             self.conn.execute("INSERT INTO options_snapshots SELECT * FROM df")
 
     def insert_pcr_history(self, record: Dict[str, Any]):
-        df = pd.DataFrame([record])
+        cols = ['timestamp', 'underlying', 'pcr_oi', 'pcr_vol', 'pcr_oi_change', 'underlying_price', 'max_pain', 'spot_price']
+        # Ensure all columns exist in record
+        for c in cols:
+            if c not in record: record[c] = 0
+
+        df = pd.DataFrame([record])[cols]
         with self._execute_lock:
-            self.conn.execute("INSERT INTO pcr_history SELECT * FROM df")
+            self.conn.execute(f"INSERT INTO pcr_history ({', '.join(cols)}) SELECT * FROM df")
 
 db = LocalDB()
