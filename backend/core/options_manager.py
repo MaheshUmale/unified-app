@@ -113,7 +113,7 @@ class OptionsManager:
                     oi_data = body.get('oiData', {})
 
                     ist_dt = now.replace(hour=int(ts_str.split(':')[0]), minute=int(ts_str.split(':')[1]), second=0, microsecond=0)
-                    snapshot_time = ist_dt.astimezone(pytz.utc).replace(tzinfo=None)
+                    snapshot_time = ist_dt.astimezone(pytz.utc)
                     unix_ts = int(ist_dt.timestamp())
 
                     # Find closest spot price
