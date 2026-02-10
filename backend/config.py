@@ -108,6 +108,9 @@ STRATEGY_CONFIG = {
     ]
 }
 
+# TradingView Cookie (Optional)
+TV_COOKIE = os.getenv("TV_COOKIE", "")
+
 # Database Configuration
 DATABASE_CONFIG = {
     "path": "data/protrade.db",

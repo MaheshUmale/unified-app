@@ -365,8 +365,10 @@ async def get_options_chain_with_greeks(
         item['moneyness'] = moneyness
         
         # Calculate distance from ATM
-        if spot_price > 0:
+        if spot_price and spot_price > 0:
             item['distance_from_atm_pct'] = round(abs(strike - spot_price) / spot_price * 100, 2)
+        else:
+            item['distance_from_atm_pct'] = 0
     
     return {
         "underlying": underlying,
@@ -521,7 +523,21 @@ async def build_strategy(request: Request):
         body = await request.json()
         
         name = body.get('name', 'Custom Strategy')
-        strategy_type = StrategyType(body.get('strategy_type', 'CUSTOM'))
+
+        # Robust StrategyType lookup
+        st_input = body.get('strategy_type', 'CUSTOM')
+        strategy_type = StrategyType.CUSTOM
+
+        try:
+            # Try by value
+            strategy_type = StrategyType(st_input)
+        except ValueError:
+            try:
+                # Try by name (case-insensitive)
+                strategy_type = StrategyType[st_input.upper()]
+            except (KeyError, AttributeError):
+                logger.warning(f"Unknown strategy type: {st_input}, falling back to CUSTOM")
+
         underlying = body.get('underlying')
         spot_price = body.get('spot_price', 0)
         legs = body.get('legs', [])
@@ -793,8 +809,10 @@ async def export_db_query(request: Request):
 
 
 # Create ASGI app
-app = socketio.ASIApp(sio, fastapi_app)
+app = socketio.ASGIApp(sio, fastapi_app)
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("api_server:app", host="0.0.0.0", port=5051, reload=False)
+    # Use port 3000 for live preview
+    port = int(os.getenv("PORT", 3000))
+    uvicorn.run("api_server:app", host="0.0.0.0", port=port, reload=False)
