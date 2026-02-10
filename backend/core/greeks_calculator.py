@@ -45,8 +45,8 @@ class GreeksCalculator:
             Dictionary containing all Greeks and implied volatility
         """
         try:
-            S = spot_price
-            K = strike_price
+            S = max(spot_price, 0.01)
+            K = max(strike_price, 0.01)
             T = max(time_to_expiry, 0.0001)  # Prevent division by zero
             r = self.risk_free_rate
             sigma = max(volatility, 0.0001)
@@ -124,6 +124,9 @@ class GreeksCalculator:
         """
         Calculate implied volatility using Newton-Raphson method.
         """
+        S = max(S, 0.01)
+        K = max(K, 0.01)
+        T = max(T, 0.0001)
         sigma = 0.3  # Initial guess
         
         for _ in range(max_iterations):
@@ -278,6 +281,9 @@ class GreeksCalculator:
         Returns:
             'ITM', 'ATM', or 'OTM'
         """
+        if spot_price <= 0:
+            return 'ATM'
+
         diff_pct = (strike - spot_price) / spot_price
         
         if abs(diff_pct) <= 0.01:  # Within 1%

@@ -96,7 +96,13 @@ class LocalDB:
                 oi_change BIGINT,
                 volume BIGINT,
                 ltp DOUBLE,
-                iv DOUBLE
+                iv DOUBLE,
+                delta DOUBLE,
+                gamma DOUBLE,
+                theta DOUBLE,
+                vega DOUBLE,
+                intrinsic_value DOUBLE,
+                time_value DOUBLE
             )
         """)
         self.conn.execute("CREATE INDEX IF NOT EXISTS idx_opt_snap_ts ON options_snapshots (timestamp, underlying)")
@@ -113,11 +119,6 @@ class LocalDB:
                 spot_price DOUBLE
             )
         """)
-        # Ensure column exists if table was already created
-        try:
-            self.conn.execute("ALTER TABLE pcr_history ADD COLUMN pcr_oi_change DOUBLE")
-        except:
-            pass
 
         self.conn.execute("CREATE INDEX IF NOT EXISTS idx_pcr_hist_ts ON pcr_history (timestamp, underlying)")
 
@@ -197,9 +198,19 @@ class LocalDB:
 
     def insert_options_snapshot(self, data: List[Dict[str, Any]]):
         if not data: return
-        df = pd.DataFrame(data)
+        cols = [
+            'timestamp', 'underlying', 'symbol', 'expiry', 'strike', 'option_type',
+            'oi', 'oi_change', 'volume', 'ltp', 'iv', 'delta', 'gamma', 'theta',
+            'vega', 'intrinsic_value', 'time_value'
+        ]
+        # Ensure all columns exist in data
+        for item in data:
+            for c in cols:
+                if c not in item: item[c] = None
+
+        df = pd.DataFrame(data)[cols]
         with self._execute_lock:
-            self.conn.execute("INSERT INTO options_snapshots SELECT * FROM df")
+            self.conn.execute(f"INSERT INTO options_snapshots ({', '.join(cols)}) SELECT * FROM df")
 
     def insert_pcr_history(self, record: Dict[str, Any]):
         cols = ['timestamp', 'underlying', 'pcr_oi', 'pcr_vol', 'pcr_oi_change', 'underlying_price', 'max_pain', 'spot_price']

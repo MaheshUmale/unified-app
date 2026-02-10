@@ -3,7 +3,7 @@ Core module for ProTrade Enhanced Options Trading Platform
 """
 
 from core.options_manager import options_manager
-from core.data_engine import data_engine
+from core import data_engine
 from core.symbol_mapper import symbol_mapper
 from core.greeks_calculator import greeks_calculator
 from core.iv_analyzer import iv_analyzer
