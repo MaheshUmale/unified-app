@@ -198,8 +198,10 @@ class ChartInstance {
 
                 this.renderData();
 
-                const lastIdx = this.fullHistory.candles.length - 1;
-                this.chart.timeScale().setVisibleLogicalRange({ from: lastIdx - 100, to: lastIdx + 10 });
+                const lastIdx = chartData.length - 1;
+                if (!isNaN(lastIdx) && lastIdx >= 0) {
+                    this.chart.timeScale().setVisibleLogicalRange({ from: lastIdx - 100, to: lastIdx + 10 });
+                }
             }
 
             if (resData.indicators) {
@@ -411,8 +413,9 @@ class ChartInstance {
 
                 if (!this.isReplayMode) {
                     this.indicatorSeries[id].setData(formattedData);
-                    // Force hide labels on every update to be sure
+                    // Force hide labels on every update and ensure visibility matches state
                     this.indicatorSeries[id].applyOptions({
+                        visible: this.showIndicators && !this.hiddenPlots.has(id),
                         lastValueVisible: false,
                         priceLineVisible: false,
                         color: this.colorOverrides[title] || tvColorToRGBA(style?.color) || '#3b82f6'
@@ -907,7 +910,7 @@ function initZoomControls() {
     document.getElementById('resetZoomBtn').addEventListener('click', () => {
         const chart = charts[activeChartIndex];
         if (!chart) return;
-        const lastIdx = chart.fullHistory.candles.length - 1;
+        const lastIdx = chart.fullHistory.candles.size - 1;
         if (lastIdx >= 0) chart.chart.timeScale().setVisibleLogicalRange({ from: lastIdx - 100, to: lastIdx + 10 });
     });
 }
@@ -1157,7 +1160,7 @@ function initReplayControls() {
         } else {
             chart.isPlaying = true;
             chart.replayInterval = setInterval(() => {
-                if (chart.replayIndex < chart.fullHistory.candles.length - 1) chart.stepReplay(1);
+                if (chart.replayIndex < chart.fullHistory.candles.size - 1) chart.stepReplay(1);
                 else { chart.isPlaying = false; clearInterval(chart.replayInterval); updateReplayUI(chart); }
             }, 1000);
         }
