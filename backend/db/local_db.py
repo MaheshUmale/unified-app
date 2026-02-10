@@ -37,8 +37,28 @@ class LocalDB:
         self.conn = duckdb.connect(DB_PATH)
         self.conn.execute("SET memory_limit = '1GB'")
         self.conn.execute("SET threads = 4")
-        self.conn.execute("INSTALL json; LOAD json;")
-        self.conn.execute("INSTALL icu; LOAD icu;")
+
+        # Check and load extensions to avoid slow INSTALL calls on every boot
+        try:
+            ext_info = self.conn.execute("SELECT extension_name, installed FROM duckdb_extensions() WHERE extension_name IN ('json', 'icu')").fetchall()
+            ext_map = {name: installed for name, installed in ext_info}
+
+            if not ext_map.get('json'):
+                logger.info("Installing json extension...")
+                self.conn.execute("INSTALL json")
+            self.conn.execute("LOAD json")
+
+            if not ext_map.get('icu'):
+                logger.info("Installing icu extension...")
+                self.conn.execute("INSTALL icu")
+            self.conn.execute("LOAD icu")
+        except Exception as e:
+            logger.warning(f"Error loading extensions: {e}. Attempting direct LOAD...")
+            try:
+                self.conn.execute("LOAD json")
+                self.conn.execute("LOAD icu")
+            except:
+                logger.error("Failed to load extensions.")
 
         self.conn.execute("""
             CREATE TABLE IF NOT EXISTS ticks (
