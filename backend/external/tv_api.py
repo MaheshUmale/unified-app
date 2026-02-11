@@ -132,6 +132,37 @@ class TradingViewAPI:
                     logger.info(f"Retrieved {len(candles)} candles via tvDatafeed")
                     return candles[::-1]
 
+            # Final Fallback to Local DB (for Replay support)
+            try:
+                from db.local_db import db
+                logger.info(f"Falling back to local DB for {tv_symbol}")
+                # Build candles from ticks
+                interval_map = {'1': 60, '5': 300, '15': 900, '30': 1800, '60': 3600, 'D': 86400}
+                duration = interval_map.get(interval_min, 60)
+
+                # Fetch last 1000 bars worth of ticks using arg_min/max for accurate OHLC
+                res = db.query(f"""
+                    SELECT
+                        (ts_ms / 1000 / {duration}) * {duration} as bucket,
+                        arg_min(price, ts_ms) as o,
+                        MAX(price) as h,
+                        MIN(price) as l,
+                        arg_max(price, ts_ms) as c,
+                        SUM(qty) as v
+                    FROM ticks
+                    WHERE instrumentKey = ?
+                    GROUP BY bucket
+                    ORDER BY bucket DESC
+                    LIMIT ?
+                """, (symbol_or_hrn, n_bars))
+
+                if res:
+                    candles = [[int(r['bucket']), float(r['o']), float(r['h']), float(r['l']), float(r['c']), float(r['v'])] for r in res]
+                    logger.info(f"Retrieved {len(candles)} candles via local DB")
+                    return candles # Already newest first from query
+            except Exception as db_e:
+                logger.warning(f"Local DB fallback failed: {db_e}")
+
             return None
         except Exception as e:
             logger.error(f"Error fetching TradingView data: {e}")
