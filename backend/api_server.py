@@ -19,6 +19,7 @@ from urllib.parse import unquote
 
 from config import LOGGING_CONFIG, INITIAL_INSTRUMENTS
 from core import data_engine
+from core.provider_registry import initialize_default_providers
 from core.options_manager import options_manager
 from core.symbol_mapper import symbol_mapper
 from core.greeks_calculator import greeks_calculator
@@ -42,6 +43,9 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing Enhanced ProTrade Terminal...")
     global main_loop
     
+    # Initialize Data Providers
+    initialize_default_providers()
+
     try:
         main_loop = asyncio.get_running_loop()
     except RuntimeError:

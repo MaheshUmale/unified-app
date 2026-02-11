@@ -62,8 +62,8 @@ class DataStreamer:
             self.scalper.engine.update_option_levels(instrument_key, new_df)
 
     async def subscribe(self, underlying):
-        from external.tv_live_wss import start_tv_wss
         from core.options_manager import options_manager
+        from core.provider_registry import live_stream_registry
 
         self.symbols['underlying'] = underlying
         self.instrument_map[underlying] = 'underlying'
@@ -92,9 +92,13 @@ class DataStreamer:
         self.instrument_map[call_sym] = 'atm_call'
         self.instrument_map[put_sym] = 'atm_put'
 
-        wss = start_tv_wss(self.scalper._handle_wss_message)
-        wss.subscribe([underlying, call_sym, put_sym], interval="1")
-        self.scalper.log(f"Subscribed to {underlying}, {call_sym}, {put_sym}")
+        # Use registry for live stream
+        provider = live_stream_registry.get_primary()
+        provider.set_callback(self.scalper._handle_wss_message)
+        provider.start()
+        provider.subscribe([underlying, call_sym, put_sym], interval="1")
+
+        self.scalper.log(f"Subscribed via {type(provider).__name__} to {underlying}, {call_sym}, {put_sym}")
 
 class ConfluenceEngine:
     """Identifies Zones of Interest and generates signals."""
@@ -317,6 +321,10 @@ class NSEConfluenceScalper:
         self.loop = loop
 
     def log(self, message):
+        # Ensure registries are initialized if not already
+        from core.provider_registry import initialize_default_providers
+        initialize_default_providers()
+
         ist = pytz.timezone('Asia/Kolkata')
         timestamp = datetime.now(ist).strftime("%H:%M:%S")
         formatted_msg = f"[{timestamp}] {message}"
