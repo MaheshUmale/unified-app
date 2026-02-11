@@ -294,6 +294,65 @@ class OIBuildupAnalyzer:
             'resistance': sorted(resistance_levels),
             'support': sorted(support_levels)
         }
+
+    def detect_institutional_distribution(self, chain_data: List[Dict[str, Any]], spot_price: float) -> Dict[str, Any]:
+        """Detects aggressive selling and distribution by smart money."""
+        # Aggressive distribution: Heavy Call writing at strikes near or above spot
+        # or heavy Put unwinding.
+        calls = [c for c in chain_data if c.get('option_type') == 'call' and c.get('strike') >= spot_price]
+
+        # Sort by OI change to find most aggressive writing
+        aggressive_writing = sorted(calls, key=lambda x: x.get('oi_change', 0), reverse=True)
+
+        top_distribution_strikes = aggressive_writing[:3]
+        is_aggressive = any(s.get('oi_change', 0) > 100000 for s in top_distribution_strikes)
+
+        return {
+            'is_aggressive_distribution': is_aggressive,
+            'distribution_levels': [s.get('strike') for s in top_distribution_strikes],
+            'status': "DISTRIBUTION DETECTED" if is_aggressive else "STABLE"
+        }
+
+    def detect_market_control(self, chain_data: List[Dict[str, Any]]) -> str:
+        """Identifies if buyers or sellers are firmly in control."""
+        total_call_oi_chg = sum(c.get('oi_change', 0) for c in chain_data if c.get('option_type') == 'call')
+        total_put_oi_chg = sum(c.get('oi_change', 0) for c in chain_data if c.get('option_type') == 'put')
+
+        if total_put_oi_chg > total_call_oi_chg * 1.5:
+            return "BUYERS_IN_CONTROL"
+        elif total_call_oi_chg > total_put_oi_chg * 1.5:
+            return "SELLERS_IN_CONTROL"
+        return "NEUTRAL_CONTROL"
+
+    def predict_sideways_session(self, history: List[Dict[str, Any]]) -> bool:
+        """Spots low-volatility, sideways sessions in advance."""
+        if len(history) < 5: return False
+
+        # Check if price has stayed within 0.2% range for last 5 intervals
+        prices = [h.get('spot_price') or h.get('underlying_price', 0) for h in history[-5:]]
+        if 0 in prices: return False
+
+        price_range = (max(prices) - min(prices)) / prices[0]
+        return price_range < 0.002 # 0.2% range
+
+    def detect_fake_breakout(self, spot_price: float, prev_spot: float, chain_data: List[Dict[str, Any]]) -> bool:
+        """Flags breakouts that lack volume and institutional support."""
+        if prev_spot == 0: return False
+
+        price_move = (spot_price - prev_spot) / prev_spot
+        if abs(price_move) < 0.001: return False # Not a significant move
+
+        # If price up but Call OI also up (writing into strength) or Put OI down (unwinding support)
+        if price_move > 0:
+            call_oi_chg = sum(c.get('oi_change', 0) for c in chain_data if c.get('option_type') == 'call' and c.get('strike') > spot_price)
+            if call_oi_chg > 50000: return True # Heavy resistance being built
+
+        # If price down but Put OI also up (writing into weakness) or Call OI down
+        if price_move < 0:
+            put_oi_chg = sum(c.get('oi_change', 0) for c in chain_data if c.get('option_type') == 'put' and c.get('strike') < spot_price)
+            if put_oi_chg > 50000: return True # Heavy support being built
+
+        return False
     
     def get_support_resistance_from_oi(
         self,

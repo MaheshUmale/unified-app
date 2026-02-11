@@ -43,8 +43,8 @@ class ChartInstance {
         if (!container) return;
 
         this.chart = LightweightCharts.createChart(container, {
-            layout: { background: { type: 'solid', color: '#000000' }, textColor: '#d1d5db' },
-            grid: { vertLines: { color: '#111827' }, horzLines: { color: '#111827' } },
+            layout: { background: { type: 'solid', color: '#ffffff' }, textColor: '#191919' },
+            grid: { vertLines: { color: '#f0f3fa' }, horzLines: { color: '#f0f3fa' } },
             crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
             localization: {
                 locale: 'en-IN',
@@ -58,9 +58,9 @@ class ChartInstance {
                     }).format(new Date(ts * 1000));
                 }
             },
-            rightPriceScale: { borderColor: '#1f2937', autoScale: true, scaleMargins: { top: 0.2, bottom: 0.2 } },
+            rightPriceScale: { borderColor: '#f0f3fa', autoScale: true, scaleMargins: { top: 0.2, bottom: 0.2 } },
             timeScale: {
-                borderColor: '#1f2937',
+                borderColor: '#f0f3fa',
                 timeVisible: true,
                 secondsVisible: false,
                 rightOffset: 10,

@@ -456,6 +456,18 @@ async def get_support_resistance(underlying: str, top_n: int = Query(default=3, 
     return options_manager.get_support_resistance(underlying)
 
 
+@fastapi_app.get("/api/options/genie-insights/{underlying}")
+async def get_genie_insights(underlying: str):
+    """Get consolidated Genie insights for the dashboard."""
+    return await options_manager.get_genie_insights(underlying)
+
+
+@fastapi_app.get("/api/options/high-activity/{underlying}")
+async def get_high_activity_strikes(underlying: str):
+    """Get strikes with maximum activity."""
+    return options_manager.get_high_activity_strikes(underlying)
+
+
 @fastapi_app.get("/api/options/pcr-trend/{underlying}")
 async def get_pcr_trend(underlying: str):
     """Returns historical PCR data for current trading day."""
@@ -772,7 +784,7 @@ async def get_scalper_status():
     return {
         "is_running": scalper.is_running,
         "underlying": scalper.underlying,
-        "active_trades": scalper.executor.active_trades,
+        "active_trades": scalper.order_manager.active_trades,
         "current_spot": scalper.current_spot
     }
 
