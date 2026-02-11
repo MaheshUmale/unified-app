@@ -372,6 +372,16 @@
         let socket = null;
         let charts = {};
 
+        function formatIST(timestamp) {
+            return new Intl.DateTimeFormat('en-IN', {
+                timeZone: 'Asia/Kolkata',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false
+            }).format(new Date(timestamp));
+        }
+
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
             initSocket();
@@ -590,7 +600,7 @@
                 await loadPCRTrend();
 
                 // Update timestamp
-                document.getElementById('lastUpdated').textContent = new Date().toLocaleTimeString();
+                document.getElementById('lastUpdated').textContent = formatIST(new Date());
             } catch (error) {
                 console.error('Error loading data:', error);
             }
@@ -841,7 +851,7 @@
 
         function renderPCRChart(data) {
             const history = data.history || [];
-            const timestamps = history.map(h => new Date(h.timestamp).toLocaleTimeString());
+            const timestamps = history.map(h => formatIST(h.timestamp));
 
             // 1. PCR Chart
             const pcrCtx = document.getElementById('pcrChart').getContext('2d');
