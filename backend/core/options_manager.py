@@ -402,7 +402,9 @@ class OptionsManager:
                 self.previous_chains[underlying] = rows.copy()
                 
                 db.insert_options_snapshot(rows)
-                await self._calculate_pcr(underlying, datetime.now(pytz.utc), rows, spot_price)
+                # Use the same timestamp as in rows
+                snap_ts = rows[0]['timestamp'] if rows else datetime.now(pytz.utc)
+                await self._calculate_pcr(underlying, snap_ts, rows, spot_price)
                 
                 # Check alerts
                 self._check_alerts(underlying, rows, spot_price)
@@ -414,11 +416,12 @@ class OptionsManager:
             await self._take_snapshot_tv(underlying)
     
     async def _get_spot_price(self, underlying: str) -> float:
-        """Get current spot price."""
+        """Get current spot price with multi-layer fallback."""
         try:
             from core.symbol_mapper import symbol_mapper
             hrn = symbol_mapper.get_hrn(underlying)
             
+            # Layer 1: Ticks Table (Live Feed)
             res = db.query("""
                 SELECT price FROM ticks
                 WHERE instrumentKey IN (?, ?, ?)
@@ -431,18 +434,48 @@ class OptionsManager:
                 f"%{hrn}%"
             ))
             
-            if res:
+            if res and res[0]['price'] > 0:
+                logger.info(f"Spot Price discovered from Ticks for {underlying}: {res[0]['price']}")
                 return res[0]['price']
 
-            # Fallback 1: Historical candles
-            logger.info(f"Spot not in ticks for {underlying}, trying hist candles...")
-            hist = await asyncio.to_thread(tv_api.get_hist_candles, underlying, '1', 1)
-            if hist:
-                return hist[0][4] # close price
+            # Layer 2: Historical Candles (TradingView API/Scraper)
+            logger.info(f"Spot not in ticks for {underlying}, trying historical candles...")
+            hist = await asyncio.to_thread(tv_api.get_hist_candles, underlying, '1', 5)
+            if hist and len(hist) > 0:
+                price = hist[0][4]  # Close of most recent candle
+                if price > 0:
+                    logger.info(f"Spot Price discovered from Hist Candles for {underlying}: {price}")
+                    return price
+
+            # Layer 3: PCR History (Last recorded price)
+            logger.info(f"Hist candles failed for {underlying}, trying PCR history fallback...")
+            last_pcr = db.query("""
+                SELECT spot_price, underlying_price FROM pcr_history
+                WHERE underlying = ? AND (spot_price > 0 OR underlying_price > 0)
+                ORDER BY timestamp DESC LIMIT 1
+            """, (underlying,))
+
+            if last_pcr:
+                price = last_pcr[0].get('spot_price') or last_pcr[0].get('underlying_price') or 0
+                if price > 0:
+                    logger.warning(f"Using STALE Spot Price from PCR History for {underlying}: {price}")
+                    return price
+
+            # Layer 4: Last known snapshot price
+            logger.info(f"PCR history failed for {underlying}, trying last snapshot LTP...")
+            last_snap = db.query("""
+                SELECT ltp FROM options_snapshots
+                WHERE underlying = ? AND ltp > 0
+                ORDER BY timestamp DESC LIMIT 1
+            """, (underlying,))
+            if last_snap:
+                logger.warning(f"Using STALE Spot Price from last Snapshot for {underlying}: {last_snap[0]['ltp']}")
+                return last_snap[0]['ltp']
 
         except Exception as e:
-            logger.error(f"Error fetching spot: {e}")
+            logger.error(f"Error in multi-layer spot discovery for {underlying}: {e}")
         
+        logger.error(f"CRITICAL: Could not discover any Spot Price for {underlying}")
         return 0
     
     async def _fetch_oi_data(
@@ -762,7 +795,16 @@ class OptionsManager:
             json_serialize=True
         )
         
-        return {"timestamp": latest_ts, "chain": chain}
+        # Fetch spot price from pcr_history
+        spot_res = db.query(
+            "SELECT spot_price, underlying_price FROM pcr_history WHERE underlying = ? AND timestamp <= ? ORDER BY timestamp DESC LIMIT 1",
+            (underlying, latest_ts)
+        )
+        spot_price = 0
+        if spot_res:
+            spot_price = spot_res[0].get('spot_price') or spot_res[0].get('underlying_price') or 0
+
+        return {"timestamp": latest_ts, "chain": chain, "spot_price": spot_price}
     
     def get_oi_buildup_analysis(self, underlying: str) -> Dict[str, Any]:
         """Get OI buildup analysis."""

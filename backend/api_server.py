@@ -394,7 +394,7 @@ async def get_options_chain_with_greeks(
 async def get_options_greeks(
     underlying: str,
     strike: float = Query(...),
-    option_type: str = Query(..., regex="^(call|put)$"),
+    option_type: str = Query(..., pattern="^(call|put)$"),
     expiry: Optional[str] = None,
     spot_price: Optional[float] = None,
     option_price: Optional[float] = None
@@ -687,7 +687,7 @@ async def get_strategy_analysis(strategy_id: str):
 
 @fastapi_app.get("/api/strategy/recommendations")
 async def get_strategy_recommendations(
-    market_view: str = Query(..., regex="^(bullish|bearish|neutral|volatile)$"),
+    market_view: str = Query(..., pattern="^(bullish|bearish|neutral|volatile)$"),
     iv_rank: float = Query(..., ge=0, le=100)
 ):
     """Get strategy recommendations based on market view and IV."""

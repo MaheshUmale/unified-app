@@ -450,6 +450,9 @@
                 const ivData = await ivResponse.json();
                 updateIVCard(ivData);
 
+                // Load PCR Trend for summary cards
+                await loadPCRTrend();
+
                 // Update timestamp
                 document.getElementById('lastUpdated').textContent = new Date().toLocaleTimeString();
             } catch (error) {
@@ -462,11 +465,16 @@
             tbody.innerHTML = '';
 
             const chain = data.chain || [];
+            const spotPrice = data.spot_price || 0;
+
+            // Update Summary Card
+            document.getElementById('spotPrice').textContent = spotPrice.toLocaleString(undefined, {minimumFractionDigits: 2});
+            document.getElementById('aimSpot').textContent = spotPrice.toFixed(0);
+
             if (chain.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="13" class="py-10 text-center text-gray-500 font-bold">No data available. Please click "Backfill" or wait for the next snapshot.</td></tr>';
                 return;
             }
-            const spotPrice = data.spot_price || 0;
 
             // Group by strike
             const strikes = {};
@@ -529,14 +537,20 @@
             document.getElementById('pcrValue').textContent = pcr;
             document.getElementById('pcrVol').textContent = pcrVol;
 
-            // PCR Signal
+            // PCR Signal - Decisive Thresholds for Indices
             const pcrSignal = document.getElementById('pcrSignal');
-            if (pcr > 1.2) {
-                pcrSignal.textContent = 'BEARISH';
+            if (pcr > 1.3) {
+                pcrSignal.textContent = 'OVERBOUGHT';
                 pcrSignal.className = 'text-[10px] font-black bg-red-500/20 text-red-500 px-2 py-0.5 rounded uppercase';
-            } else if (pcr < 0.8) {
-                pcrSignal.textContent = 'BULLISH';
+            } else if (pcr > 1.1) {
+                pcrSignal.textContent = 'BEARISH';
+                pcrSignal.className = 'text-[10px] font-black bg-red-400/20 text-red-400 px-2 py-0.5 rounded uppercase';
+            } else if (pcr < 0.7) {
+                pcrSignal.textContent = 'OVERSOLD';
                 pcrSignal.className = 'text-[10px] font-black bg-green-500/20 text-green-500 px-2 py-0.5 rounded uppercase';
+            } else if (pcr < 0.9) {
+                pcrSignal.textContent = 'BULLISH';
+                pcrSignal.className = 'text-[10px] font-black bg-green-400/20 text-green-400 px-2 py-0.5 rounded uppercase';
             } else {
                 pcrSignal.textContent = 'NEUTRAL';
                 pcrSignal.className = 'text-[10px] font-black bg-gray-500/20 text-gray-400 px-2 py-0.5 rounded uppercase';
@@ -661,6 +675,29 @@
                 const response = await fetch(`/api/options/pcr-trend/${currentUnderlying}`);
                 const data = await response.json();
                 renderPCRChart(data);
+
+                // Update Max Pain from latest trend data
+                if (data.history && data.history.length > 0) {
+                    const latest = data.history[data.history.length - 1];
+                    const maxPain = latest.max_pain || 0;
+                    const spot = latest.spot_price || latest.underlying_price || 0;
+
+                    document.getElementById('maxPain').textContent = maxPain.toLocaleString();
+
+                    if (spot > 0) {
+                        // Backup update for spot price
+                        const spotEl = document.getElementById('spotPrice');
+                        if (spotEl.textContent === '0.00' || spotEl.textContent === '-') {
+                            spotEl.textContent = spot.toLocaleString(undefined, {minimumFractionDigits: 2});
+                        }
+
+                        const diff = maxPain - spot;
+                        const diffPct = (diff / spot * 100).toFixed(2);
+                        const diffEl = document.getElementById('maxPainDiff');
+                        diffEl.textContent = `${diff > 0 ? '+' : ''}${diff.toLocaleString()} (${diffPct}%)`;
+                        diffEl.className = `text-[10px] font-black ${diff >= 0 ? 'text-green-500' : 'text-red-500'}`;
+                    }
+                }
             } catch (error) {
                 console.error('Error loading PCR trend:', error);
             }
