@@ -100,6 +100,7 @@ class TradingViewWSS:
                     self.indicator_metadata[TV_STUDY_ID] = self.get_indicator_metadata(TV_STUDY_ID)
 
                 meta_info = self.indicator_metadata[TV_STUDY_ID]
+                logger.info(f"Creating study for {symbol}: {meta_info}")
                 self._create_study(session_id, self.study_id, "sds_1", meta_info)
             except Exception as e:
                 logger.error(f"Failed to load study for {symbol}: {e}")
