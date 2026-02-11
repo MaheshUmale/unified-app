@@ -43,16 +43,19 @@ A minimal, high-performance trading terminal featuring TradingView charting, rea
   - **Real-time Option Chain**: Live streaming of LTP, Volume, Bid, and Ask data.
   - **OI Analysis**: Visual distribution of Call/Put Open Interest and OI Change across all strikes (using Chart.js).
   - **PCR & Max Pain Trends**: Historical tracking of Put-Call Ratio (OI & Volume), Max Pain, and Underlying Spot Price.
-  - **Automated Data Management**: Background backfilling and periodic snapshots (every 5 minutes) using Trendlyne and TradingView data sources.
+  - **Advanced Historical Analysis**: Interactive charts for Spot Price, Total OI, and OI Change with IST localization and auto-scaling.
+  - **NSE Confluence Scalper**: Automated option buying engine using price action and OI confluence.
+  - **Automated Data Management**: Background backfilling and periodic snapshots (every 5 minutes) using Trendlyne, NSE India, and TradingView data sources.
 
 ## Architecture
 
-- **Frontend**: SPA built with Tailwind CSS. Utilizes `lightweight-charts` for rendering and `socket.io-client` for real-time synchronization.
+- **Frontend**: SPA built with Tailwind CSS. Utilizes `lightweight-charts` for rendering and `Chart.js` for options analysis.
 - **Backend**:
-  - `FastAPI`: Serves the UI and provides REST endpoints for symbol search and historical candle aggregation.
-  - `TradingViewWSS`: A robust WebSocket client that manages 'quote' and 'chart' sessions, handling interleaved study data and protocol heartbeats.
-  - `Data Engine`: The central hub for processing raw ticks, calculating volume deltas, and routing chart updates to the correct Socket.IO rooms.
-  - `DuckDB`: A local, high-performance analytical database for storing tick history and symbol metadata.
+  - **Interface-Based Data Layer**: Decoupled ingestion layer using `ILiveStreamProvider`, `IOptionsDataProvider`, and `IHistoricalDataProvider` for multi-source redundancy.
+  - `FastAPI`: Serves the UI and provides high-performance REST endpoints.
+  - `Data Engine`: The central hub for processing raw ticks and routing updates.
+  - `Confluence Engine`: A sophisticated signal generator in `brain/` utilizing `scipy` for technical level discovery.
+  - `DuckDB`: Optimized columnar store for high-frequency tick and options history.
 
 ## Setup & Running
 
