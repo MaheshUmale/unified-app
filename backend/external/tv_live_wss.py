@@ -100,6 +100,7 @@ class TradingViewWSS:
                     self.indicator_metadata[TV_STUDY_ID] = self.get_indicator_metadata(TV_STUDY_ID)
 
                 meta_info = self.indicator_metadata[TV_STUDY_ID]
+                logger.info(f"Creating study for {symbol}: {meta_info}")
                 self._create_study(session_id, self.study_id, "sds_1", meta_info)
             except Exception as e:
                 logger.error(f"Failed to load study for {symbol}: {e}")
@@ -129,6 +130,8 @@ class TradingViewWSS:
     def get_indicator_metadata(self, indicator_id, version="last"):
         url = f"https://pine-facade.tradingview.com/pine-facade/translate/{indicator_id}/{version}"
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        logger.info(f"Fetching indicator metadata for {indicator_id}")
+        logger.info(f"URL: {url}")
         try:
             response = requests.get(url, headers=headers, cookies=TV_COOKIE, timeout=10)
             data = response.json()
