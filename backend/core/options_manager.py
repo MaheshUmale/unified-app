@@ -13,7 +13,9 @@ import pandas as pd
 
 from config import OPTIONS_UNDERLYINGS, SNAPSHOT_CONFIG
 from db.local_db import db
+from core.interfaces import ILiveStreamProvider
 from core.provider_registry import options_data_registry, historical_data_registry
+from external.tv_options_wss import OptionsWSS
 
 # Import new modules
 from core.greeks_calculator import greeks_calculator
@@ -46,7 +48,7 @@ class OptionsManager:
         }
         self.running = False
         self._task = None
-        self.wss_clients: Dict[str, OptionsWSS] = {}
+        self.wss_clients: Dict[str, ILiveStreamProvider] = {}
         self.latest_chains: Dict[str, Dict[str, Any]] = {}
         self.symbol_map_cache: Dict[str, Dict[str, str]] = {}
         self.sio = None
@@ -380,11 +382,8 @@ class OptionsManager:
                 await self._refresh_wss_symbols(underlying)
             
             wss_data = self.latest_chains.get(underlying, {})
-            stock_id = await trendlyne_api.get_stock_id(tl_symbol)
             
-            oi_data, default_expiry, oi_source = await self._fetch_oi_data(
-                underlying, stock_id, tl_symbol
-            )
+            oi_data, default_expiry, oi_source = await self._fetch_oi_data(underlying)
             
             if not oi_data:
                 return await self._take_snapshot_tv(underlying)
@@ -479,12 +478,7 @@ class OptionsManager:
         logger.error(f"CRITICAL: Could not discover any Spot Price for {underlying}")
         return 0
     
-    async def _fetch_oi_data(
-        self,
-        underlying: str,
-        stock_id: Optional[str],
-        tl_symbol: str
-    ) -> tuple:
+    async def _fetch_oi_data(self, underlying: str) -> tuple:
         """Fetch OI data using Registry with automatic failover."""
         ist = pytz.timezone('Asia/Kolkata')
         now_ist = datetime.now(ist)
