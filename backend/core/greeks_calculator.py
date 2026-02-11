@@ -266,8 +266,9 @@ class GreeksCalculator:
         self,
         strike: float,
         spot_price: float,
-        threshold_itm: float = 0.02,
-        threshold_otm: float = 0.02
+        option_type: str = 'call',
+        threshold_itm: float = 0.01,
+        threshold_otm: float = 0.01
     ) -> str:
         """
         Categorize strike as ITM, ATM, or OTM.
@@ -275,8 +276,9 @@ class GreeksCalculator:
         Args:
             strike: Strike price
             spot_price: Current spot price
-            threshold_itm: Threshold for ITM (default 2%)
-            threshold_otm: Threshold for OTM (default 2%)
+            option_type: 'call' or 'put'
+            threshold_itm: Threshold for ITM (default 1%)
+            threshold_otm: Threshold for OTM (default 1%)
             
         Returns:
             'ITM', 'ATM', or 'OTM'
@@ -284,16 +286,20 @@ class GreeksCalculator:
         if spot_price <= 0:
             return 'ATM'
 
-        diff_pct = (strike - spot_price) / spot_price
-        
-        if abs(diff_pct) <= 0.01:  # Within 1%
+        # Within threshold of spot price is ATM
+        if abs(strike - spot_price) / spot_price <= 0.005:  # Within 0.5%
             return 'ATM'
-        elif diff_pct < -threshold_otm:  # Strike significantly below spot for calls
-            return 'ITM'  # For calls
-        elif diff_pct > threshold_otm:  # Strike significantly above spot for calls
-            return 'OTM'  # For calls
-        else:
-            return 'ATM'
+
+        if option_type.lower() == 'call':
+            if strike < spot_price:
+                return 'ITM'
+            else:
+                return 'OTM'
+        else:  # put
+            if strike > spot_price:
+                return 'ITM'
+            else:
+                return 'OTM'
 
 
 # Global instance

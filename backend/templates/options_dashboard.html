@@ -35,6 +35,7 @@
                 <span class="text-[9px] text-gray-500 font-bold">v3.0 Enhanced with Greeks & IV</span>
             </div>
             <div class="flex items-center gap-4 text-[10px] text-gray-400">
+                <span>Source: <span id="dataSource" class="text-green-400 font-bold">-</span></span>
                 <span>Last Updated: <span id="lastUpdated" class="text-blue-400 font-bold">-</span></span>
                 <select id="underlyingSelect" class="bg-slate-900 border border-white/10 rounded px-2 py-0.5 text-xs font-bold text-blue-400 outline-none">
                     <option value="NSE:NIFTY">NIFTY 50</option>
@@ -586,6 +587,11 @@
                 const chainData = await chainResponse.json();
                 renderOptionChain(chainData);
 
+                // Update source if available
+                if (chainData.source) {
+                    document.getElementById('dataSource').textContent = chainData.source.toUpperCase();
+                }
+
                 // Load summary data
                 const oiResponse = await fetch(`/api/options/oi-analysis/${currentUnderlying}`);
                 const oiData = await oiResponse.json();
@@ -928,7 +934,7 @@
                     labels: timestamps,
                     datasets: [{
                         label: 'Total OI',
-                        data: history.map(h => h.total_oi),
+                        data: history.map(h => h.total_oi || 0),
                         borderColor: 'rgba(34, 197, 94, 1)',
                         backgroundColor: 'rgba(34, 197, 94, 0.1)',
                         fill: true,
@@ -955,8 +961,8 @@
                     labels: timestamps,
                     datasets: [{
                         label: 'OI Change',
-                        data: history.map(h => h.total_oi_change),
-                        backgroundColor: history.map(h => h.total_oi_change >= 0 ? 'rgba(34, 197, 94, 0.6)' : 'rgba(239, 68, 68, 0.6)'),
+                        data: history.map(h => h.total_oi_change || 0),
+                        backgroundColor: history.map(h => (h.total_oi_change || 0) >= 0 ? 'rgba(34, 197, 94, 0.6)' : 'rgba(239, 68, 68, 0.6)'),
                     }]
                 },
                 options: {

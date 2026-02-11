@@ -21,7 +21,7 @@ async def fetch_option_chain(underlying: str):
 
     payload = {
         "columns": [
-            "name", "description", "option-type", "strike", "volume", "close"
+            "name", "description", "option-type", "strike", "volume", "close", "expiration", "open_interest"
         ],
         "filter": [
             {"left": "type", "operation": "equal", "right": "option"},

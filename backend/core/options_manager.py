@@ -218,8 +218,19 @@ class OptionsManager:
         """Process chain data with Greeks calculation."""
         rows = []
         
-        # Calculate days to expiry
-        expiry_date = datetime.strptime(expiry, "%Y-%m-%d").date()
+        # Robust date parsing
+        expiry_date = None
+        if isinstance(expiry, str):
+            for fmt in ("%Y-%m-%d", "%d-%b-%Y", "%d-%m-%Y"):
+                try:
+                    expiry_date = datetime.strptime(expiry, fmt).date()
+                    break
+                except:
+                    continue
+
+        if not expiry_date:
+             return []
+
         today = datetime.now(pytz.timezone('Asia/Kolkata')).date()
         days_to_expiry = max((expiry_date - today).days, 0)
         time_to_expiry = days_to_expiry / 365.0
@@ -256,7 +267,8 @@ class OptionsManager:
                 'theta': call_greeks['theta'],
                 'vega': call_greeks['vega'],
                 'intrinsic_value': call_greeks['intrinsic_value'],
-                'time_value': call_greeks['time_value']
+                'time_value': call_greeks['time_value'],
+                'source': 'backfill'
             })
             
             # Put option data
@@ -286,7 +298,8 @@ class OptionsManager:
                 'theta': put_greeks['theta'],
                 'vega': put_greeks['vega'],
                 'intrinsic_value': put_greeks['intrinsic_value'],
-                'time_value': put_greeks['time_value']
+                'time_value': put_greeks['time_value'],
+                'source': 'backfill'
             })
         
         return rows
@@ -389,7 +402,7 @@ class OptionsManager:
                 return await self._take_snapshot_tv(underlying)
             
             rows = self._process_oi_data(
-                oi_data, underlying, default_expiry, wss_data, spot_price
+                oi_data, underlying, default_expiry, wss_data, spot_price, oi_source
             )
             
             if rows:
@@ -505,13 +518,22 @@ class OptionsManager:
         underlying: str,
         default_expiry: str,
         wss_data: Dict[str, Any],
-        spot_price: float
+        spot_price: float,
+        name: str = "unknown"
     ) -> List[Dict[str, Any]]:
         """Process OI data with enhanced metrics."""
         rows = []
         timestamp = datetime.now(pytz.utc)
         
-        expiry_date = datetime.strptime(default_expiry, "%Y-%m-%d").date() if isinstance(default_expiry, str) else None
+        # Robust date parsing
+        expiry_date = None
+        if isinstance(default_expiry, str):
+            for fmt in ("%Y-%m-%d", "%d-%b-%Y", "%d-%m-%Y"):
+                try:
+                    expiry_date = datetime.strptime(default_expiry, fmt).date()
+                    break
+                except:
+                    continue
         
         # Calculate time to expiry
         if expiry_date:
@@ -551,7 +573,8 @@ class OptionsManager:
                 'theta': call_greeks['theta'],
                 'vega': call_greeks['vega'],
                 'intrinsic_value': call_greeks['intrinsic_value'],
-                'time_value': call_greeks['time_value']
+                'time_value': call_greeks['time_value'],
+                'source': name
             })
             
             # Put option
@@ -577,7 +600,8 @@ class OptionsManager:
                 'theta': put_greeks['theta'],
                 'vega': put_greeks['vega'],
                 'intrinsic_value': put_greeks['intrinsic_value'],
-                'time_value': put_greeks['time_value']
+                'time_value': put_greeks['time_value'],
+                'source': name
             })
         
         return rows
@@ -614,9 +638,9 @@ class OptionsManager:
         if not data or 'symbols' not in data:
             return
         
+        spot_price = await self.get_spot_price(underlying)
         timestamp = datetime.now(pytz.utc)
         rows = []
-        symbols = []
         
         if underlying not in self.symbol_map_cache:
             self.symbol_map_cache[underlying] = {}
@@ -627,30 +651,49 @@ class OptionsManager:
                 symbol = f[0]
                 strike = float(f[3]) if f[3] is not None else 0
                 opt_type = str(f[2]).lower()
+                volume = int(f[4]) if f[4] is not None else 0
+                ltp = float(f[5]) if f[5] is not None else 0
+
+                # Expiration and OI from augmented TV scanner columns
+                expiration_ts = f[6] if len(f) > 6 else None
+                oi = int(f[7]) if len(f) > 7 and f[7] is not None else 0
+
+                expiry_date = None
+                time_to_expiry = 0.01 # Default ~4 days
+                if expiration_ts:
+                    expiry_date = datetime.fromtimestamp(expiration_ts, pytz.utc).date()
+                    days_to_expiry = max((expiry_date - timestamp.date()).days, 0)
+                    time_to_expiry = days_to_expiry / 365.0
+
+                # Calculate real Greeks instead of defaults
+                greeks = greeks_calculator.calculate_all_greeks(
+                    spot_price, strike, time_to_expiry, 0.20, opt_type, ltp
+                )
                 
-                symbols.append(symbol)
                 self.symbol_map_cache[underlying][f"{strike}_{opt_type}"] = symbol
                 
                 rows.append({
                     'timestamp': timestamp,
                     'underlying': underlying,
                     'symbol': symbol,
-                    'expiry': None,
+                    'expiry': expiry_date,
                     'strike': strike,
                     'option_type': opt_type,
-                    'oi': 0,
-                    'oi_change': 0,
-                    'volume': int(f[4]) if f[4] is not None else 0,
-                    'ltp': float(f[5]) if f[5] is not None else 0,
-                    'iv': 0,
-                    'delta': 0.5 if opt_type == 'call' else -0.5,
-                    'gamma': 0,
-                    'theta': 0,
-                    'vega': 0,
-                    'intrinsic_value': 0,
-                    'time_value': 0
+                    'oi': oi,
+                    'oi_change': 0, # TV doesn't provide OI change in scanner easily
+                    'volume': volume,
+                    'ltp': ltp,
+                    'iv': greeks['implied_volatility'],
+                    'delta': greeks['delta'],
+                    'gamma': greeks['gamma'],
+                    'theta': greeks['theta'],
+                    'vega': greeks['vega'],
+                    'intrinsic_value': greeks['intrinsic_value'],
+                    'time_value': greeks['time_value'],
+                    'source': 'tradingview_fallback'
                 })
-            except:
+            except Exception as e:
+                logger.debug(f"Error parsing TV symbol {item}: {e}")
                 continue
         
         if rows:
@@ -765,6 +808,8 @@ class OptionsManager:
             (underlying, latest_ts),
             json_serialize=True
         )
+
+        source = chain[0].get('source', 'unknown') if chain else 'unknown'
         
         # Fetch spot price from pcr_history
         spot_res = db.query(
@@ -775,7 +820,7 @@ class OptionsManager:
         if spot_res:
             spot_price = spot_res[0].get('spot_price') or spot_res[0].get('underlying_price') or 0
 
-        return {"timestamp": latest_ts, "chain": chain, "spot_price": spot_price}
+        return {"timestamp": latest_ts, "chain": chain, "spot_price": spot_price, "source": source}
     
     def get_oi_buildup_analysis(self, underlying: str) -> Dict[str, Any]:
         """Get OI buildup analysis."""

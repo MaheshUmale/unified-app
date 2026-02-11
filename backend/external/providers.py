@@ -77,7 +77,17 @@ class NSEOptionsProvider(IOptionsDataProvider):
     async def get_expiry_dates(self, underlying: str) -> List[str]:
         data = await self.get_option_chain(underlying)
         if data and 'records' in data:
-            return data['records'].get('expiryDates', [])
+            raw_dates = data['records'].get('expiryDates', [])
+            # Standardize to YYYY-MM-DD
+            standard_dates = []
+            for d in raw_dates:
+                try:
+                    # Parse DD-MMM-YYYY
+                    dt = datetime.strptime(d, "%d-%b-%Y")
+                    standard_dates.append(dt.strftime("%Y-%m-%d"))
+                except:
+                    standard_dates.append(d)
+            return standard_dates
         return []
 
     async def get_oi_data(self, underlying: str, expiry: str, time_str: str) -> Dict[str, Any]:
@@ -88,7 +98,14 @@ class NSEOptionsProvider(IOptionsDataProvider):
 
         oi_data = {}
         for item in data.get('filtered', {}).get('data', []):
-            if item['expiryDate'] == expiry:
+            raw_exp = item.get('expiryDate')
+            std_exp = raw_exp
+            try:
+                std_exp = datetime.strptime(raw_exp, "%d-%b-%Y").strftime("%Y-%m-%d")
+            except:
+                pass
+
+            if std_exp == expiry:
                 strike = str(item['strikePrice'])
                 oi_data[strike] = {
                     'callOi': item.get('CE', {}).get('openInterest', 0),
