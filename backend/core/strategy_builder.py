@@ -147,28 +147,35 @@ class Strategy:
     def _calculate_spread_max_profit(self) -> Optional[float]:
         """Calculate max profit for spread strategies."""
         try:
+            if not self.legs:
+                return 0.0
+
             if self.strategy_type == StrategyType.BULL_CALL_SPREAD:
-                calls = [l for l in self.legs if l.option_type == 'call']
-                if len(calls) == 2:
-                    strike_diff = abs(calls[0].strike - calls[1].strike)
-                    return strike_diff - abs(self.net_premium)
+                calls = sorted([l for l in self.legs if l.option_type == 'call'], key=lambda x: x.strike)
+                if len(calls) >= 2:
+                    strike_diff = calls[1].strike - calls[0].strike
+                    return (strike_diff * calls[0].quantity) - abs(self.net_premium)
             
             elif self.strategy_type == StrategyType.BEAR_PUT_SPREAD:
-                puts = [l for l in self.legs if l.option_type == 'put']
-                if len(puts) == 2:
-                    strike_diff = abs(puts[0].strike - puts[1].strike)
-                    return strike_diff - abs(self.net_premium)
+                puts = sorted([l for l in self.legs if l.option_type == 'put'], key=lambda x: x.strike, reverse=True)
+                if len(puts) >= 2:
+                    strike_diff = puts[0].strike - puts[1].strike
+                    return (strike_diff * puts[0].quantity) - abs(self.net_premium)
             
             elif self.strategy_type == StrategyType.IRON_CONDOR:
                 return abs(self.net_premium)
             
             return None
-        except:
+        except Exception as e:
+            logger.error(f"Error calculating max profit: {e}")
             return None
     
     def _calculate_spread_max_loss(self) -> Optional[float]:
         """Calculate max loss for spread strategies."""
         try:
+            if not self.legs:
+                return 0.0
+
             if self.strategy_type == StrategyType.BULL_CALL_SPREAD:
                 return abs(self.net_premium)
             
@@ -176,17 +183,21 @@ class Strategy:
                 return abs(self.net_premium)
             
             elif self.strategy_type == StrategyType.IRON_CONDOR:
-                calls = [l for l in self.legs if l.option_type == 'call']
-                call_spread = abs(calls[0].strike - calls[1].strike)
-                return call_spread - abs(self.net_premium)
+                calls = sorted([l for l in self.legs if l.option_type == 'call'], key=lambda x: x.strike)
+                if len(calls) >= 2:
+                    call_spread = calls[1].strike - calls[0].strike
+                    return (call_spread * calls[0].quantity) - abs(self.net_premium)
             
             return None
-        except:
+        except Exception as e:
+            logger.error(f"Error calculating max loss: {e}")
             return None
     
     def _calculate_breakevens(self) -> List[float]:
         """Calculate breakeven points."""
         breakevens = []
+        if not self.legs:
+            return []
         
         if self.strategy_type == StrategyType.LONG_CALL:
             breakevens = [self.legs[0].strike + self.legs[0].premium]

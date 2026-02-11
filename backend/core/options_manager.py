@@ -433,6 +433,13 @@ class OptionsManager:
             
             if res:
                 return res[0]['price']
+
+            # Fallback 1: Historical candles
+            logger.info(f"Spot not in ticks for {underlying}, trying hist candles...")
+            hist = await asyncio.to_thread(tv_api.get_hist_candles, underlying, '1', 1)
+            if hist:
+                return hist[0][4] # close price
+
         except Exception as e:
             logger.error(f"Error fetching spot: {e}")
         

@@ -122,7 +122,43 @@ class LocalDB:
 
         self.conn.execute("CREATE INDEX IF NOT EXISTS idx_pcr_hist_ts ON pcr_history (timestamp, underlying)")
 
+        self._migrate_db()
         logger.info(f"Local DuckDB initialized at {DB_PATH}")
+
+    def _migrate_db(self):
+        """Add missing columns to existing tables."""
+        # 1. options_snapshots
+        try:
+            cols = [c['column_name'] for c in self.get_table_schema('options_snapshots')]
+            missing_snapshot_cols = {
+                'delta': 'DOUBLE',
+                'gamma': 'DOUBLE',
+                'theta': 'DOUBLE',
+                'vega': 'DOUBLE',
+                'intrinsic_value': 'DOUBLE',
+                'time_value': 'DOUBLE'
+            }
+            for col, dtype in missing_snapshot_cols.items():
+                if col not in cols:
+                    logger.info(f"Migrating: Adding {col} to options_snapshots")
+                    self.conn.execute(f"ALTER TABLE options_snapshots ADD COLUMN {col} {dtype}")
+        except Exception as e:
+            logger.error(f"Error migrating options_snapshots: {e}")
+
+        # 2. pcr_history
+        try:
+            cols = [c['column_name'] for c in self.get_table_schema('pcr_history')]
+            missing_pcr_cols = {
+                'pcr_oi_change': 'DOUBLE',
+                'underlying_price': 'DOUBLE',
+                'spot_price': 'DOUBLE'
+            }
+            for col, dtype in missing_pcr_cols.items():
+                if col not in cols:
+                    logger.info(f"Migrating: Adding {col} to pcr_history")
+                    self.conn.execute(f"ALTER TABLE pcr_history ADD COLUMN {col} {dtype}")
+        except Exception as e:
+            logger.error(f"Error migrating pcr_history: {e}")
 
     def insert_ticks(self, ticks: List[Dict[str, Any]]):
         if not ticks: return
