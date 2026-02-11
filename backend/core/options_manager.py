@@ -12,12 +12,8 @@ from typing import Dict, Any, List, Optional
 import pandas as pd
 
 from config import OPTIONS_UNDERLYINGS, SNAPSHOT_CONFIG
-from external.tv_options_scanner import fetch_option_chain
-from external.tv_options_wss import OptionsWSS
-from external.trendlyne_api import trendlyne_api
-from external.nse_api import fetch_nse_oi_data
-from external.tv_api import tv_api
 from db.local_db import db
+from core.provider_registry import options_data_registry, historical_data_registry
 
 # Import new modules
 from core.greeks_calculator import greeks_calculator
@@ -158,21 +154,20 @@ class OptionsManager:
                     logger.info(f"Sufficient data already exists for {underlying} on {target_date_str}, skipping.")
                     continue
                 
-                # Get historical spot prices
-                hist_spot = await asyncio.to_thread(tv_api.get_hist_candles, underlying, '5', 300)
+                # Get historical spot prices using primary historical provider
+                hist_provider = historical_data_registry.get_primary()
+                hist_spot = await hist_provider.get_hist_candles(underlying, '5', 300)
                 spot_map = {c[0]: c[4] for c in hist_spot} if hist_spot else {}
                 
-                stock_id = await trendlyne_api.get_stock_id(tl_symbol)
-                if not stock_id:
-                    continue
-                
-                expiries = await trendlyne_api.get_expiry_dates(stock_id)
+                # Use primary options provider
+                opt_provider = options_data_registry.get_primary()
+                expiries = await opt_provider.get_expiry_dates(underlying)
                 if not expiries:
                     continue
                 default_expiry = expiries[0]
                 
                 for ts_str in time_slots:
-                    data = await trendlyne_api.get_oi_data(stock_id, default_expiry, ts_str)
+                    data = await opt_provider.get_oi_data(underlying, default_expiry, ts_str)
                     if not data or data.get('head', {}).get('status') != '0':
                         continue
                     
@@ -443,9 +438,10 @@ class OptionsManager:
                 logger.info(f"Spot Price discovered from Ticks for {underlying}: {res[0]['price']}")
                 return res[0]['price']
 
-            # Layer 2: Historical Candles (TradingView API/Scraper)
+            # Layer 2: Historical Candles (Provider Registry)
             logger.info(f"Spot not in ticks for {underlying}, trying historical candles...")
-            hist = await asyncio.to_thread(tv_api.get_hist_candles, underlying, '1', 5)
+            hist_provider = historical_data_registry.get_primary()
+            hist = await hist_provider.get_hist_candles(underlying, '1', 5)
             if hist and len(hist) > 0:
                 price = hist[0][4]  # Close of most recent candle
                 if price > 0:
@@ -489,49 +485,25 @@ class OptionsManager:
         stock_id: Optional[str],
         tl_symbol: str
     ) -> tuple:
-        """Fetch OI data from available sources."""
-        oi_data = None
-        default_expiry = None
-        oi_source = "trendlyne"
-        
+        """Fetch OI data using Registry with automatic failover."""
         ist = pytz.timezone('Asia/Kolkata')
         now_ist = datetime.now(ist)
         ts_str = now_ist.strftime("%H:%M")
         
-        if stock_id:
-            expiries = await trendlyne_api.get_expiry_dates(stock_id)
-            if expiries:
-                default_expiry = expiries[0]
-                data = await trendlyne_api.get_oi_data(stock_id, default_expiry, ts_str)
-                if data and data.get('head', {}).get('status') == '0':
-                    oi_data = data.get('body', {}).get('oiData', {})
-        
-        if not oi_data:
-            logger.info(f"Trendlyne failed for {underlying}, trying NSE fallback...")
-            nse_symbol = underlying.split(":")[-1]
-            if nse_symbol == "CNXFINANCE":
-                nse_symbol = "FINNIFTY"
-            
-            nse_data = await asyncio.to_thread(fetch_nse_oi_data, nse_symbol)
-            if nse_data and 'records' in nse_data:
-                oi_source = "nse"
-                records = nse_data['records']
-                default_expiry = records['expiryDates'][0]
-                oi_data = {}
-                for item in nse_data.get('filtered', {}).get('data', []):
-                    strike = str(item['strikePrice'])
-                    oi_data[strike] = {
-                        'callOi': item.get('CE', {}).get('openInterest', 0),
-                        'callOiChange': item.get('CE', {}).get('changeinOpenInterest', 0),
-                        'callVol': item.get('CE', {}).get('totalTradedVolume', 0),
-                        'callLtp': item.get('CE', {}).get('lastPrice', 0),
-                        'putOi': item.get('PE', {}).get('openInterest', 0),
-                        'putOiChange': item.get('PE', {}).get('changeinOpenInterest', 0),
-                        'putVol': item.get('PE', {}).get('totalTradedVolume', 0),
-                        'putLtp': item.get('PE', {}).get('lastPrice', 0),
-                    }
-        
-        return oi_data, default_expiry, oi_source
+        for name, provider in options_data_registry.providers.items():
+            try:
+                expiries = await provider.get_expiry_dates(underlying)
+                if expiries:
+                    default_expiry = expiries[0]
+                    data = await provider.get_oi_data(underlying, default_expiry, ts_str)
+                    if data and data.get('head', {}).get('status') == '0':
+                        oi_data = data.get('body', {}).get('oiData', {})
+                        return oi_data, default_expiry, name
+            except Exception as e:
+                logger.warning(f"Provider {name} failed for {underlying}: {e}")
+                continue
+
+        return None, None, None
     
     def _process_oi_data(
         self,
@@ -641,8 +613,10 @@ class OptionsManager:
             logger.info(f"Triggered {len(triggered)} alerts for {underlying}")
     
     async def _take_snapshot_tv(self, underlying: str):
-        """Fallback to TradingView data."""
-        data = await fetch_option_chain(underlying)
+        """Fallback to TradingView data via Registry."""
+        # Use first provider that gives a chain (usually trendlyne or nse adapter)
+        provider = options_data_registry.get_primary()
+        data = await provider.get_option_chain(underlying)
         if not data or 'symbols' not in data:
             return
         
@@ -699,7 +673,8 @@ class OptionsManager:
                 self.wss_clients[underlying].add_symbols(filtered_symbols[:400])
     
     async def _refresh_wss_symbols(self, underlying: str):
-        data = await fetch_option_chain(underlying)
+        provider = options_data_registry.get_primary()
+        data = await provider.get_option_chain(underlying)
         if data and 'symbols' in data:
             if underlying not in self.symbol_map_cache:
                 self.symbol_map_cache[underlying] = {}
