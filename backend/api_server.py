@@ -362,7 +362,7 @@ async def get_options_chain_with_greeks(
         option_type = item.get('option_type', 'call')
         
         # Categorize as ITM/ATM/OTM
-        moneyness = greeks_calculator.categorize_strike(strike, spot_price)
+        moneyness = greeks_calculator.categorize_strike(strike, spot_price, option_type)
         item['moneyness'] = moneyness
         
         # Calculate distance from ATM
@@ -374,7 +374,8 @@ async def get_options_chain_with_greeks(
     return {
         "underlying": underlying,
         "spot_price": spot_price,
-        "chain": chain_data.get('chain', [])
+        "chain": chain_data.get('chain', []),
+        "source": chain_data.get('source', 'unknown')
     }
 
 
@@ -494,7 +495,8 @@ async def get_oi_analysis(underlying: str):
             SUM(CASE WHEN option_type = 'call' THEN oi_change ELSE 0 END) as call_oi_change,
             SUM(CASE WHEN option_type = 'put' THEN oi_change ELSE 0 END) as put_oi_change,
             SUM(CASE WHEN option_type = 'call' THEN volume ELSE 0 END) as call_volume,
-            SUM(CASE WHEN option_type = 'put' THEN volume ELSE 0 END) as put_volume
+            SUM(CASE WHEN option_type = 'put' THEN volume ELSE 0 END) as put_volume,
+            MAX(source) as source
         FROM options_snapshots
         WHERE underlying = ? AND timestamp = ?
         GROUP BY strike

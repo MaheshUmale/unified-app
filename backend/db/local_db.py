@@ -102,7 +102,8 @@ class LocalDB:
                 theta DOUBLE,
                 vega DOUBLE,
                 intrinsic_value DOUBLE,
-                time_value DOUBLE
+                time_value DOUBLE,
+                source VARCHAR
             )
         """)
         self.conn.execute("CREATE INDEX IF NOT EXISTS idx_opt_snap_ts ON options_snapshots (timestamp, underlying)")
@@ -138,7 +139,8 @@ class LocalDB:
                 'theta': 'DOUBLE',
                 'vega': 'DOUBLE',
                 'intrinsic_value': 'DOUBLE',
-                'time_value': 'DOUBLE'
+                'time_value': 'DOUBLE',
+                'source': 'VARCHAR'
             }
             for col, dtype in missing_snapshot_cols.items():
                 if col not in cols:
@@ -241,7 +243,7 @@ class LocalDB:
         cols = [
             'timestamp', 'underlying', 'symbol', 'expiry', 'strike', 'option_type',
             'oi', 'oi_change', 'volume', 'ltp', 'iv', 'delta', 'gamma', 'theta',
-            'vega', 'intrinsic_value', 'time_value'
+            'vega', 'intrinsic_value', 'time_value', 'source'
         ]
         # Ensure all columns exist in data
         for item in data:
