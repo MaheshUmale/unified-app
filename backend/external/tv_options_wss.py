@@ -7,7 +7,9 @@ import re
 import string
 import random
 from datetime import datetime
+from typing import List, Dict, Any, Optional, Callable
 from config import TV_COOKIE
+from core.interfaces import ILiveStreamProvider
 
 logger = logging.getLogger(__name__)
 
@@ -18,8 +20,8 @@ def format_message(m, p):
     payload = json.dumps({"m": m, "p": p}, separators=(',', ':'))
     return f"~m~{len(payload)}~m~{payload}"
 
-class OptionsWSS:
-    def __init__(self, underlying: str, on_data_callback):
+class OptionsWSS(ILiveStreamProvider):
+    def __init__(self, underlying: str, on_data_callback: Callable = None):
         self.underlying = underlying
         self.callback = on_data_callback
         self.ws = None
@@ -54,6 +56,19 @@ class OptionsWSS:
         self.stop_event.set()
         if self.ws:
             self.ws.close()
+
+    def is_connected(self) -> bool:
+        return self.ws and self.ws.sock and self.ws.sock.connected
+
+    def set_callback(self, callback: Callable):
+        self.callback = callback
+
+    def subscribe(self, symbols: List[str], interval: str = "1"):
+        self.add_symbols(symbols)
+
+    def unsubscribe(self, symbol: str, interval: str = "1"):
+        # OptionsWSS doesn't currently implement individual unsubscribe logic
+        pass
 
     def on_open(self, ws):
         logger.info(f"Options Quote WSS Connection opened for {self.underlying}")

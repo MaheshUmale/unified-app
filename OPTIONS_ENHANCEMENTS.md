@@ -231,11 +231,59 @@ const response = await fetch('/api/alerts/create', {
 
 ## Performance Considerations
 
+- Interface-based data ingestion for multi-provider redundancy
+- Automatic failover for Open Interest data
+- Optimized circular buffers for high-speed scalper signal generation
 - Greeks calculations use optimized Black-Scholes model
 - IV history maintained for 252 trading days
 - Alert cooldowns prevent notification spam
 - WebSocket rooms for efficient real-time updates
 - Database indexing on underlying and timestamp
+
+### 7. NSE Confluence Scalper (`brain/nse_confluence_scalper.py`)
+
+**Features:**
+- **Multi-Dimensional Confluence**: Executes trades only when all signals align:
+  - **Price Levels**: Underlying at Support/Resistance or High Volume Node (HVN).
+  - **Trend Confirmation**: PCR trend matching the trade direction.
+  - **Breakout/Breakdown**: Option price breaking local swing high + inverse option breaking local swing low.
+- **High-Speed Execution**: Uses 500-tick circular buffers for millisecond-level calculation.
+- **Automated Level Detection**: Swing points via `scipy.signal.find_peaks` and Volume Profile HVNs.
+- **Risk Management**:
+  - Fixed ₹2,000 risk per trade with auto-quantity calculation.
+  - 15% Hard Stop Loss or Confluence Level.
+  - Trailing Stop Loss moved to Break-even after +10% gain.
+  - **Theta Protection**: Automatic exit if premium doesn't move >1% within 3 minutes of entry.
+- **Real-time Logging**: Detailed "Log Pulse" in the dashboard.
+- **Trade Persistence**: All executed trades saved to `trades.csv`.
+
+**API Endpoints:**
+- `POST /api/scalper/start` - Start scalper for specific underlying
+- `POST /api/scalper/stop` - Stop active scalper
+- `GET /api/scalper/status` - Get running status and active trades
+
+### 8. Advanced Historical Trends
+
+**Features:**
+- **Relative Analysis**: Multi-chart view in PCR Trend tab to compare:
+  - **Spot Price Trend**: Line chart with localized IST time.
+  - **PCR Trend**: Combined OI and Volume PCR tracking.
+  - **Total OI Trend**: Aggregate market participation over time.
+  - **OI Change Trend**: Bar chart highlighting net buyer/seller momentum.
+- **Auto-Scaling**: All Y-axes dynamically adjust for clear visualization of relative changes.
+
+### 9. Interface-Based Architecture (`core/interfaces.py`)
+
+**Features:**
+- **Decoupled Providers**: All external data feeds (WSS, OI, History) are interface-based.
+- **Provider Registry**: Manage multiple sources with priority and weightage.
+- **Redundancy**: Automatic failover (e.g., switches to NSE India if Trendlyne is unavailable).
+- **Extensibility**: Add new data providers without modifying core application logic.
+
+## Regional Localization
+
+- **Indian Standard Time (IST)**: All timestamps across the terminal are localized to IST (UTC+5:30).
+- **Dashboard Synchronization**: "Last Updated" and chart X-axes default to 09:15-15:30 IST market hours.
 
 ## Future Enhancements
 
@@ -243,7 +291,7 @@ Potential features for future releases:
 - Paper trading module
 - Backtesting engine
 - Machine learning for IV prediction
-- Automated strategy execution
+- Multi-broker order integration
 - Portfolio-level Greeks tracking
 - Multi-leg order suggestions
 - Historical strategy performance
