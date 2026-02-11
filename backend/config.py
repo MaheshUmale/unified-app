@@ -107,7 +107,6 @@ STRATEGY_CONFIG = {
         "PUT_CALENDAR"
     ]
 }
-import rookiepy 
 
 # TradingView Cookie (Optional)
 TV_COOKIE = os.getenv("TV_COOKIE", "")
@@ -185,6 +184,3 @@ UI_CONFIG = {
 }
 
 
-
-#USER;f9c7fa68b382417ba34df4122c632dcf
-TV_STUDY_ID ='USER%3Bf9c7fa68b382417ba34df4122c632dcf'

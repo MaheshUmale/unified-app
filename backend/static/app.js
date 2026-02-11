@@ -99,7 +99,7 @@ class ChartInstance {
             scaleMargins: { top: 0.8, bottom: 0 }, visible: false
         });
 
-        this.chart.subscribeClick((param) => {
+        this.chart.subscribeClick((param) => { 
 
             // console.log("Type of candles:", typeof this.fullHistory.candles);
             // console.log("Is Array?:", Array.isArray(this.fullHistory.candles));
@@ -115,16 +115,9 @@ class ChartInstance {
             // // 2. Use the findIndex
             // const idx = this.fullHistory.candles.findIndex(c => c.time === param.time);
 
-
+ 
             if (this.isReplayMode && param.time && this.replayIndex === -1) {
-                // Convert Map keys to an Array and find the index of the timestamp
-                const keys = Array.from(this.fullHistory.candles.keys());
-                const idx = keys.indexOf(param.time);
-
-                if (idx !== -1) {
-                    console.log("Found at index:", idx);
-                }
-                // const idx = this.fullHistory.candles.findIndex(c => c.time === param.time);
+                const idx = this.fullHistory.candles.findIndex(c => c.time === param.time);
                 if (idx !== -1) {
                     this.replayIndex = idx;
                     this.stepReplay(0);
