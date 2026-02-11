@@ -26,6 +26,7 @@ from core.iv_analyzer import iv_analyzer
 from core.oi_buildup_analyzer import oi_buildup_analyzer
 from core.strategy_builder import strategy_builder, StrategyType
 from core.alert_system import alert_system, AlertType
+from brain.nse_confluence_scalper import scalper
 from external.tv_api import tv_api
 from external.tv_scanner import search_options
 from db.local_db import db
@@ -55,6 +56,9 @@ async def lifespan(app: FastAPI):
     # Start Options Management
     options_manager.set_socketio(sio, loop=main_loop)
     await options_manager.start()
+
+    # Initialize Scalper
+    scalper.set_socketio(sio, loop=main_loop)
     
     yield
     
@@ -452,7 +456,7 @@ async def get_pcr_trend(underlying: str):
     """Returns historical PCR data for current trading day."""
     history = db.query(
         """
-        SELECT timestamp, pcr_oi, pcr_vol, pcr_oi_change, underlying_price, max_pain, spot_price
+        SELECT timestamp, pcr_oi, pcr_vol, pcr_oi_change, underlying_price, max_pain, spot_price, total_oi, total_oi_change
         FROM pcr_history
         WHERE underlying = ?
         AND CAST((timestamp AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata' AS DATE) =
@@ -729,6 +733,42 @@ async def delete_alert(alert_id: str):
     if alert_system.delete_alert(alert_id):
         return {"status": "success", "message": "Alert deleted"}
     raise HTTPException(status_code=404, detail="Alert not found")
+
+
+# ==================== SCALPER API ====================
+
+@fastapi_app.post("/api/scalper/start")
+async def start_scalper(underlying: str = Query("NSE:NIFTY")):
+    """Start the NSE Confluence Scalper."""
+    try:
+        scalper.underlying = underlying
+        await scalper.start()
+        return {"status": "success", "message": f"Scalper started for {underlying}"}
+    except Exception as e:
+        logger.error(f"Error starting scalper: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@fastapi_app.post("/api/scalper/stop")
+async def stop_scalper():
+    """Stop the NSE Confluence Scalper."""
+    try:
+        await scalper.stop()
+        return {"status": "success", "message": "Scalper stopped"}
+    except Exception as e:
+        logger.error(f"Error stopping scalper: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@fastapi_app.get("/api/scalper/status")
+async def get_scalper_status():
+    """Get the current status of the scalper."""
+    return {
+        "is_running": scalper.is_running,
+        "underlying": scalper.underlying,
+        "active_trades": scalper.executor.active_trades,
+        "current_spot": scalper.current_spot
+    }
 
 
 @fastapi_app.post("/api/alerts/{alert_id}/pause")
