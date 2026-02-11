@@ -182,3 +182,5 @@ UI_CONFIG = {
     "chart_history_days": 30,
     "max_strikes_displayed": 50
 }
+
+
