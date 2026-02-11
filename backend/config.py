@@ -151,7 +151,7 @@ MARKET_HOURS = {
 # Snapshot Configuration
 SNAPSHOT_CONFIG = {
     "interval_seconds": 180,  # 3 minutes between snapshots
-    "backfill_interval_minutes": 15  # 15-minute intervals for backfill
+    "backfill_interval_minutes": 5  # 5-minute intervals for backfill
 }
 
 # Feature Flags

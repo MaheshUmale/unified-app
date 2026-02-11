@@ -306,6 +306,9 @@
             initSocket();
             loadData();
             setupEventListeners();
+
+            // Auto-refresh every 2 minutes
+            setInterval(loadData, 120000);
         });
 
         function initSocket() {
@@ -318,11 +321,39 @@
             socket.on('connect', () => {
                 console.log('Socket connected');
                 socket.emit('subscribe_options', { underlying: currentUnderlying });
+                socket.emit('subscribe', { instrumentKeys: [currentUnderlying], interval: '1' });
+            });
+
+            socket.on('raw_tick', (data) => {
+                for (const [key, quote] of Object.entries(data)) {
+                    if (key.toUpperCase() === currentUnderlying.toUpperCase()) {
+                        const price = parseFloat(quote.last_price);
+                        if (!isNaN(price) && price > 0) {
+                            document.getElementById('spotPrice').textContent = price.toLocaleString(undefined, {minimumFractionDigits: 2});
+                        }
+                    }
+                }
+            });
+
+            socket.on('chart_update', (data) => {
+                if (data.instrumentKey?.toUpperCase() === currentUnderlying.toUpperCase() && data.ohlcv?.length > 0) {
+                    const latest = data.ohlcv[data.ohlcv.length - 1];
+                    const price = parseFloat(latest[4]);
+                    if (!isNaN(price) && price > 0) {
+                        document.getElementById('spotPrice').textContent = price.toLocaleString(undefined, {minimumFractionDigits: 2});
+                    }
+                }
             });
 
             socket.on('options_quote_update', (data) => {
-                // Handle real-time quote updates
-                console.log('Quote update:', data);
+                // Real-time quote updates for chain rows
+                if (data.underlying === currentUnderlying) {
+                    // Update LTP in the table if possible
+                    const strike = data.symbol.match(/\d{5}/);
+                    if (strike) {
+                        // This would require a more complex mapping, skipping for now
+                    }
+                }
             });
 
             socket.on('options_alert', (data) => {
@@ -333,8 +364,15 @@
         function setupEventListeners() {
             // Underlying selector
             document.getElementById('underlyingSelect').addEventListener('change', (e) => {
+                const oldUnderlying = currentUnderlying;
                 currentUnderlying = e.target.value;
+
+                socket.emit('unsubscribe_options', { underlying: oldUnderlying });
+                socket.emit('unsubscribe', { instrumentKeys: [oldUnderlying], interval: '1' });
+
                 socket.emit('subscribe_options', { underlying: currentUnderlying });
+                socket.emit('subscribe', { instrumentKeys: [currentUnderlying], interval: '1' });
+
                 loadData();
             });
 
