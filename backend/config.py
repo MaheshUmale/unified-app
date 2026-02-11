@@ -109,10 +109,18 @@ STRATEGY_CONFIG = {
 }
 import rookiepy 
 
-# 1. Retrieve Brave cookies for TradingView
-# Passing the domain helps filter for specific site data
-cookies = rookiepy.to_cookiejar(rookiepy.brave(['.tradingview.com']))
-TV_COOKIE =cookies
+# TradingView Cookie (Optional)
+TV_COOKIE = os.getenv("TV_COOKIE", "")
+try:
+    import rookiepy
+    # Retrieve Brave cookies for TradingView
+    TV_COOKIE = rookiepy.to_cookiejar(rookiepy.brave(['.tradingview.com']))
+    print("TradingView cookies loaded via rookiepy (Brave)")
+except Exception as e:
+    # Fallback to env var string if rookiepy fails or isn't needed
+    pass
+
+TV_STUDY_ID = os.getenv("TV_STUDY_ID", "USER:f9c7fa68b382417ba34df4122c632dcf")
 
 # Database Configuration
 DATABASE_CONFIG = {

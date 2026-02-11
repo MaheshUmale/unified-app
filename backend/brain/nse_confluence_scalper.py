@@ -78,6 +78,7 @@ class DataStreamer:
     async def subscribe(self, underlying):
         from core.options_manager import options_manager
         from core.provider_registry import live_stream_registry
+        from external.tv_api import tv_api
 
         self.symbols['underlying'] = underlying
         self.instrument_map[underlying] = 'underlying'
@@ -89,7 +90,9 @@ class DataStreamer:
             return
 
         self.scalper.current_spot = spot
-        atm_strike = round(spot / 100) * 100
+        # NIFTY uses 50 strike interval, others 100. Let's be smart.
+        strike_interval = 50 if "NIFTY" in underlying and "BANK" not in underlying else 100
+        atm_strike = round(spot / strike_interval) * strike_interval
 
         # Ensure symbols are cached
         await options_manager._refresh_wss_symbols(underlying)
@@ -105,6 +108,18 @@ class DataStreamer:
         self.symbols['atm_put'] = put_sym
         self.instrument_map[call_sym] = 'atm_call'
         self.instrument_map[put_sym] = 'atm_put'
+
+        # Fetch Historical Data for Level Hunting
+        self.scalper.log(f"Fetching historical data for {underlying} and ATM options...")
+        for target, symbol in self.symbols.items():
+            try:
+                hist = await asyncio.to_thread(tv_api.get_hist_candles, symbol, '1', 1000)
+                if hist:
+                    self.on_ohlcv(symbol, {'ohlcv': hist})
+                    if target == 'underlying':
+                        self.scalper.engine.calculate_volume_profile(None, hist)
+            except Exception as e:
+                logger.error(f"Error fetching historical data for {symbol}: {e}")
 
         # Use registry for live stream
         provider = live_stream_registry.get_primary()
@@ -137,18 +152,23 @@ class ConfluenceEngine:
             self.underlying_levels = levels
         return levels
 
-    def calculate_volume_profile(self, ticks):
-        """Calculate High Volume Nodes (HVN)."""
-        if not ticks: return []
+    def calculate_volume_profile(self, ticks=None, candles=None):
+        """Calculate High Volume Nodes (HVN) for current and previous day."""
+        if not ticks and not candles: return []
 
-        df = pd.DataFrame(ticks)
-        if 'last_price' not in df.columns or 'ltq' not in df.columns:
-            return []
+        if candles:
+            # columns=['ts', 'o', 'h', 'l', 'c', 'v']
+            df = pd.DataFrame(candles, columns=['ts', 'o', 'h', 'l', 'c', 'v'])
+            # For candles, we can use 'c' as price and 'v' as volume
+            vp = df.groupby('c')['v'].sum().sort_values(ascending=False)
+        else:
+            df = pd.DataFrame(ticks)
+            if 'last_price' not in df.columns or 'ltq' not in df.columns:
+                return []
+            vp = df.groupby('last_price')['ltq'].sum().sort_values(ascending=False)
 
-        # Group by price and sum volume
-        vp = df.groupby('last_price')['ltq'].sum().sort_values(ascending=False)
-        # Top 3 HVNs
-        self.hvn_levels = vp.head(3).index.tolist()
+        # Top 5 HVNs for better confluence
+        self.hvn_levels = vp.head(5).index.tolist()
         return self.hvn_levels
 
     def update_option_levels(self, symbol, df_1m):
@@ -301,17 +321,43 @@ class SignalGenerator:
         # Bullish Signal
         if (is_at_support or is_brk_resistance) and bullish_oi:
             if call_brk and put_brk_dwn:
-                inv_status = "PUT_BREAKDOWN_CONFIRMED"
+                inv_status = "PUT_BREAKDOWN"
                 msg = f"[SIGNAL: CALL_BUY] [LVL: {level or spot}] [OI: {oi_conf}] [INV: {inv_status}]"
                 self.scalper.log(msg)
+
+                if self.scalper.sio and self.scalper.loop:
+                    asyncio.run_coroutine_threadsafe(
+                        self.scalper.sio.emit('scalper_log', {
+                            'time': datetime.now().strftime('%H:%M:%S'),
+                            'signal': 'CALL BUY',
+                            'underlying_level': round(level or spot, 2),
+                            'oi_confirmation': oi_conf,
+                            'inverse_status': inv_status
+                        }),
+                        self.scalper.loop
+                    )
+
                 self.scalper.order_manager.execute_buy(call_sym, 'CALL', call_tick['last_price'], call_levels['last_swing_l'])
 
         # Bearish Signal
         elif (is_at_support or is_brk_resistance) and bearish_oi:
             if put_brk and call_brk_dwn:
-                inv_status = "CALL_BREAKDOWN_CONFIRMED"
+                inv_status = "CALL_BREAKDOWN"
                 msg = f"[SIGNAL: PUT_BUY] [LVL: {level or spot}] [OI: {oi_conf}] [INV: {inv_status}]"
                 self.scalper.log(msg)
+
+                if self.scalper.sio and self.scalper.loop:
+                    asyncio.run_coroutine_threadsafe(
+                        self.scalper.sio.emit('scalper_log', {
+                            'time': datetime.now().strftime('%H:%M:%S'),
+                            'signal': 'PUT BUY',
+                            'underlying_level': round(level or spot, 2),
+                            'oi_confirmation': oi_conf,
+                            'inverse_status': inv_status
+                        }),
+                        self.scalper.loop
+                    )
+
                 self.scalper.order_manager.execute_buy(put_sym, 'PUT', put_tick['last_price'], put_levels['last_swing_l'])
 
 class OrderManager:
@@ -325,15 +371,20 @@ class OrderManager:
     def execute_buy(self, symbol, side, entry_price, sl_level):
         jumper = 0.50
         limit_price = entry_price + jumper
-        risk_amount = abs(entry_price - sl_level)
-        if risk_amount == 0: risk_amount = entry_price * 0.15
+
+        # Hard SL at 15% or Confluence Level (whichever is closer/safer)
+        hard_sl = entry_price * 0.85
+        final_sl = max(sl_level, hard_sl) # Don't risk more than 15%
+
+        risk_amount = abs(entry_price - final_sl)
+        if risk_amount == 0: risk_amount = entry_price * 0.10 # fallback
 
         quantity = int(self.risk_per_trade / risk_amount)
         if quantity == 0: quantity = 1
 
         trade = {
             'symbol': symbol, 'side': side, 'entry_price': entry_price,
-            'limit_price': limit_price, 'sl': sl_level,
+            'limit_price': limit_price, 'sl': final_sl,
             'tp': entry_price + (risk_amount * 2.5),
             'quantity': quantity, 'entry_time': datetime.now(),
             'last_price': entry_price, 'max_price': entry_price,
@@ -419,6 +470,54 @@ class NSEConfluenceScalper:
         self.log(f"Scalper Starting: {self.underlying}")
         await self.streamer.subscribe(self.underlying)
         asyncio.create_task(self._main_loop())
+        asyncio.create_task(self._atm_tracking_loop())
+
+    async def _atm_tracking_loop(self):
+        """Periodically updates ATM option subscriptions."""
+        while self.is_running:
+            try:
+                if self.current_spot > 0:
+                    spot = self.current_spot
+                    atm_strike = round(spot / 50) * 50
+                    if "BANKNIFTY" in self.underlying:
+                        atm_strike = round(spot / 100) * 100
+
+                    # Ensure symbols are cached
+                    await options_manager._refresh_wss_symbols(self.underlying)
+                    call_sym = options_manager.symbol_map_cache.get(self.underlying, {}).get(f"{atm_strike}_call")
+                    put_sym = options_manager.symbol_map_cache.get(self.underlying, {}).get(f"{atm_strike}_put")
+
+                    if call_sym and put_sym:
+                        current_ce = self.streamer.symbols.get('atm_call')
+                        current_pe = self.streamer.symbols.get('atm_put')
+
+                        if call_sym != current_ce or put_sym != current_pe:
+                            from core.provider_registry import live_stream_registry
+                            provider = live_stream_registry.get_primary()
+
+                            # Unsubscribe old
+                            to_unsub = []
+                            if current_ce: to_unsub.append(current_ce)
+                            if current_pe: to_unsub.append(current_pe)
+                            if to_unsub: provider.unsubscribe_instrument(to_unsub, "scalper")
+
+                            # Update map
+                            if current_ce: self.streamer.instrument_map.pop(current_ce, None)
+                            if current_pe: self.streamer.instrument_map.pop(current_pe, None)
+
+                            self.streamer.symbols['atm_call'] = call_sym
+                            self.streamer.symbols['atm_put'] = put_sym
+                            self.streamer.instrument_map[call_sym] = 'atm_call'
+                            self.streamer.instrument_map[put_sym] = 'atm_put'
+
+                            # Subscribe new
+                            provider.subscribe([call_sym, put_sym], interval="1")
+                            self.log(f"ATM Switched to {atm_strike}: {call_sym}, {put_sym}")
+
+                await asyncio.sleep(60)
+            except Exception as e:
+                logger.error(f"ATM tracking error: {e}")
+                await asyncio.sleep(10)
 
     def _handle_wss_message(self, data):
         if data.get('type') == 'live_feed':
