@@ -30,8 +30,8 @@
             --input-bg: #ffffff;
         }
 
-        body { font-family: 'Inter', sans-serif; background-color: var(--bg-main); color: var(--text-primary); transition: background-color 0.3s, color 0.3s; }
-        .glass-panel { background: var(--bg-panel); backdrop-filter: blur(12px); border: 1px solid var(--border-subtle); }
+        body { font-family: 'Inter', sans-serif; background-color: var(--bg-main); color: var(--text-primary); transition: background-color 0.3s, color 0.3s; -webkit-font-smoothing: antialiased; }
+        .glass-panel { background: var(--bg-panel); backdrop-filter: blur(16px); border: 1px solid var(--border-subtle); box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); }
         .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
@@ -41,10 +41,12 @@
         @keyframes flash-green { 0% { background-color: rgba(34, 197, 94, 0.3); } 100% { background-color: transparent; } }
         @keyframes flash-red { 0% { background-color: rgba(239, 68, 68, 0.3); } 100% { background-color: transparent; } }
 
-        .sticky-header th { position: sticky; top: 0; z-index: 10; background: var(--header-bg); }
-        .tab-active { border-bottom: 2px solid #3b82f6; color: #3b82f6; }
-        .greek-positive { color: #22c55e; }
-        .greek-negative { color: #ef4444; }
+        .sticky-header th { position: sticky; top: 0; z-index: 10; background: var(--input-bg); border-bottom: 2px solid var(--border-subtle); }
+        .tab-active { border-bottom: 3px solid #3b82f6; color: #3b82f6; }
+        .greek-positive { color: #22c55e; font-weight: 700; }
+        .greek-negative { color: #ef4444; font-weight: 700; }
+        .strike-cell { background-color: var(--input-bg); font-weight: 900 !important; color: #f59e0b !important; }
+        .light-theme .strike-cell { background-color: #f8fafc; color: #d97706 !important; }
 
         /* Component Overrides for Themes */
         .theme-text-muted { color: var(--text-muted); }
@@ -52,8 +54,8 @@
         .light-theme .text-white { color: var(--text-primary); }
         .light-theme .text-gray-400 { color: #475569; }
         .light-theme .text-gray-500 { color: #64748b; }
-        .light-theme .bg-slate-900 { background-color: #e2e8f0; }
-        .light-theme .bg-slate-800 { background-color: #f1f5f9; }
+        .light-theme .bg-slate-900 { background-color: #e2e8f0; color: #0f172a; }
+        .light-theme .bg-slate-800 { background-color: #f1f5f9; color: #0f172a; }
         .light-theme .bg-black\/40 { background-color: rgba(255, 255, 255, 0.5); }
     </style>
 </head>
@@ -69,7 +71,7 @@
             <div class="flex items-center gap-4 text-[10px] text-gray-400">
                 <span>Source: <span id="dataSource" class="text-green-400 font-bold">-</span></span>
                 <span>Updated: <span id="lastUpdated" class="text-blue-400 font-bold">-</span></span>
-                <select id="underlyingSelect" class="bg-gray-900 border border-white/10 rounded px-2 py-0.5 text-xs font-bold text-blue-500 outline-none focus:ring-1 focus:ring-blue-500">
+                <select id="underlyingSelect" class="bg-gray-900 border border-white/10 rounded px-3 py-1 text-xs font-black text-blue-500 outline-none focus:ring-2 focus:ring-blue-500/50 transition-all cursor-pointer hover:bg-black">
                     <option value="NSE:NIFTY">NIFTY 50</option>
                     <option value="NSE:BANKNIFTY">BANKNIFTY</option>
                     <option value="NSE:FINNIFTY">FINNIFTY</option>
@@ -77,11 +79,11 @@
             </div>
         </div>
         <div class="flex items-center gap-2">
-            <div class="flex items-center gap-1 bg-black/20 p-1 rounded-full border border-white/5">
-                <button id="refreshBtn" class="bg-blue-600 hover:bg-blue-700 text-white text-[9px] font-black px-4 py-1.5 rounded-full transition-all uppercase italic tracking-tighter">
+            <div class="flex items-center gap-1 bg-black/20 p-1 rounded-full border border-white/10">
+                <button id="refreshBtn" class="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black px-5 py-2 rounded-full transition-all uppercase italic tracking-tighter shadow-lg shadow-blue-500/20 active:scale-95">
                     Refresh
                 </button>
-                <button id="backfillBtn" class="bg-gray-800 hover:bg-gray-700 text-white text-[9px] font-black px-4 py-1.5 rounded-full transition-all uppercase italic tracking-tighter ml-1">
+                <button id="backfillBtn" class="bg-gray-800 hover:bg-gray-600 text-white text-[10px] font-black px-5 py-2 rounded-full transition-all uppercase italic tracking-tighter ml-1 active:scale-95">
                     Backfill
                 </button>
                 <button id="alertsBtn" class="text-gray-400 hover:text-white p-1.5 transition-colors">
@@ -154,9 +156,9 @@
             </div>
 
             <!-- Row 2: Insights & Secondary -->
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
                 <!-- Genie Insights Card -->
-                <div class="lg:col-span-2 glass-panel rounded-xl p-3 border-l-4 border-blue-500 flex items-center justify-between shadow-md">
+                <div class="lg:col-span-6 glass-panel rounded-xl p-3 border-l-4 border-blue-500 flex items-center justify-between shadow-md">
                     <div class="flex-1">
                         <div class="text-[10px] text-blue-500 font-black uppercase tracking-widest flex items-center gap-3">
                             OiGenie Market Control
@@ -174,8 +176,16 @@
                     </div>
                 </div>
 
+                <!-- OI Buildup Pulse Card -->
+                <div class="lg:col-span-3 glass-panel rounded-xl p-3 border-l-4 border-purple-500 shadow-md">
+                    <div class="text-[10px] text-purple-400 font-black uppercase tracking-widest mb-1">OI Buildup Pulse</div>
+                    <div id="buildupAnalysis" class="grid grid-cols-2 gap-1">
+                        <!-- Dynamic: Long Buildup, Short Buildup, etc. -->
+                    </div>
+                </div>
+
                 <!-- Net Greeks -->
-                <div class="glass-panel rounded-xl p-3 flex items-center justify-between shadow-sm">
+                <div class="lg:col-span-3 glass-panel rounded-xl p-3 flex items-center justify-between shadow-sm">
                     <div class="flex flex-col">
                         <div class="text-[10px] text-gray-500 font-black uppercase tracking-widest">Net Delta</div>
                         <div id="netDelta" class="text-xl font-black text-white mt-1">-</div>
@@ -190,11 +200,8 @@
 
         <!-- Tabs -->
         <div class="flex gap-6 border-b border-white/10 pt-2">
-            <button class="tab-btn tab-active pb-2 text-xs font-bold uppercase tracking-wider" data-tab="chain">Option Chain</button>
-            <button class="tab-btn pb-2 text-xs font-bold text-gray-500 uppercase tracking-wider hover:text-white transition-colors" data-tab="oi-analysis">OI Analysis</button>
-            <button class="tab-btn pb-2 text-xs font-bold text-gray-500 uppercase tracking-wider hover:text-white transition-colors" data-tab="pcr-trend">PCR Trend</button>
-            <button class="tab-btn pb-2 text-xs font-bold text-gray-500 uppercase tracking-wider hover:text-white transition-colors" data-tab="greeks">Greeks</button>
-            <button class="tab-btn pb-2 text-xs font-bold text-gray-500 uppercase tracking-wider hover:text-white transition-colors" data-tab="buildup">OI Buildup</button>
+            <button class="tab-btn tab-active pb-2 text-xs font-bold uppercase tracking-wider" data-tab="chain">Chain</button>
+            <button class="tab-btn pb-2 text-xs font-bold text-gray-500 uppercase tracking-wider hover:text-white transition-colors" data-tab="overview">Analysis Overview</button>
             <button class="tab-btn pb-2 text-xs font-bold text-gray-500 uppercase tracking-wider hover:text-white transition-colors" data-tab="strategies">Strategies</button>
             <button class="tab-btn pb-2 text-xs font-bold text-gray-500 uppercase tracking-wider hover:text-white transition-colors" data-tab="alerts">Alerts</button>
             <button class="tab-btn pb-2 text-xs font-bold text-gray-500 uppercase tracking-wider hover:text-white transition-colors" data-tab="scalper">Scalper</button>
@@ -237,74 +244,40 @@
                 </div>
             </div>
 
-            <!-- OI Analysis Tab -->
-            <div id="oi-analysisTab" class="tab-pane hidden">
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    <div class="glass-panel rounded-xl p-4">
-                        <h3 class="text-xs font-bold uppercase tracking-wider mb-4">OI Distribution</h3>
-                        <div class="h-[300px] relative">
-                            <canvas id="oiChart"></canvas>
-                        </div>
-                    </div>
-                    <div class="glass-panel rounded-xl p-4">
-                        <h3 class="text-xs font-bold uppercase tracking-wider mb-4">Support & Resistance</h3>
-                        <div id="supportResistance" class="space-y-2">
-                            <!-- Dynamic content -->
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- PCR Trend Tab -->
-            <div id="pcr-trendTab" class="tab-pane hidden">
-                <div class="grid grid-cols-1 gap-4">
-                    <div class="glass-panel rounded-xl p-4">
-                        <h3 class="text-xs font-bold uppercase tracking-wider mb-4">Spot vs PCR Confluence</h3>
-                        <div class="h-[400px] relative">
-                            <canvas id="confluenceChart"></canvas>
-                        </div>
-                    </div>
-                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <!-- Overview Tab -->
+            <div id="overviewTab" class="tab-pane hidden">
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                    <!-- Left: Charts -->
+                    <div class="lg:col-span-8 space-y-4">
                         <div class="glass-panel rounded-xl p-4">
-                            <h3 class="text-xs font-bold uppercase tracking-wider mb-4">Total OI Trend</h3>
-                            <div class="h-[300px] relative">
-                                <canvas id="totalOIChart"></canvas>
+                            <h3 class="text-xs font-bold uppercase tracking-wider mb-4">Spot vs PCR Confluence</h3>
+                            <div class="h-[350px] relative">
+                                <canvas id="confluenceChart"></canvas>
                             </div>
                         </div>
-                        <div class="glass-panel rounded-xl p-4">
-                            <h3 class="text-xs font-bold uppercase tracking-wider mb-4">OI Change Trend</h3>
-                            <div class="h-[300px] relative">
-                                <canvas id="oiChangeChart"></canvas>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="glass-panel rounded-xl p-4">
+                                <h3 class="text-xs font-bold uppercase tracking-wider mb-4">OI Distribution</h3>
+                                <div class="h-[250px] relative">
+                                    <canvas id="oiChart"></canvas>
+                                </div>
+                            </div>
+                            <div class="glass-panel rounded-xl p-4">
+                                <h3 class="text-xs font-bold uppercase tracking-wider mb-4">OI Trends (Total & Chg)</h3>
+                                <div class="h-[250px] relative">
+                                    <canvas id="oiTrendMergedChart"></canvas>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
-            </div>
-
-            <!-- Greeks Tab -->
-            <div id="greeksTab" class="tab-pane hidden">
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    <div class="glass-panel rounded-xl p-4">
-                        <h3 class="text-xs font-bold uppercase tracking-wider mb-4">Delta Distribution</h3>
-                        <div class="h-[300px] relative">
-                            <canvas id="deltaChart"></canvas>
+                    <!-- Right: Lists -->
+                    <div class="lg:col-span-4 space-y-4">
+                        <div class="glass-panel rounded-xl p-4 h-full">
+                            <h3 class="text-xs font-bold uppercase tracking-wider mb-4">Institutional Support & Resistance</h3>
+                            <div id="supportResistance" class="space-y-2">
+                                <!-- Dynamic content -->
+                            </div>
                         </div>
-                    </div>
-                    <div class="glass-panel rounded-xl p-4">
-                        <h3 class="text-xs font-bold uppercase tracking-wider mb-4">Theta (Time Decay)</h3>
-                        <div class="h-[300px] relative">
-                            <canvas id="thetaChart"></canvas>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- OI Buildup Tab -->
-            <div id="buildupTab" class="tab-pane hidden">
-                <div class="glass-panel rounded-xl p-4">
-                    <h3 class="text-xs font-bold uppercase tracking-wider mb-4">OI Buildup Analysis</h3>
-                    <div id="buildupAnalysis" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                        <!-- Dynamic content -->
                     </div>
                 </div>
             </div>
@@ -523,14 +496,15 @@
             });
         }
 
-        function formatIST(timestamp) {
-            return new Intl.DateTimeFormat('en-IN', {
+        function formatIST(timestamp, short = false) {
+            const options = {
                 timeZone: 'Asia/Kolkata',
                 hour: '2-digit',
                 minute: '2-digit',
-                second: '2-digit',
                 hour12: false
-            }).format(new Date(timestamp));
+            };
+            if (!short) options.second = '2-digit';
+            return new Intl.DateTimeFormat('en-IN', options).format(new Date(timestamp));
         }
 
         // Initialize
@@ -784,10 +758,7 @@
             document.getElementById(tabId + 'Tab').classList.remove('hidden');
 
             // Load tab-specific data
-            if (tabId === 'oi-analysis') loadOIAnalysis();
-            if (tabId === 'pcr-trend') loadPCRTrend();
-            if (tabId === 'greeks') loadGreeks();
-            if (tabId === 'buildup') loadBuildupAnalysis();
+            if (tabId === 'overview') loadOverviewData();
             if (tabId === 'alerts') loadAlerts();
             if (tabId === 'scalper') updateScalperStatusUI();
         }
@@ -810,28 +781,73 @@
                 const genieData = await genieRes.json();
                 updateGenieCard(genieData);
 
+                // Load Buildup summary for the card
+                const buildupRes = await fetch(`/api/options/oi-buildup/${currentUnderlying}`);
+                const buildupData = await buildupRes.json();
+                renderBuildupSummary(buildupData);
+
                 // Update source if available
                 if (chainData.source) {
                     document.getElementById('dataSource').textContent = chainData.source.toUpperCase();
                 }
-
-                // Load summary data
-                const oiResponse = await fetch(`/api/options/oi-analysis/${currentUnderlying}`);
-                const oiData = await oiResponse.json();
-                updateSummaryCards(oiData);
 
                 // Load IV analysis
                 const ivResponse = await fetch(`/api/options/iv-analysis/${currentUnderlying}`);
                 const ivData = await ivResponse.json();
                 updateIVCard(ivData);
 
-                // Load PCR Trend for summary cards
-                await loadPCRTrend();
+                // Load PCR Trend & Summary Metrics
+                await loadOverviewData();
 
                 // Update timestamp
                 document.getElementById('lastUpdated').textContent = formatIST(new Date());
             } catch (error) {
                 console.error('Error loading data:', error);
+            }
+        }
+
+        async function loadOverviewData() {
+            try {
+                const [pcrRes, oiRes, srRes] = await Promise.all([
+                    fetch(`/api/options/pcr-trend/${currentUnderlying}`).then(r => r.json()),
+                    fetch(`/api/options/oi-analysis/${currentUnderlying}`).then(r => r.json()),
+                    fetch(`/api/options/support-resistance/${currentUnderlying}`).then(r => r.json())
+                ]);
+
+                renderPCRChart(pcrRes);
+                renderOIChart(oiRes);
+                renderSupportResistance(srRes);
+                renderMergedOIChart(pcrRes);
+                updateSummaryFromOverview(pcrRes, oiRes);
+
+            } catch (e) { console.error("Overview data load failed:", e); }
+        }
+
+        function updateSummaryFromOverview(pcrData, oiData) {
+            const history = pcrData.history || [];
+            if (history.length > 0) {
+                const latest = history[history.length - 1];
+                document.getElementById('pcrValue').textContent = latest.pcr_oi?.toFixed(2) || '0.00';
+                document.getElementById('pcrVol').textContent = latest.pcr_vol?.toFixed(2) || '0.00';
+                document.getElementById('maxPain').textContent = (latest.max_pain || 0).toLocaleString();
+
+                const spot = latest.spot_price || latest.underlying_price || 0;
+                if (spot > 0) {
+                    const diff = latest.max_pain - spot;
+                    const diffPct = (diff / spot * 100).toFixed(2);
+                    const diffEl = document.getElementById('maxPainDiff');
+                    diffEl.textContent = `${diff > 0 ? '+' : ''}${diff.toLocaleString()} (${diffPct}%)`;
+                    diffEl.className = `text-[8px] font-black ${diff >= 0 ? 'text-green-500' : 'text-red-500'} uppercase tracking-tighter`;
+                }
+
+                // PCR Signal
+                const pcr = latest.pcr_oi;
+                const pcrSignal = document.getElementById('pcrSignal');
+                if (pcr > 1.3) { pcrSignal.textContent = 'OVERBOUGHT'; pcrSignal.className = 'text-[8px] font-black bg-red-500/20 text-red-500 px-1.5 py-0.5 rounded uppercase'; }
+                else if (pcr > 1.1) { pcrSignal.textContent = 'BEARISH'; pcrSignal.className = 'text-[8px] font-black bg-red-400/20 text-red-400 px-1.5 py-0.5 rounded uppercase'; }
+                else if (pcr < 0.7) { pcrSignal.textContent = 'OVERSOLD'; pcrSignal.className = 'text-[8px] font-black bg-green-500/20 text-green-500 px-1.5 py-0.5 rounded uppercase'; }
+                else if (pcr < 0.9) { pcrSignal.textContent = 'BULLISH'; pcrSignal.className = 'text-[8px] font-black bg-green-400/20 text-green-400 px-1.5 py-0.5 rounded uppercase'; }
+                else { pcrSignal.textContent = 'NEUTRAL'; pcrSignal.className = 'text-[8px] font-black bg-gray-500/20 text-gray-400 px-1.5 py-0.5 rounded uppercase'; }
             }
         }
 
@@ -842,9 +858,21 @@
             const chain = data.chain || [];
             const spotPrice = data.spot_price || 0;
 
-            // Update Summary Card
+            // Update Summary Cards
             document.getElementById('spotPrice').textContent = spotPrice.toLocaleString(undefined, {minimumFractionDigits: 2});
             document.getElementById('aimSpot').textContent = spotPrice.toFixed(0);
+
+            if (data.net_delta !== undefined) {
+                const deltaEl = document.getElementById('netDelta');
+                deltaEl.textContent = (data.net_delta / 1000000).toFixed(2) + 'M';
+                const sigEl = document.getElementById('deltaSignal');
+                if (data.net_delta > 100000) { sigEl.textContent = 'BULLISH'; sigEl.className = 'text-[8px] font-black bg-green-500/20 text-green-500 px-1.5 py-0.5 rounded uppercase mb-1'; }
+                else if (data.net_delta < -100000) { sigEl.textContent = 'BEARISH'; sigEl.className = 'text-[8px] font-black bg-red-500/20 text-red-500 px-1.5 py-0.5 rounded uppercase mb-1'; }
+                else { sigEl.textContent = 'NEUTRAL'; sigEl.className = 'text-[8px] font-black bg-gray-500/20 text-gray-400 px-1.5 py-0.5 rounded uppercase mb-1'; }
+            }
+            if (data.net_theta !== undefined) {
+                document.getElementById('netTheta').textContent = (data.net_theta / 1000000).toFixed(2) + 'M';
+            }
 
             if (chain.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="13" class="py-10 text-center text-gray-500 font-bold">No data available. Please click "Backfill" or wait for the next snapshot.</td></tr>';
@@ -875,21 +903,21 @@
                 if (isHighActivity) rowClass = 'bg-yellow-500/5 border-l-2 border-yellow-500/50';
 
                 const row = document.createElement('tr');
-                row.className = `${rowClass} hover:bg-white/5 transition-colors`;
+                row.className = `${rowClass} hover:bg-white/10 transition-colors border-b border-white/5`;
                 row.innerHTML = `
-                    <td class="py-2 px-3 text-right text-gray-400">${call.iv || '-'}</td>
-                    <td class="py-2 px-3 text-right ${call.delta > 0 ? 'greek-positive' : 'greek-negative'}">${call.delta?.toFixed(2) || '-'}</td>
-                    <td class="py-2 px-3 text-right text-gray-400">${call.theta?.toFixed(2) || '-'}</td>
-                    <td class="py-2 px-3 text-right font-bold text-green-400">${call.ltp?.toFixed(2) || '-'}</td>
-                    <td class="py-2 px-3 text-right ${call.oi_change > 0 ? 'text-green-400' : 'text-red-400'}">${call.oi_change || '-'}</td>
-                    <td class="py-2 px-3 text-right border-r border-white/5">${call.oi?.toLocaleString() || '-'}</td>
-                    <td class="py-2 px-3 text-center font-black text-sm ${isATM ? 'text-blue-400' : (isHighActivity ? 'text-yellow-400' : 'text-white')} bg-slate-800">${strike}</td>
-                    <td class="py-2 px-3 text-left">${put.oi?.toLocaleString() || '-'}</td>
-                    <td class="py-2 px-3 text-left ${put.oi_change > 0 ? 'text-green-400' : 'text-red-400'}">${put.oi_change || '-'}</td>
-                    <td class="py-2 px-3 text-left font-bold text-red-400">${put.ltp?.toFixed(2) || '-'}</td>
-                    <td class="py-2 px-3 text-left text-gray-400">${put.theta?.toFixed(2) || '-'}</td>
-                    <td class="py-2 px-3 text-left ${put.delta > 0 ? 'greek-positive' : 'greek-negative'}">${put.delta?.toFixed(2) || '-'}</td>
-                    <td class="py-2 px-3 text-left text-gray-400">${put.iv || '-'}</td>
+                    <td class="py-2.5 px-3 text-right text-gray-400 font-medium">${call.iv || '-'}</td>
+                    <td class="py-2.5 px-3 text-right ${call.delta > 0 ? 'greek-positive' : 'greek-negative'}">${call.delta?.toFixed(2) || '-'}</td>
+                    <td class="py-2.5 px-3 text-right text-gray-500 font-medium">${call.theta?.toFixed(2) || '-'}</td>
+                    <td class="py-2.5 px-3 text-right font-black text-green-500 text-xs">${call.ltp?.toFixed(2) || '-'}</td>
+                    <td class="py-2.5 px-3 text-right font-bold ${call.oi_change > 0 ? 'text-green-500' : 'text-red-500'}">${call.oi_change || '-'}</td>
+                    <td class="py-2.5 px-3 text-right border-r border-white/10 font-bold text-white">${call.oi?.toLocaleString() || '-'}</td>
+                    <td class="py-2.5 px-3 text-center strike-cell text-sm shadow-inner">${strike}</td>
+                    <td class="py-2.5 px-3 text-left font-bold text-white">${put.oi?.toLocaleString() || '-'}</td>
+                    <td class="py-2.5 px-3 text-left font-bold ${put.oi_change > 0 ? 'text-green-500' : 'text-red-500'}">${put.oi_change || '-'}</td>
+                    <td class="py-2.5 px-3 text-left font-black text-red-500 text-xs">${put.ltp?.toFixed(2) || '-'}</td>
+                    <td class="py-2.5 px-3 text-left text-gray-500 font-medium">${put.theta?.toFixed(2) || '-'}</td>
+                    <td class="py-2.5 px-3 text-left ${put.delta > 0 ? 'greek-positive' : 'greek-negative'}">${put.delta?.toFixed(2) || '-'}</td>
+                    <td class="py-2.5 px-3 text-left text-gray-400 font-medium">${put.iv || '-'}</td>
                 `;
                 tbody.appendChild(row);
             });
@@ -1041,28 +1069,7 @@
             const resistance = data.resistance_levels || [];
             const support = data.support_levels || [];
 
-            // Distribution/Accumulation Summary
-            const summaryDiv = document.createElement('div');
-            summaryDiv.className = 'grid grid-cols-2 gap-4 mb-4';
-            summaryDiv.innerHTML = `
-                <div class="bg-red-500/10 border border-red-500/20 rounded p-3 text-center">
-                    <div class="text-[8px] text-red-400 uppercase font-black">Institutional Distribution</div>
-                    <div class="text-lg font-black text-white mt-1">${resistance[0]?.strike || '-'}</div>
-                    <div class="text-[8px] text-gray-500">HEAVY CALL WRITING</div>
-                </div>
-                <div class="bg-green-500/10 border border-green-500/20 rounded p-3 text-center">
-                    <div class="text-[8px] text-green-400 uppercase font-black">Institutional Accumulation</div>
-                    <div class="text-lg font-black text-white mt-1">${support[0]?.strike || '-'}</div>
-                    <div class="text-[8px] text-gray-500">HEAVY PUT WRITING</div>
-                </div>
-            `;
-            container.appendChild(summaryDiv);
-
-            // Detailed Levels (OiGenie Style)
-            const levelsDiv = document.createElement('div');
-            levelsDiv.className = 'space-y-1';
-
-            // Merge and sort all levels
+            // Detailed Levels (OiGenie Style) - Sorted by Strike
             const allLevels = [
                 ...resistance.map(l => ({...l, type: 'RES'})),
                 ...support.map(l => ({...l, type: 'SUP'}))
@@ -1073,24 +1080,22 @@
                 const color = isSup ? 'text-green-500' : 'text-red-500';
                 const bgColor = isSup ? 'bg-green-500/5' : 'bg-red-500/5';
                 const borderColor = isSup ? 'border-green-500/20' : 'border-red-500/20';
-
-                // Strength calculation for label (ss)
                 const label = level.oi > 1000000 ? '(ss)' : level.oi > 500000 ? '(s)' : '';
 
-                levelsDiv.innerHTML += `
-                    <div class="flex justify-between items-center py-2 px-3 ${bgColor} border-l-4 ${borderColor} rounded-r">
-                        <div class="flex items-center gap-2">
-                            <span class="text-xs font-black ${color}">${level.strike}</span>
-                            <span class="text-[10px] text-gray-500 font-bold">${isSup ? '↓' : '↑'}</span>
-                        </div>
-                        <div class="flex items-center gap-4">
-                            <span class="text-[9px] text-gray-400">OI: ${(level.oi/1000000).toFixed(1)}M</span>
-                            <span class="text-[10px] font-black ${color}">${label}</span>
-                        </div>
+                const div = document.createElement('div');
+                div.className = `flex justify-between items-center py-1.5 px-3 ${bgColor} border-l-4 ${borderColor} rounded-r mb-1 shadow-sm`;
+                div.innerHTML = `
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs font-black ${color} tracking-tighter">${level.strike}</span>
+                        <span class="text-[8px] text-gray-500 font-black">${isSup ? 'SUPPORT' : 'RESIST'}</span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span class="text-[9px] text-gray-400 font-bold">${(level.oi/1000000).toFixed(2)}M</span>
+                        <span class="text-[10px] font-black ${color}">${label}</span>
                     </div>
                 `;
+                container.appendChild(div);
             });
-            container.appendChild(levelsDiv);
         }
 
         async function loadPCRTrend() {
@@ -1124,6 +1129,49 @@
             } catch (error) {
                 console.error('Error loading PCR trend:', error);
             }
+        }
+
+        function renderMergedOIChart(pcrData) {
+            const ctx = document.getElementById('oiTrendMergedChart').getContext('2d');
+            if (charts.oiTrendMerged) charts.oiTrendMerged.destroy();
+
+            const history = pcrData.history || [];
+            const labels = history.map(h => formatIST(h.timestamp, true));
+
+            charts.oiTrendMerged = new Chart(ctx, {
+                data: {
+                    labels,
+                    datasets: [
+                        {
+                            type: 'line',
+                            label: 'Total OI',
+                            data: history.map(h => h.total_oi),
+                            borderColor: '#3b82f6',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            fill: true, tension: 0.4, pointRadius: 0, yAxisID: 'y'
+                        },
+                        {
+                            type: 'bar',
+                            label: 'OI Change',
+                            data: history.map(h => h.total_oi_change),
+                            backgroundColor: history.map(h => (h.total_oi_change || 0) >= 0 ? 'rgba(34, 197, 94, 0.5)' : 'rgba(239, 68, 68, 0.5)'),
+                            yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    scales: {
+                        x: { display: false },
+                        y: { type: 'linear', display: true, position: 'left', ticks: { color: '#64748b', font: { size: 8 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                        y1: { type: 'linear', display: true, position: 'right', grid: { drawOnChartArea: false }, ticks: { color: '#64748b', font: { size: 8 } } }
+                    },
+                    plugins: {
+                        legend: { display: true, position: 'top', align: 'end', labels: { color: '#94a3b8', font: { size: 8 }, boxWidth: 8, usePointStyle: true } }
+                    }
+                }
+            });
         }
 
         function renderPCRChart(data) {
@@ -1377,54 +1425,21 @@
             }
         }
 
-        function renderBuildupAnalysis(data) {
+        function renderBuildupSummary(data) {
             const container = document.getElementById('buildupAnalysis');
             container.innerHTML = '';
+            const patterns = data.summary?.pattern_distribution || {};
+            const colors = { 'Long Buildup': 'text-green-500', 'Short Buildup': 'text-red-500', 'Long Unwinding': 'text-orange-500', 'Short Covering': 'text-blue-400' };
 
-            const summary = data.summary || {};
-            const signals = data.signals || [];
-
-            // Pattern distribution
-            const patterns = summary.pattern_distribution || {};
-            
-            const patternColors = {
-                'Long Buildup': 'bg-green-500/20 text-green-500',
-                'Short Buildup': 'bg-red-500/20 text-red-500',
-                'Long Unwinding': 'bg-orange-500/20 text-orange-500',
-                'Short Covering': 'bg-blue-500/20 text-blue-500',
-                'Neutral': 'bg-gray-500/20 text-gray-500'
-            };
-
-            Object.entries(patterns).forEach(([pattern, count]) => {
+            Object.entries(patterns).forEach(([p, count]) => {
                 const div = document.createElement('div');
-                div.className = 'glass-panel rounded-xl p-3';
+                div.className = 'flex flex-col items-center bg-black/10 rounded py-1 px-2';
                 div.innerHTML = `
-                    <div class="text-[10px] text-gray-400 uppercase">${pattern}</div>
-                    <div class="text-2xl font-black ${patternColors[pattern] || 'text-white'} rounded px-2 py-1 mt-1 inline-block">${count}</div>
+                    <div class="text-[7px] text-gray-500 uppercase font-black truncate w-full text-center">${p.replace(' Buildup', '')}</div>
+                    <div class="text-xs font-black ${colors[p] || 'text-white'}">${count}</div>
                 `;
                 container.appendChild(div);
             });
-
-            // Strong signals
-            const strongSignals = signals.filter(s => s.strength === 'strong').slice(0, 5);
-            if (strongSignals.length > 0) {
-                const signalsDiv = document.createElement('div');
-                signalsDiv.className = 'glass-panel rounded-xl p-3 lg:col-span-2';
-                signalsDiv.innerHTML = '<div class="text-[10px] text-gray-400 uppercase mb-2">Strong Signals</div>';
-                
-                strongSignals.forEach(signal => {
-                    const color = signal.buildup_type.includes('Long') ? 'text-green-500' : 
-                                  signal.buildup_type.includes('Short') ? 'text-red-500' : 'text-gray-400';
-                    signalsDiv.innerHTML += `
-                        <div class="flex justify-between items-center py-1 text-xs">
-                            <span class="font-bold">${signal.strike} ${signal.option_type.toUpperCase()}</span>
-                            <span class="${color}">${signal.buildup_type}</span>
-                        </div>
-                    `;
-                });
-                
-                container.appendChild(signalsDiv);
-            }
         }
 
         async function buildStrategy() {

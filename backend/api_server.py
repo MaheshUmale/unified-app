@@ -477,7 +477,7 @@ async def get_pcr_trend(underlying: str):
         FROM pcr_history
         WHERE underlying = ?
         AND CAST((timestamp AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata' AS DATE) =
-            CAST(now() AT TIME ZONE 'Asia/Kolkata' AS DATE)
+            CAST(( ((SELECT MAX(timestamp) FROM pcr_history)) AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata' AS DATE)
         ORDER BY timestamp ASC
         """,
         (underlying,),
@@ -496,7 +496,7 @@ async def get_full_options_history(underlying: str):
         FROM pcr_history
         WHERE underlying = ?
         AND CAST((timestamp AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata' AS DATE) =
-            CAST(now() AT TIME ZONE 'Asia/Kolkata' AS DATE)
+            CAST(( ((SELECT MAX(timestamp) FROM pcr_history)) AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata' AS DATE)
         ORDER BY timestamp ASC
         """,
         (underlying,),
