@@ -238,15 +238,9 @@
             <div id="pcr-trendTab" class="tab-pane hidden">
                 <div class="grid grid-cols-1 gap-4">
                     <div class="glass-panel rounded-xl p-4">
-                        <h3 class="text-xs font-bold uppercase tracking-wider mb-4">Spot Price Trend</h3>
-                        <div class="h-[300px] relative">
-                            <canvas id="spotTrendChart"></canvas>
-                        </div>
-                    </div>
-                    <div class="glass-panel rounded-xl p-4">
-                        <h3 class="text-xs font-bold uppercase tracking-wider mb-4">PCR Trend (Today)</h3>
-                        <div class="h-[300px] relative">
-                            <canvas id="pcrChart"></canvas>
+                        <h3 class="text-xs font-bold uppercase tracking-wider mb-4">Spot vs PCR Confluence</h3>
+                        <div class="h-[400px] relative">
+                            <canvas id="confluenceChart"></canvas>
                         </div>
                     </div>
                     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -483,12 +477,19 @@
                 document.body.classList.remove('light-theme');
             }
             // Redraw charts if needed
+            const textColor = theme === 'light' ? '#0f172a' : '#f8fafc';
+            const mutedColor = theme === 'light' ? '#475569' : '#94a3b8';
+
             Object.values(charts).forEach(chart => {
-                if (chart && chart.options) {
-                    chart.options.scales.x.ticks.color = theme === 'light' ? '#475569' : '#94a3b8';
-                    chart.options.scales.y.ticks.color = theme === 'light' ? '#475569' : '#94a3b8';
+                if (chart && chart.options && chart.options.scales) {
+                    // Update all scales (x, y, y-spot, y-pcr, etc)
+                    Object.values(chart.options.scales).forEach(scale => {
+                        if (scale.ticks) scale.ticks.color = mutedColor;
+                        if (scale.title) scale.title.color = scale.title.color === '#3b82f6' || scale.title.color === '#22c55e' ? scale.title.color : textColor;
+                    });
+
                     if (chart.options.plugins.legend && chart.options.plugins.legend.labels) {
-                        chart.options.plugins.legend.labels.color = theme === 'light' ? '#0f172a' : '#f8fafc';
+                        chart.options.plugins.legend.labels.color = textColor;
                     }
                     chart.update();
                 }
@@ -1088,73 +1089,81 @@
         function renderPCRChart(data) {
             const history = data.history || [];
             const timestamps = history.map(h => formatIST(h.timestamp));
+            const theme = localStorage.getItem('theme') || 'light';
+            const textColor = theme === 'light' ? '#0f172a' : '#f8fafc';
+            const mutedColor = theme === 'light' ? '#475569' : '#94a3b8';
 
-            // 1. PCR Chart
-            const pcrCtx = document.getElementById('pcrChart').getContext('2d');
-            if (charts.pcr) charts.pcr.destroy();
+            // 1. Confluence Chart (Spot + PCR)
+            const confCtx = document.getElementById('confluenceChart').getContext('2d');
+            if (charts.confluence) charts.confluence.destroy();
 
-            charts.pcr = new Chart(pcrCtx, {
+            charts.confluence = new Chart(confCtx, {
                 type: 'line',
                 data: {
                     labels: timestamps,
                     datasets: [
                         {
-                            label: 'PCR (OI)',
-                            data: history.map(h => h.pcr_oi),
-                            borderColor: 'rgba(59, 130, 246, 1)',
-                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                            fill: true,
-                            tension: 0.4
+                            label: 'Spot Price',
+                            data: history.map(h => h.spot_price || h.underlying_price),
+                            borderColor: theme === 'light' ? '#2563eb' : '#3b82f6',
+                            borderWidth: 2,
+                            fill: false,
+                            tension: 0.2,
+                            pointRadius: 0,
+                            yAxisID: 'y-spot'
                         },
                         {
-                            label: 'PCR (Volume)',
+                            label: 'PCR (OI)',
+                            data: history.map(h => h.pcr_oi),
+                            borderColor: 'rgba(34, 197, 94, 1)',
+                            backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                            fill: true,
+                            tension: 0.4,
+                            yAxisID: 'y-pcr'
+                        },
+                        {
+                            label: 'PCR (Vol)',
                             data: history.map(h => h.pcr_vol),
                             borderColor: 'rgba(168, 85, 247, 1)',
                             backgroundColor: 'rgba(168, 85, 247, 0.1)',
-                            fill: true,
-                            tension: 0.4
+                            fill: false,
+                            borderDash: [5, 5],
+                            tension: 0.4,
+                            yAxisID: 'y-pcr'
                         }
                     ]
                 },
                 options: {
                     responsive: true, maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
                     scales: {
-                        x: { ticks: { color: '#94a3b8', font: { size: 9 } } },
-                        y: { ticks: { color: '#94a3b8', font: { size: 9 } }, suggestedMin: 0.5, suggestedMax: 1.5 }
+                        x: { ticks: { color: mutedColor, font: { size: 9 } } },
+                        'y-spot': {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            ticks: { color: '#3b82f6', font: { size: 9, weight: 'bold' } },
+                            beginAtZero: false,
+                            title: { display: true, text: 'SPOT PRICE', color: '#3b82f6', font: { size: 10, weight: 'bold' } }
+                        },
+                        'y-pcr': {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            ticks: { color: '#22c55e', font: { size: 9, weight: 'bold' } },
+                            grid: { drawOnChartArea: false },
+                            suggestedMin: 0.5,
+                            suggestedMax: 1.5,
+                            title: { display: true, text: 'PCR', color: '#22c55e', font: { size: 10, weight: 'bold' } }
+                        }
                     },
-                    plugins: { legend: { labels: { color: '#f8fafc', font: { size: 10 } } } }
+                    plugins: {
+                        legend: { labels: { color: textColor, font: { size: 10 } } }
+                    }
                 }
             });
 
-            // 2. Spot Trend Chart
-            const spotCtx = document.getElementById('spotTrendChart').getContext('2d');
-            if (charts.spot) charts.spot.destroy();
-
-            charts.spot = new Chart(spotCtx, {
-                type: 'line',
-                data: {
-                    labels: timestamps,
-                    datasets: [{
-                        label: 'Spot Price',
-                        data: history.map(h => h.spot_price || h.underlying_price),
-                        borderColor: 'rgba(255, 255, 255, 1)',
-                        borderWidth: 2,
-                        fill: false,
-                        tension: 0.2,
-                        pointRadius: 0
-                    }]
-                },
-                options: {
-                    responsive: true, maintainAspectRatio: false,
-                    scales: {
-                        x: { ticks: { color: '#94a3b8', font: { size: 9 } } },
-                        y: { ticks: { color: '#94a3b8', font: { size: 9 } }, beginAtZero: false }
-                    },
-                    plugins: { legend: { display: false } }
-                }
-            });
-
-            // 3. Total OI Chart
+            // 2. Total OI Chart
             const oiCtx = document.getElementById('totalOIChart').getContext('2d');
             if (charts.totalOI) charts.totalOI.destroy();
 
