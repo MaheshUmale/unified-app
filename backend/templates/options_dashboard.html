@@ -351,11 +351,61 @@
                             </div>
                         </div>
                     </div>
-                    <div class="lg:col-span-3">
-                        <div class="glass-panel rounded-xl p-4 h-[600px] flex flex-col">
+                    <div class="lg:col-span-3 space-y-4">
+                        <!-- Confluence Metrics -->
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div class="glass-panel rounded-xl p-3 border-l-4 border-blue-500">
+                                <div class="text-[10px] text-gray-400 uppercase font-bold">OI Power</div>
+                                <div id="scalperOIPower" class="text-lg font-black text-white mt-1">-</div>
+                            </div>
+                            <div class="glass-panel rounded-xl p-3 border-l-4 border-purple-500">
+                                <div class="text-[10px] text-gray-400 uppercase font-bold">Sentiment</div>
+                                <div id="scalperOISentiment" class="text-lg font-black text-white mt-1">-</div>
+                            </div>
+                            <div class="glass-panel rounded-xl p-3 border-l-4 border-orange-500">
+                                <div class="text-[10px] text-gray-400 uppercase font-bold">OI Status</div>
+                                <div id="scalperOIStatus" class="text-lg font-black text-white mt-1">-</div>
+                            </div>
+                            <div class="glass-panel rounded-xl p-3 border-l-4 border-green-500">
+                                <div class="text-[10px] text-gray-400 uppercase font-bold">Signal Zone</div>
+                                <div id="scalperSignalZone" class="text-lg font-black text-white mt-1">-</div>
+                            </div>
+                        </div>
+
+                        <!-- Confluence Checkbox Grid -->
+                        <div class="grid grid-cols-5 gap-4">
+                            <div id="conf-lvl" class="glass-panel rounded-lg p-3 text-center border border-white/5 opacity-40">
+                                <div class="text-[9px] text-gray-400 uppercase font-bold">Lvl Hunt</div>
+                                <div class="text-xs font-black mt-1">ZONE</div>
+                            </div>
+                            <div id="conf-pcr" class="glass-panel rounded-lg p-3 text-center border border-white/5 opacity-40">
+                                <div class="text-[9px] text-gray-400 uppercase font-bold">PCR Trend</div>
+                                <div class="text-xs font-black mt-1">PULSE</div>
+                            </div>
+                            <div id="conf-oi" class="glass-panel rounded-lg p-3 text-center border border-white/5 opacity-40">
+                                <div class="text-[9px] text-gray-400 uppercase font-bold">OI Spurt</div>
+                                <div class="text-xs font-black mt-1">SMART</div>
+                            </div>
+                            <div id="conf-brk" class="glass-panel rounded-lg p-3 text-center border border-white/5 opacity-40">
+                                <div class="text-[9px] text-gray-400 uppercase font-bold">Option Brk</div>
+                                <div class="text-xs font-black mt-1">MOMENTUM</div>
+                            </div>
+                            <div id="conf-inv" class="glass-panel rounded-lg p-3 text-center border border-white/5 opacity-40">
+                                <div class="text-[9px] text-gray-400 uppercase font-bold">Inverse Dn</div>
+                                <div class="text-xs font-black mt-1">CONFIRM</div>
+                            </div>
+                        </div>
+
+                        <div class="glass-panel rounded-xl p-4 h-[450px] flex flex-col">
                             <div class="flex justify-between items-center mb-4">
                                 <h3 class="text-xs font-bold uppercase tracking-wider">Scalper Log Pulse</h3>
-                                <button id="clearLogBtn" class="text-[10px] text-gray-500 hover:text-white uppercase font-bold">Clear Log</button>
+                                <div class="flex gap-4 items-center">
+                                    <div class="flex gap-2 text-[9px]">
+                                        <span class="text-gray-500">CE VWAP: <span id="ceVwap" class="text-blue-400 font-bold">-</span></span>
+                                        <span class="text-gray-500">PE VWAP: <span id="peVwap" class="text-red-400 font-bold">-</span></span>
+                                    </div>
+                                    <button id="clearLogBtn" class="text-[10px] text-gray-500 hover:text-white uppercase font-bold">Clear Log</button>
+                                </div>
                             </div>
                             <div id="scalperLog" class="flex-1 bg-black/40 rounded p-4 font-mono text-[11px] overflow-y-auto custom-scrollbar space-y-1">
                                 <p class="text-gray-600 italic">Connecting to scalper stream...</p>
@@ -459,6 +509,54 @@
 
                 // Sync status if needed
                 updateScalperStatusUI();
+            });
+
+            socket.on('scalper_metrics', (data) => {
+                const powerEl = document.getElementById('scalperOIPower');
+                const sentimentEl = document.getElementById('scalperOISentiment');
+                const statusEl = document.getElementById('scalperOIStatus');
+                const zoneEl = document.getElementById('scalperSignalZone');
+                const ceVwapEl = document.getElementById('ceVwap');
+                const peVwapEl = document.getElementById('peVwap');
+
+                if (powerEl) powerEl.textContent = data.oi_power;
+                if (sentimentEl) {
+                    sentimentEl.textContent = data.oi_sentiment;
+                    if (data.oi_sentiment === 'BULLISH') sentimentEl.className = 'text-lg font-black text-green-500 mt-1';
+                    else if (data.oi_sentiment === 'BEARISH') sentimentEl.className = 'text-lg font-black text-red-500 mt-1';
+                    else sentimentEl.className = 'text-lg font-black text-white mt-1';
+                }
+                if (statusEl) {
+                    statusEl.textContent = data.oi_status.replace('_', ' ');
+                    if (data.oi_status === 'LONG_BUILDUP') statusEl.className = 'text-lg font-black text-green-500 mt-1';
+                    else if (data.oi_status === 'SHORT_BUILDUP') statusEl.className = 'text-lg font-black text-red-500 mt-1';
+                    else if (data.oi_status === 'SHORT_COVERING') statusEl.className = 'text-lg font-black text-blue-500 mt-1';
+                    else if (data.oi_status === 'LONG_UNWINDING') statusEl.className = 'text-lg font-black text-orange-500 mt-1';
+                    else statusEl.className = 'text-lg font-black text-white mt-1';
+                }
+                if (zoneEl) zoneEl.textContent = data.underlying_level || '-';
+                if (ceVwapEl) ceVwapEl.textContent = data.vwap.call;
+                if (peVwapEl) peVwapEl.textContent = data.vwap.put;
+
+                // Confluence Check UI
+                if (data.confluence) {
+                    const updateConf = (id, active) => {
+                        const el = document.getElementById(id);
+                        if (!el) return;
+                        if (active) {
+                            el.classList.remove('opacity-40');
+                            el.classList.add('bg-blue-500/20', 'border-blue-500/50', 'text-blue-400');
+                        } else {
+                            el.classList.add('opacity-40');
+                            el.classList.remove('bg-blue-500/20', 'border-blue-500/50', 'text-blue-400');
+                        }
+                    };
+                    updateConf('conf-lvl', data.confluence.lvl);
+                    updateConf('conf-pcr', data.confluence.pcr);
+                    updateConf('conf-oi', data.confluence.oi);
+                    updateConf('conf-brk', data.confluence.opt_brk);
+                    updateConf('conf-inv', data.confluence.inv_dwn);
+                }
             });
         }
 
@@ -795,31 +893,56 @@
             const resistance = data.resistance_levels || [];
             const support = data.support_levels || [];
 
-            // Support levels
-            const supportDiv = document.createElement('div');
-            supportDiv.innerHTML = '<h4 class="text-[10px] font-bold text-green-500 uppercase mb-2">Support Levels</h4>';
-            support.forEach(level => {
-                supportDiv.innerHTML += `
-                    <div class="flex justify-between items-center py-1 px-2 bg-green-500/10 rounded mb-1">
-                        <span class="text-xs font-bold">${level.strike}</span>
-                        <span class="text-[9px] text-gray-400">OI: ${level.oi?.toLocaleString()}</span>
-                    </div>
-                `;
-            });
-            container.appendChild(supportDiv);
+            // Distribution/Accumulation Summary
+            const summaryDiv = document.createElement('div');
+            summaryDiv.className = 'grid grid-cols-2 gap-4 mb-4';
+            summaryDiv.innerHTML = `
+                <div class="bg-red-500/10 border border-red-500/20 rounded p-3 text-center">
+                    <div class="text-[8px] text-red-400 uppercase font-black">Institutional Distribution</div>
+                    <div class="text-lg font-black text-white mt-1">${resistance[0]?.strike || '-'}</div>
+                    <div class="text-[8px] text-gray-500">HEAVY CALL WRITING</div>
+                </div>
+                <div class="bg-green-500/10 border border-green-500/20 rounded p-3 text-center">
+                    <div class="text-[8px] text-green-400 uppercase font-black">Institutional Accumulation</div>
+                    <div class="text-lg font-black text-white mt-1">${support[0]?.strike || '-'}</div>
+                    <div class="text-[8px] text-gray-500">HEAVY PUT WRITING</div>
+                </div>
+            `;
+            container.appendChild(summaryDiv);
 
-            // Resistance levels
-            const resistanceDiv = document.createElement('div');
-            resistanceDiv.innerHTML = '<h4 class="text-[10px] font-bold text-red-500 uppercase mb-2 mt-4">Resistance Levels</h4>';
-            resistance.forEach(level => {
-                resistanceDiv.innerHTML += `
-                    <div class="flex justify-between items-center py-1 px-2 bg-red-500/10 rounded mb-1">
-                        <span class="text-xs font-bold">${level.strike}</span>
-                        <span class="text-[9px] text-gray-400">OI: ${level.oi?.toLocaleString()}</span>
+            // Detailed Levels (OiGenie Style)
+            const levelsDiv = document.createElement('div');
+            levelsDiv.className = 'space-y-1';
+
+            // Merge and sort all levels
+            const allLevels = [
+                ...resistance.map(l => ({...l, type: 'RES'})),
+                ...support.map(l => ({...l, type: 'SUP'}))
+            ].sort((a, b) => b.strike - a.strike);
+
+            allLevels.forEach(level => {
+                const isSup = level.type === 'SUP';
+                const color = isSup ? 'text-green-500' : 'text-red-500';
+                const bgColor = isSup ? 'bg-green-500/5' : 'bg-red-500/5';
+                const borderColor = isSup ? 'border-green-500/20' : 'border-red-500/20';
+
+                // Strength calculation for label (ss)
+                const label = level.oi > 1000000 ? '(ss)' : level.oi > 500000 ? '(s)' : '';
+
+                levelsDiv.innerHTML += `
+                    <div class="flex justify-between items-center py-2 px-3 ${bgColor} border-l-4 ${borderColor} rounded-r">
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs font-black ${color}">${level.strike}</span>
+                            <span class="text-[10px] text-gray-500 font-bold">${isSup ? '↓' : '↑'}</span>
+                        </div>
+                        <div class="flex items-center gap-4">
+                            <span class="text-[9px] text-gray-400">OI: ${(level.oi/1000000).toFixed(1)}M</span>
+                            <span class="text-[10px] font-black ${color}">${label}</span>
+                        </div>
                     </div>
                 `;
             });
-            container.appendChild(resistanceDiv);
+            container.appendChild(levelsDiv);
         }
 
         async function loadPCRTrend() {
