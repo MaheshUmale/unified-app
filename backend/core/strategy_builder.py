@@ -88,29 +88,25 @@ class Strategy:
     def max_profit(self) -> Optional[float]:
         """Calculate maximum profit potential."""
         if self.strategy_type in [StrategyType.LONG_CALL, StrategyType.LONG_PUT]:
-            return float('inf')  # Unlimited for long options
-        elif self.strategy_type in [StrategyType.SHORT_CALL, StrategyType.SHORT_PUT]:
-            return self.net_premium
+            return float('inf')
         
-        # For spreads, calculate based on strikes
-        return self._calculate_spread_max_profit()
+        metrics = self._calculate_general_metrics()
+        return metrics.get('max_profit')
     
     @property
     def max_loss(self) -> Optional[float]:
         """Calculate maximum loss."""
-        if self.strategy_type in [StrategyType.LONG_CALL, StrategyType.LONG_PUT]:
-            return abs(self.net_premium)
-        elif self.strategy_type in [StrategyType.SHORT_CALL]:
-            return float('inf')  # Unlimited for naked calls
-        elif self.strategy_type in [StrategyType.SHORT_PUT]:
-            return abs(self.legs[0].strike * self.legs[0].quantity - self.net_premium)
-        
-        return self._calculate_spread_max_loss()
+        if self.strategy_type == StrategyType.SHORT_CALL:
+            return float('inf')
+
+        metrics = self._calculate_general_metrics()
+        return metrics.get('max_loss')
     
     @property
     def breakeven_points(self) -> List[float]:
         """Calculate breakeven price points."""
-        return self._calculate_breakevens()
+        metrics = self._calculate_general_metrics()
+        return metrics.get('breakevens', [])
     
     @property
     def net_delta(self) -> float:
@@ -144,83 +140,63 @@ class Strategy:
             for leg in self.legs
         )
     
-    def _calculate_spread_max_profit(self) -> Optional[float]:
-        """Calculate max profit for spread strategies."""
-        try:
-            if not self.legs:
-                return 0.0
-
-            if self.strategy_type == StrategyType.BULL_CALL_SPREAD:
-                calls = sorted([l for l in self.legs if l.option_type == 'call'], key=lambda x: x.strike)
-                if len(calls) >= 2:
-                    strike_diff = calls[1].strike - calls[0].strike
-                    return (strike_diff * calls[0].quantity) - abs(self.net_premium)
-            
-            elif self.strategy_type == StrategyType.BEAR_PUT_SPREAD:
-                puts = sorted([l for l in self.legs if l.option_type == 'put'], key=lambda x: x.strike, reverse=True)
-                if len(puts) >= 2:
-                    strike_diff = puts[0].strike - puts[1].strike
-                    return (strike_diff * puts[0].quantity) - abs(self.net_premium)
-            
-            elif self.strategy_type == StrategyType.IRON_CONDOR:
-                return abs(self.net_premium)
-            
-            return None
-        except Exception as e:
-            logger.error(f"Error calculating max profit: {e}")
-            return None
-    
-    def _calculate_spread_max_loss(self) -> Optional[float]:
-        """Calculate max loss for spread strategies."""
-        try:
-            if not self.legs:
-                return 0.0
-
-            if self.strategy_type == StrategyType.BULL_CALL_SPREAD:
-                return abs(self.net_premium)
-            
-            elif self.strategy_type == StrategyType.BEAR_PUT_SPREAD:
-                return abs(self.net_premium)
-            
-            elif self.strategy_type == StrategyType.IRON_CONDOR:
-                calls = sorted([l for l in self.legs if l.option_type == 'call'], key=lambda x: x.strike)
-                if len(calls) >= 2:
-                    call_spread = calls[1].strike - calls[0].strike
-                    return (call_spread * calls[0].quantity) - abs(self.net_premium)
-            
-            return None
-        except Exception as e:
-            logger.error(f"Error calculating max loss: {e}")
-            return None
-    
-    def _calculate_breakevens(self) -> List[float]:
-        """Calculate breakeven points."""
-        breakevens = []
+    def _calculate_general_metrics(self) -> Dict[str, Any]:
+        """Exhaustive P&L analysis for any multi-leg strategy."""
         if not self.legs:
-            return []
+            return {'max_profit': 0.0, 'max_loss': 0.0, 'breakevens': []}
+
+        # Collect strikes and boundary points for evaluation
+        strikes = sorted([l.strike for l in self.legs])
         
-        if self.strategy_type == StrategyType.LONG_CALL:
-            breakevens = [self.legs[0].strike + self.legs[0].premium]
+        # evaluation points: 0, strikes, and far points
+        test_prices = [0.0] + strikes
+        # Add points around strikes and far out to detect slopes
+        test_prices.append(max(strikes) * 2)
+        test_prices = sorted(list(set(test_prices)))
+
+        pnls = [self.calculate_pnl(p) for p in test_prices]
         
-        elif self.strategy_type == StrategyType.LONG_PUT:
-            breakevens = [self.legs[0].strike - self.legs[0].premium]
+        # Check slopes at extreme ends for unlimited potential
+        p_vlow1, p_vlow2 = 0.0, 1.0
+        v_vlow1, v_vlow2 = self.calculate_pnl(p_vlow1), self.calculate_pnl(p_vlow2)
         
-        elif self.strategy_type == StrategyType.SHORT_CALL:
-            breakevens = [self.legs[0].strike + self.legs[0].premium]
+        p_vhigh1, p_vhigh2 = max(strikes) * 10, max(strikes) * 10 + 1
+        v_vhigh1, v_vhigh2 = self.calculate_pnl(p_vhigh1), self.calculate_pnl(p_vhigh2)
         
-        elif self.strategy_type == StrategyType.SHORT_PUT:
-            breakevens = [self.legs[0].strike - self.legs[0].premium]
+        # Unlimited Profit
+        if v_vlow2 > v_vlow1 + 0.01 or v_vhigh2 > v_vhigh1 + 0.01:
+            max_profit = float('inf')
+        else:
+            max_profit = max(max(pnls), v_vlow1, v_vhigh1)
+
+        # Unlimited Loss (Max Loss is positive value)
+        if v_vlow2 < v_vlow1 - 0.01 or v_vhigh2 < v_vhigh1 - 0.01:
+            max_loss = float('inf')
+        else:
+            max_loss = abs(min(min(pnls), v_vlow1, v_vhigh1, 0))
+
+        # Breakevens: detect zero crossings in piecewise linear function
+        breakevens = []
+        for i in range(len(test_prices) - 1):
+            p1, p2 = test_prices[i], test_prices[i+1]
+            v1, v2 = self.calculate_pnl(p1), self.calculate_pnl(p2)
+            if v1 * v2 <= 0 and v1 != v2:
+                slope = (v2 - v1) / (p2 - p1)
+                be = p1 - v1 / slope
+                breakevens.append(round(be, 2))
         
-        elif self.strategy_type in [StrategyType.LONG_STRADDLE, StrategyType.LONG_STRANGLE]:
-            net_premium = abs(self.net_premium)
-            strikes = [l.strike for l in self.legs]
-            if len(strikes) == 2:
-                breakevens = [
-                    min(strikes) - net_premium,
-                    max(strikes) + net_premium
-                ]
-        
-        return sorted(list(set(breakevens)))
+        # Also check infinite segment
+        if v_vhigh1 * v_vhigh2 <= 0 and v_vhigh1 != v_vhigh2:
+             # This happens if it crosses zero at very high price
+             slope = (v_vhigh2 - v_vhigh1) / (p_vhigh2 - p_vhigh1)
+             be = p_vhigh1 - v_vhigh1 / slope
+             breakevens.append(round(be, 2))
+
+        return {
+            'max_profit': max_profit,
+            'max_loss': max_loss,
+            'breakevens': sorted(list(set(breakevens)))
+        }
     
     def calculate_pnl(self, underlying_price: float) -> float:
         """Calculate P&L at given underlying price."""
@@ -327,8 +303,46 @@ class StrategyBuilder:
             legs=leg_objects
         )
         
+        # Attempt to populate Greeks if missing
+        self._populate_greeks(strategy)
+
         self.strategies[name] = strategy
         return strategy
+
+    def _populate_greeks(self, strategy: Strategy):
+        """Estimate Greeks for legs that have none."""
+        try:
+            from core.greeks_calculator import greeks_calculator
+
+            today = date.today()
+            for leg in strategy.legs:
+                # If Greeks are all 0, calculate them
+                if leg.delta == 0 and leg.gamma == 0 and leg.theta == 0:
+                    try:
+                        expiry_date = datetime.strptime(leg.expiry, "%Y-%m-%d").date()
+                        days_to_expiry = max((expiry_date - today).days, 0)
+                        time_to_expiry = max(days_to_expiry / 365.0, 0.0001)
+
+                        greeks = greeks_calculator.calculate_all_greeks(
+                            strategy.spot_price,
+                            leg.strike,
+                            time_to_expiry,
+                            0.20, # Base IV
+                            leg.option_type,
+                            leg.premium
+                        )
+
+                        leg.delta = greeks.get('delta', 0)
+                        leg.gamma = greeks.get('gamma', 0)
+                        leg.theta = greeks.get('theta', 0)
+                        leg.vega = greeks.get('vega', 0)
+                        leg.iv = greeks.get('implied_volatility', 0)
+                    except Exception as e:
+                        logger.warning(f"Error estimating greeks for leg {leg.strike}: {e}")
+        except ImportError:
+            logger.warning("GreeksCalculator not available for strategy builder")
+        except Exception as e:
+            logger.error(f"Error in _populate_greeks: {e}")
     
     def create_bull_call_spread(
         self,
@@ -471,14 +485,30 @@ class StrategyBuilder:
         
         pnl_table = strategy.generate_pnl_table()
         
+        max_profit = strategy.max_profit
+        if max_profit == float('inf'):
+            max_profit_str = 'Unlimited'
+        elif max_profit is None:
+            max_profit_str = 'N/A'
+        else:
+            max_profit_str = round(max_profit, 2)
+
+        max_loss = strategy.max_loss
+        if max_loss == float('inf'):
+            max_loss_str = 'Unlimited'
+        elif max_loss is None:
+            max_loss_str = 'N/A'
+        else:
+            max_loss_str = round(max_loss, 2)
+
         return {
             'name': strategy.name,
             'type': strategy.strategy_type.value,
             'underlying': strategy.underlying,
             'spot_price': strategy.spot_price,
             'net_premium': round(strategy.net_premium, 2),
-            'max_profit': strategy.max_profit if strategy.max_profit != float('inf') else 'Unlimited',
-            'max_loss': strategy.max_loss if strategy.max_loss != float('inf') else 'Unlimited',
+            'max_profit': max_profit_str,
+            'max_loss': max_loss_str,
             'breakeven_points': strategy.breakeven_points,
             'net_delta': round(strategy.net_delta, 4),
             'net_gamma': round(strategy.net_gamma, 6),
