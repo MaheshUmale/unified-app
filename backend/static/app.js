@@ -28,10 +28,16 @@ class ChartInstance {
         this.showIndicators = true;
         this.hiddenPlots = new Set();
         this.colorOverrides = {}; // Keyed by indicator title or marker text
+        this.oiData = null;
+        this.showOiProfile = document.getElementById('oiProfileToggle')?.checked || false;
 
         // Replay State
         this.isReplayMode = false;
         this.replayIndex = -1;
+        this.replayHistory = {
+            pcr: [],
+            snapshots: new Map() // timestamp -> strike data
+        };
         this.isPlaying = false;
         this.replayInterval = null;
 
@@ -99,23 +105,18 @@ class ChartInstance {
             scaleMargins: { top: 0.8, bottom: 0 }, visible: false
         });
 
-        this.chart.subscribeClick((param) => { 
+        // OI Profile Canvas
+        const wrapper = container.parentElement;
+        this.oiCanvas = document.createElement('canvas');
+        this.oiCanvas.className = 'oi-profile-canvas';
+        wrapper.appendChild(this.oiCanvas);
+        this.syncOiCanvas();
 
-            // console.log("Type of candles:", typeof this.fullHistory.candles);
-            // console.log("Is Array?:", Array.isArray(this.fullHistory.candles));
-            // console.log("Data Content:", this.fullHistory.candles);
-            // // 1. Add a safety check to prevent the crash
-            // if (!this.fullHistory || !Array.isArray(this.fullHistory.candles)) {
-            //     console.error("Candles data is not an array or is missing");
-            //     return;
-            // }
+        this.chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
+            if (this.showOiProfile) this.renderOiProfile();
+        });
 
-            
-
-            // // 2. Use the findIndex
-            // const idx = this.fullHistory.candles.findIndex(c => c.time === param.time);
-
- 
+        this.chart.subscribeClick((param) => {
             if (this.isReplayMode && param.time && this.replayIndex === -1) {
                 const idx = this.fullHistory.candles.findIndex(c => c.time === param.time);
                 if (idx !== -1) {
@@ -139,6 +140,63 @@ class ChartInstance {
         // Handle focus
         container.parentElement.addEventListener('mousedown', () => {
             setActiveChart(this);
+        });
+    }
+
+    syncOiCanvas() {
+        if (!this.oiCanvas) return;
+        const container = document.getElementById(this.containerId);
+        if (!container) return;
+        this.oiCanvas.width = container.clientWidth;
+        this.oiCanvas.height = container.clientHeight;
+        if (this.showOiProfile) this.renderOiProfile();
+    }
+
+    async fetchOiProfile() {
+        if (!this.showOiProfile) return;
+        try {
+            const res = await fetch(`/api/options/oi-analysis/${encodeURIComponent(this.symbol)}`);
+            const data = await res.json();
+            this.oiData = data.data || [];
+            this.renderOiProfile();
+        } catch (e) { console.error("Fetch OI failed:", e); }
+    }
+
+    renderOiProfile() {
+        const ctx = this.oiCanvas.getContext('2d');
+        ctx.clearRect(0, 0, this.oiCanvas.width, this.oiCanvas.height);
+        if (!this.showOiProfile || !this.oiData || this.oiData.length === 0) return;
+
+        const width = this.oiCanvas.width;
+        const height = this.oiCanvas.height;
+        const profileWidth = width * 0.25;
+
+        const sortedData = [...this.oiData].sort((a,b) => a.strike - b.strike);
+        const maxOI = Math.max(...sortedData.map(d => Math.max(d.call_oi, d.put_oi)));
+        if (maxOI === 0) return;
+
+        sortedData.forEach(d => {
+            const y = this.candleSeries.priceToCoordinate(d.strike);
+            if (y === null || y < 0 || y > height) return;
+
+            const callW = (d.call_oi / maxOI) * profileWidth;
+            const putW = (d.put_oi / maxOI) * profileWidth;
+
+            // Call OI (Red)
+            ctx.fillStyle = 'rgba(239, 68, 68, 0.5)';
+            ctx.fillRect(width - callW, y - 4, callW, 3);
+
+            // Put OI (Green)
+            ctx.fillStyle = 'rgba(34, 197, 94, 0.5)';
+            ctx.fillRect(width - putW, y + 1, putW, 3);
+
+            // Strike Label
+            if (callW > 20 || putW > 20) {
+                ctx.fillStyle = '#64748b';
+                ctx.font = '8px Inter';
+                ctx.textAlign = 'right';
+                ctx.fillText(d.strike, width - 5, y + 3);
+            }
         });
     }
 
@@ -231,6 +289,8 @@ class ChartInstance {
                 });
                 this.candleSeries.setMarkers(this.showIndicators && !this.hiddenPlots.has('__markers__') ? this.markers : []);
             }
+
+            if (this.showOiProfile) this.fetchOiProfile();
 
             socket.emit('subscribe', { instrumentKeys: [this.symbol], interval: this.interval });
             updateActiveChartLabel();
@@ -497,6 +557,27 @@ class ChartInstance {
         if (target) this.addPriceLine(`${id}_target`, { price: target, color: targetColor || '#22c55e', title: 'TARGET', lineStyle: 2 });
     }
 
+    async loadReplayHistory() {
+        if (!this.symbol) return;
+        try {
+            const res = await fetch(`/api/options/full-history/${encodeURIComponent(this.symbol)}`);
+            const data = await res.json();
+
+            this.replayHistory.pcr = data.pcr_history || [];
+            this.replayHistory.snapshots = new Map();
+
+            if (data.snapshots) {
+                data.snapshots.forEach(s => {
+                    const ts = Math.floor(new Date(s.timestamp).getTime() / 1000);
+                    if (!this.replayHistory.snapshots.has(ts)) {
+                        this.replayHistory.snapshots.set(ts, []);
+                    }
+                    this.replayHistory.snapshots.get(ts).push(s);
+                });
+            }
+        } catch (e) { console.error("Replay history load failed:", e); }
+    }
+
     stepReplay(delta) {
         const newIdx = this.replayIndex + delta;
         const allCandles = Array.from(this.fullHistory.candles.values()).sort((a,b) => a.time - b.time);
@@ -525,7 +606,54 @@ class ChartInstance {
             this.candleSeries.setMarkers(this.showIndicators && !this.hiddenPlots.has('__markers__') ? visibleMarkers : []);
 
             this.lastCandle = { ...vC[vC.length - 1] };
+
+            // Synchronize Options Data
+            this.syncReplayOptions(currentTime);
         }
+    }
+
+    syncReplayOptions(currentTime) {
+        // Find nearest PCR data
+        const pcrList = this.replayHistory.pcr;
+        let activePCR = null;
+        if (pcrList.length > 0) {
+            // PCR timestamps are in ISO or UTC. Map to unix.
+            const pcrUnix = pcrList.map(p => ({ ...p, unix: Math.floor(new Date(p.timestamp).getTime() / 1000) }));
+            const relevant = pcrUnix.filter(p => p.unix <= currentTime);
+            if (relevant.length > 0) activePCR = relevant[relevant.length - 1];
+        }
+
+        // Find nearest Snapshot
+        const snapshotTimestamps = Array.from(this.replayHistory.snapshots.keys()).sort((a, b) => a - b);
+        const relevantSnapTs = snapshotTimestamps.filter(ts => ts <= currentTime);
+        if (relevantSnapTs.length > 0) {
+            const nearestTs = relevantSnapTs[relevantSnapTs.length - 1];
+            this.oiData = this.replayHistory.snapshots.get(nearestTs);
+            if (this.showOiProfile) this.renderOiProfile();
+        }
+
+        // Update Sidebar if active
+        if (showAnalysisSidebar && activeChartIndex === this.index) {
+            this.renderReplaySidebar(activePCR);
+        }
+    }
+
+    renderReplaySidebar(pcrData) {
+        if (!pcrData) return;
+
+        const pcrEl = document.getElementById('side-pcr');
+        const powerEl = document.getElementById('side-power');
+        if (pcrEl) pcrEl.textContent = pcrData.pcr_oi?.toFixed(2) || "-";
+        if (powerEl) powerEl.textContent = (pcrData.total_oi_change > 500000 ? "STRONG" : pcrData.total_oi_change > 100000 ? "MODERATE" : "WEAK");
+
+        // Update Logs with replay info
+        const logList = document.getElementById('sideLogsList');
+        const msg = `[REPLAY] ${formatIST(pcrData.timestamp)} | PCR: ${pcrData.pcr_oi} | Spot: ${pcrData.spot_price || pcrData.underlying_price}`;
+        const p = document.createElement('p');
+        p.className = 'border-b border-black/5 last:border-0 py-1 text-blue-500 font-bold';
+        p.textContent = msg;
+        logList.prepend(p);
+        if (logList.children.length > 50) logList.lastElementChild.remove();
     }
 
     addHorizontalLine(price, color = '#3b82f6') {
@@ -558,6 +686,8 @@ let charts = [];
 let activeChartIndex = 0;
 let currentLayout = 1;
 
+let showAnalysisSidebar = false;
+
 function init() {
     loadLayout();
     initLayoutSelector();
@@ -568,10 +698,99 @@ function init() {
     initSearch();
     initZoomControls();
     initReplayControls();
+    initAnalysisSidebar();
     initSocket();
 
     window.addEventListener('resize', () => {
-        charts.forEach(c => c.chart.resize(document.getElementById(c.containerId).clientWidth, document.getElementById(c.containerId).clientHeight));
+        charts.forEach(c => {
+            const container = document.getElementById(c.containerId);
+            if (container) {
+                c.chart.resize(container.clientWidth, container.clientHeight);
+                c.syncOiCanvas();
+            }
+        });
+    });
+
+    // Auto refresh sidebar every 60s
+    setInterval(updateAnalysisSidebar, 60000);
+}
+
+function initAnalysisSidebar() {
+    const toggle = document.getElementById('analysisToggle');
+    const sidebar = document.getElementById('analysisSidebar');
+    const closeBtn = document.getElementById('closeAnalysisBtn');
+    const oiToggle = document.getElementById('oiProfileToggle');
+
+    toggle.addEventListener('change', () => {
+        showAnalysisSidebar = toggle.checked;
+        sidebar.classList.toggle('hidden', !showAnalysisSidebar);
+        if (showAnalysisSidebar) updateAnalysisSidebar();
+    });
+
+    closeBtn.addEventListener('click', () => {
+        toggle.checked = false;
+        sidebar.classList.add('hidden');
+        showAnalysisSidebar = false;
+    });
+
+    oiToggle.addEventListener('change', () => {
+        charts.forEach(c => {
+            c.showOiProfile = oiToggle.checked;
+            if (c.showOiProfile) c.fetchOiProfile();
+            else c.renderOiProfile();
+        });
+    });
+}
+
+async function updateAnalysisSidebar() {
+    if (!showAnalysisSidebar) return;
+    const chart = charts[activeChartIndex];
+    if (!chart) return;
+
+    try {
+        const [genie, buildup] = await Promise.all([
+            fetch(`/api/options/genie-insights/${encodeURIComponent(chart.symbol)}`).then(r => r.json()),
+            fetch(`/api/options/oi-buildup/${encodeURIComponent(chart.symbol)}`).then(r => r.json())
+        ]);
+
+        renderSidebarGenie(genie);
+        renderSidebarBuildup(buildup);
+    } catch (e) { console.error("Sidebar update failed:", e); }
+}
+
+function renderSidebarGenie(data) {
+    const controlEl = document.getElementById('genieControl');
+    const statusEl = document.getElementById('genieStatus');
+    const rangeEl = document.getElementById('genieRange');
+
+    controlEl.textContent = (data.control || "").replace(/_/g, ' ');
+    if (data.control === 'BUYERS_IN_CONTROL') controlEl.className = 'text-xs font-black text-green-600 uppercase';
+    else if (data.control === 'SELLERS_IN_CONTROL') controlEl.className = 'text-xs font-black text-red-600 uppercase';
+    else controlEl.className = 'text-xs font-black text-gray-800 uppercase';
+
+    statusEl.textContent = data.distribution?.status || "-";
+    rangeEl.textContent = `RANGE: ${data.boundaries?.lower || "-"} - ${data.boundaries?.upper || "-"}`;
+}
+
+function renderSidebarBuildup(data) {
+    const container = document.getElementById('buildupSummary');
+    container.innerHTML = '';
+    const patterns = data.summary?.pattern_distribution || {};
+
+    Object.entries(patterns).forEach(([p, count]) => {
+        const div = document.createElement('div');
+        div.className = 'p-2 bg-gray-100 rounded border border-black/5 text-center';
+        let color = 'text-gray-500';
+        if (p.includes('Long Buildup')) color = 'text-green-600';
+        if (p.includes('Short Buildup')) color = 'text-red-600';
+        if (p.includes('Short Covering')) color = 'text-blue-600';
+        if (p.includes('Long Unwinding')) color = 'text-orange-600';
+
+        div.innerHTML = `
+            <div class="text-[7px] text-gray-400 uppercase font-black truncate">${p}</div>
+            <div class="text-xs font-black ${color}">${count}</div>
+        `;
+        container.appendChild(div);
     });
 }
 
@@ -583,6 +802,7 @@ function setActiveChart(chartInstance) {
 
     // Update header UI to reflect active chart state
     updateHeaderUI();
+    if (showAnalysisSidebar) updateAnalysisSidebar();
 }
 
 function updateHeaderUI() {
@@ -779,6 +999,47 @@ function initSocket() {
             });
         }
     });
+
+    socket.on('scalper_metrics', (data) => {
+        if (!showAnalysisSidebar) return;
+        const sideScalper = document.getElementById('sidebarScalper');
+        sideScalper.classList.remove('hidden');
+
+        document.getElementById('side-pcr').textContent = data.pcr;
+        document.getElementById('side-power').textContent = data.oi_power;
+
+        const updateDot = (id, active) => {
+            const dot = document.getElementById(id);
+            if (!dot) return;
+            if (active) {
+                dot.classList.remove('bg-gray-200');
+                dot.classList.add('bg-blue-500');
+            } else {
+                dot.classList.add('bg-gray-200');
+                dot.classList.remove('bg-blue-500');
+            }
+        };
+        updateDot('conf-lvl-dot', data.confluence.lvl);
+        updateDot('conf-pcr-dot', data.confluence.pcr);
+        updateDot('conf-oi-dot', data.confluence.oi);
+        updateDot('conf-brk-dot', data.confluence.opt_brk);
+        updateDot('conf-inv-dot', data.confluence.inv_dwn);
+    });
+
+    socket.on('scalper_log', (data) => {
+        const logList = document.getElementById('sideLogsList');
+        const msg = data.message || `[${data.time}] ${data.signal} @ ${data.underlying_level}`;
+        const p = document.createElement('p');
+        p.className = 'border-b border-black/5 last:border-0 py-1';
+        if (msg.includes('BUY')) p.className += ' text-green-600 font-bold';
+        else if (msg.includes('CLOSED')) p.className += ' text-blue-600';
+        else p.className += ' text-gray-500';
+
+        p.textContent = msg;
+        logList.prepend(p);
+        if (logList.children.length > 50) logList.lastElementChild.remove();
+    });
+
     socket.on('chart_update', (data) => {
         const updateKey = (data.instrumentKey || "").toUpperCase();
         const updateInterval = String(data.interval || "");
@@ -1152,6 +1413,7 @@ function initReplayControls() {
         const chart = charts[activeChartIndex];
         if (!chart) return;
         chart.isReplayMode = true;
+        chart.loadReplayHistory(); // Load historical options data
         document.getElementById('normalControls').classList.add('hidden');
         document.getElementById('replayControls').classList.remove('hidden');
         document.getElementById('replayStatus').innerText = 'SELECT START POINT';

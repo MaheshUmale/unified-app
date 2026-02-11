@@ -487,6 +487,41 @@ async def get_pcr_trend(underlying: str):
     return {"history": history}
 
 
+@fastapi_app.get("/api/options/full-history/{underlying}")
+async def get_full_options_history(underlying: str):
+    """Returns all PCR and Option Snapshots for today for REPLAY."""
+    pcr_history = db.query(
+        """
+        SELECT timestamp, pcr_oi, pcr_vol, pcr_oi_change, underlying_price, max_pain, spot_price, total_oi, total_oi_change
+        FROM pcr_history
+        WHERE underlying = ?
+        AND CAST((timestamp AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata' AS DATE) =
+            CAST(now() AT TIME ZONE 'Asia/Kolkata' AS DATE)
+        ORDER BY timestamp ASC
+        """,
+        (underlying,),
+        json_serialize=True
+    )
+
+    snapshots = db.query(
+        """
+        SELECT timestamp, strike, option_type, oi, oi_change, volume, ltp, iv, delta, theta
+        FROM options_snapshots
+        WHERE underlying = ?
+        AND CAST((timestamp AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata' AS DATE) =
+            CAST(now() AT TIME ZONE 'Asia/Kolkata' AS DATE)
+        ORDER BY timestamp ASC, strike ASC
+        """,
+        (underlying,),
+        json_serialize=True
+    )
+
+    return {
+        "pcr_history": pcr_history,
+        "snapshots": snapshots
+    }
+
+
 @fastapi_app.get("/api/options/oi-analysis/{underlying}")
 async def get_oi_analysis(underlying: str):
     """Returns OI distribution data for latest snapshot."""
