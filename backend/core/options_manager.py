@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 import pandas as pd
 
-from config import OPTIONS_UNDERLYINGS
+from config import OPTIONS_UNDERLYINGS, SNAPSHOT_CONFIG
 from external.tv_options_scanner import fetch_option_chain
 from external.tv_options_wss import OptionsWSS
 from external.trendlyne_api import trendlyne_api
@@ -133,9 +133,10 @@ class OptionsManager:
         end_time = min(datetime.now(ist), market_close)
         current = market_open
         time_slots = []
+        backfill_interval = SNAPSHOT_CONFIG.get('backfill_interval_minutes', 5)
         while current <= end_time:
             time_slots.append(current.strftime("%H:%M"))
-            current += timedelta(minutes=15)
+            current += timedelta(minutes=backfill_interval)
         
         if not time_slots:
             logger.warning("No time slots to backfill.")
@@ -158,7 +159,7 @@ class OptionsManager:
                     continue
                 
                 # Get historical spot prices
-                hist_spot = await asyncio.to_thread(tv_api.get_hist_candles, underlying, '15', 100)
+                hist_spot = await asyncio.to_thread(tv_api.get_hist_candles, underlying, '5', 300)
                 spot_map = {c[0]: c[4] for c in hist_spot} if hist_spot else {}
                 
                 stock_id = await trendlyne_api.get_stock_id(tl_symbol)
@@ -377,7 +378,7 @@ class OptionsManager:
         if not tl_symbol:
             return
         
-        spot_price = await self._get_spot_price(underlying)
+        spot_price = await self.get_spot_price(underlying)
         
         try:
             if underlying not in self.symbol_map_cache or not self.symbol_map_cache[underlying]:
@@ -415,24 +416,28 @@ class OptionsManager:
             logger.error(f"Error in taking snapshot for {underlying}: {e}")
             await self._take_snapshot_tv(underlying)
     
-    async def _get_spot_price(self, underlying: str) -> float:
+    async def get_spot_price(self, underlying: str) -> float:
         """Get current spot price with multi-layer fallback."""
         try:
             from core.symbol_mapper import symbol_mapper
             hrn = symbol_mapper.get_hrn(underlying)
             
             # Layer 1: Ticks Table (Live Feed)
-            res = db.query("""
+            # Use explicit keys to avoid matching option symbols (e.g. NIFTY260217P...)
+            target_keys = [underlying, underlying.replace(':', '|')]
+            if hrn == "NIFTY":
+                target_keys.extend(["NSE_INDEX|NIFTY 50", "NSE|NIFTY", "NIFTY"])
+            elif hrn == "BANKNIFTY":
+                target_keys.extend(["NSE_INDEX|NIFTY BANK", "NSE|BANKNIFTY", "BANKNIFTY"])
+            elif hrn == "FINNIFTY":
+                target_keys.extend(["NSE_INDEX|NIFTY FIN SERVICE", "NSE|CNXFINANCE", "FINNIFTY"])
+
+            placeholders = ",".join(["?"] * len(target_keys))
+            res = db.query(f"""
                 SELECT price FROM ticks
-                WHERE instrumentKey IN (?, ?, ?)
-                OR instrumentKey LIKE ?
+                WHERE instrumentKey IN ({placeholders})
                 ORDER BY ts_ms DESC LIMIT 1
-            """, (
-                underlying,
-                underlying.replace(':', '|'),
-                "NSE_INDEX|NIFTY 50" if hrn == "NIFTY" else "NSE_INDEX|NIFTY BANK" if hrn == "BANKNIFTY" else hrn,
-                f"%{hrn}%"
-            ))
+            """, tuple(target_keys))
             
             if res and res[0]['price'] > 0:
                 logger.info(f"Spot Price discovered from Ticks for {underlying}: {res[0]['price']}")
@@ -745,16 +750,8 @@ class OptionsManager:
                 max_pain = s
         
         # Get underlying price
+        # We now rely on the robust spot_price discovery performed by the caller (take_snapshot)
         underlying_price = spot_price
-        try:
-            res = db.query(
-                "SELECT price FROM ticks WHERE instrumentKey = ? ORDER BY ts_ms DESC LIMIT 1",
-                (underlying,)
-            )
-            if res:
-                underlying_price = res[0]['price']
-        except Exception as e:
-            logger.error(f"Error fetching spot for PCR: {e}")
         
         db.insert_pcr_history({
             'timestamp': timestamp,
@@ -762,9 +759,9 @@ class OptionsManager:
             'pcr_oi': pcr_oi,
             'pcr_vol': pcr_vol,
             'pcr_oi_change': pcr_oi_change,
-            'underlying_price': underlying_price or spot_price,
+            'underlying_price': underlying_price,
             'max_pain': max_pain,
-            'spot_price': spot_price or underlying_price
+            'spot_price': spot_price
         })
         
         # Track IV for analysis

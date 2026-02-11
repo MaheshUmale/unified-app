@@ -345,28 +345,8 @@ async def get_options_chain_with_greeks(
     chain_data = options_manager.get_chain_with_greeks(underlying)
     
     if not spot_price:
-        # Get current spot price
-        res = db.query(
-            "SELECT price FROM ticks WHERE instrumentKey = ? ORDER BY ts_ms DESC LIMIT 1",
-            (underlying,)
-        )
-        if res:
-            spot_price = res[0]['price']
-        else:
-            # Fallback to latest snapshot price
-            res_snap = db.query(
-                "SELECT ltp FROM options_snapshots WHERE underlying = ? ORDER BY timestamp DESC LIMIT 1",
-                (underlying,)
-            )
-            if res_snap:
-                spot_price = res_snap[0]['ltp']
-            else:
-                # Fallback to pcr history spot_price
-                res_pcr = db.query(
-                    "SELECT spot_price FROM pcr_history WHERE underlying = ? ORDER BY timestamp DESC LIMIT 1",
-                    (underlying,)
-                )
-                spot_price = res_pcr[0]['spot_price'] if res_pcr else 0
+        # Use robust spot price discovery
+        spot_price = await options_manager.get_spot_price(underlying)
     
     # Categorize strikes
     for item in chain_data.get('chain', []):
@@ -417,7 +397,10 @@ async def get_options_greeks(
     from datetime import date
     if expiry:
         if isinstance(expiry, str):
-            expiry_date = datetime.strptime(expiry, "%Y-%m-%d").date()
+            if 'T' in expiry:
+                expiry_date = datetime.fromisoformat(expiry.replace('Z', '+00:00')).date()
+            else:
+                expiry_date = datetime.strptime(expiry, "%Y-%m-%d").date()
         else:
             expiry_date = expiry
         days_to_expiry = max((expiry_date - date.today()).days, 0)
