@@ -470,20 +470,25 @@ async def get_high_activity_strikes(underlying: str):
 
 @fastapi_app.get("/api/options/pcr-trend/{underlying}")
 async def get_pcr_trend(underlying: str):
-    """Returns historical PCR data for current trading day."""
+    """Returns historical PCR data for current trading day"""
     history = db.query(
         """
         SELECT timestamp, pcr_oi, pcr_vol, pcr_oi_change, underlying_price, max_pain, spot_price, total_oi, total_oi_change
         FROM pcr_history
         WHERE underlying = ?
-        AND CAST((timestamp AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata' AS DATE) =
-            CAST(now() AT TIME ZONE 'Asia/Kolkata' AS DATE)
+        AND   CAST((timestamp AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata' AS DATE) =   CAST(( ((SELECT MAX(timestamp) as latest_timestamp   FROM pcr_history))    AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata' AS DATE)
         ORDER BY timestamp ASC
         """,
         (underlying,),
         json_serialize=True
     )
+    # SELECT MAX(timestamp) as latest_timestamp   FROM pcr_history
+    # SELECT timestamp, pcr_oi, pcr_vol, pcr_oi_change, underlying_price, max_pain, spot_price, total_oi, total_oi_change
+    #     FROM pcr_history
+    #     WHERE underlying = 'NSE:NIFTY'       
+    #     AND CAST((timestamp AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata' AS DATE) =   CAST(( ((SELECT MAX(timestamp) as latest_timestamp   FROM pcr_history))    AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata' AS DATE)
     
+
     return {"history": history}
 
 
