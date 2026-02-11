@@ -9,6 +9,8 @@ import csv
 import os
 import time
 from scipy.signal import find_peaks
+from core.options_manager import options_manager
+from core.oi_buildup_analyzer import oi_buildup_analyzer
 
 logger = logging.getLogger(__name__)
 
@@ -24,19 +26,31 @@ class DataStreamer:
         self.tick_buffer = [] # Circular buffer of last 500 ticks
         self.instrument_map = {} # instrumentKey -> 'underlying'|'atm_call'|'atm_put'
         self.symbols = {} # 'underlying'|'atm_call'|'atm_put' -> instrumentKey
+        self.cum_vol = {'underlying': 0, 'atm_call': 0, 'atm_put': 0}
+        self.cum_pv = {'underlying': 0, 'atm_call': 0, 'atm_put': 0}
+        self.vwap = {'underlying': 0, 'atm_call': 0, 'atm_put': 0}
 
     def on_tick(self, instrument_key, tick_data):
         target = self.instrument_map.get(instrument_key)
         if not target: return
 
+        price = float(tick_data.get('last_price', 0))
+        volume = int(tick_data.get('ltq', 0))
+
         tick = {
             'ts': tick_data.get('ts_ms', time.time()*1000),
-            'last_price': float(tick_data.get('last_price', 0)),
-            'ltq': int(tick_data.get('ltq', 0))
+            'last_price': price,
+            'ltq': volume
         }
 
+        # Calculate VWAP
+        if volume > 0:
+            self.cum_vol[target] += volume
+            self.cum_pv[target] += price * volume
+            self.vwap[target] = self.cum_pv[target] / self.cum_vol[target]
+
         if target == 'underlying':
-            self.scalper.current_spot = tick['last_price']
+            self.scalper.current_spot = price
             self.tick_buffer.append(tick)
             if len(self.tick_buffer) > 500: self.tick_buffer.pop(0)
 
@@ -199,6 +213,14 @@ class ConfluenceEngine:
 
         return spurts
 
+    def get_buildup_status(self, price_change, oi_change):
+        """Identify buildup type based on price and OI correlation."""
+        if price_change > 0 and oi_change > 0: return "LONG_BUILDUP"
+        if price_change > 0 and oi_change < 0: return "SHORT_COVERING"
+        if price_change < 0 and oi_change > 0: return "SHORT_BUILDUP"
+        if price_change < 0 and oi_change < 0: return "LONG_UNWINDING"
+        return "NEUTRAL"
+
 class ExecutionManager:
     """Handles order execution and risk management."""
     def __init__(self, scalper):
@@ -232,7 +254,8 @@ class ExecutionManager:
             'last_price': entry_price,
             'max_price': entry_price,
             'status': 'OPEN',
-            'be_moved': False
+            'be_moved': False,
+            'underlying_entry': self.scalper.current_spot
         }
 
         self.active_trades.append(trade)
@@ -268,9 +291,13 @@ class ExecutionManager:
             # 4. Theta Protection (3 min inactivity)
             elapsed = (datetime.now() - trade['entry_time']).total_seconds()
             if elapsed > 180: # 3 minutes
+                # Check if underlying moved in favor
+                curr_spot = self.scalper.current_spot
+                entry_spot = trade.get('underlying_entry', 0)
+                underlying_in_favor = (curr_spot > entry_spot) if trade['side'] == 'CALL' else (curr_spot < entry_spot)
+
                 # If underlying moved in favor but premium did not move by > 1%
-                # For simplicity, if premium hasn't moved > 1% in 3 mins, exit
-                if (price - trade['entry_price']) / trade['entry_price'] < 0.01:
+                if underlying_in_favor and (price - trade['entry_price']) / trade['entry_price'] < 0.01:
                     self._close_trade(trade, "THETA PROTECTION")
                     continue
 
@@ -315,16 +342,13 @@ class NSEConfluenceScalper:
         self.loop = None
         self.current_spot = 0
         self.last_ticks = {} # target -> last tick
+        self.prev_chain = []
 
     def set_socketio(self, sio, loop):
         self.sio = sio
         self.loop = loop
 
     def log(self, message):
-        # Ensure registries are initialized if not already
-        from core.provider_registry import initialize_default_providers
-        initialize_default_providers()
-
         ist = pytz.timezone('Asia/Kolkata')
         timestamp = datetime.now(ist).strftime("%H:%M:%S")
         formatted_msg = f"[{timestamp}] {message}"
@@ -368,63 +392,120 @@ class NSEConfluenceScalper:
             await asyncio.sleep(0.5) # High speed cycle
 
     def _check_signals(self):
-        if not self.executor.active_trades == []: return # Only one trade at a time
+        if len(self.executor.active_trades) > 0: return # Only one trade at a time
 
-        # Underlying Levels check
+        # 1. Level Hunting (Technical + OI)
         spot = self.current_spot
         in_zone, level = self.engine.is_in_signal_zone(spot)
 
-        # OI/PCR Check
-        from core.options_manager import options_manager
-        chain_data = options_manager.get_chain_with_greeks(self.underlying).get('chain', [])
+        # Also check OI based levels
+        oi_levels = options_manager.get_support_resistance(self.underlying)
+        sup_oi = [x['strike'] for x in oi_levels.get('support_levels', [])]
+        res_oi = [x['strike'] for x in oi_levels.get('resistance_levels', [])]
+
+        # 2. OI/PCR Check
+        chain_res = options_manager.get_chain_with_greeks(self.underlying)
+        chain_data = chain_res.get('chain', [])
+        # Fallback to chain_res['spot_price'] if self.current_spot is 0
+        if spot == 0: spot = chain_res.get('spot_price', 0)
+
+        if not chain_data: return
+
         pcr = self.engine.calculate_pcr(chain_data)
 
-        # Determine trend from PCR (Rising or Falling)
+        # OI Spurts
+        spurts = {'call': 0, 'put': 0}
+        if self.prev_chain:
+            spurts = self.engine.get_oi_spurt(chain_data, self.prev_chain)
+        self.prev_chain = chain_data
+
+        # Determine trend from PCR
         if len(self.engine.pcr_history) < 2: return
         pcr_rising = self.engine.pcr_history[-1] > self.engine.pcr_history[-2]
 
-        if not in_zone: return
+        # Price-OI Correlation
+        price_chg = 0
+        if len(self.streamer.tick_buffer) >= 2:
+            price_chg = self.streamer.tick_buffer[-1]['last_price'] - self.streamer.tick_buffer[-2]['last_price']
 
-        # Call Buying Confluence
-        # Underlying at Support or breaking Resistance
-        # PCR rising, Call breakout, Put breakdown
+        net_spurt = spurts['put'] - spurts['call']
+        oi_status = self.engine.get_buildup_status(price_chg, net_spurt)
+
+        # Bullish/Bearish Confirmation
+        bullish_oi = (pcr_rising and spurts['put'] > spurts['call']) or (oi_status in ["LONG_BUILDUP", "SHORT_COVERING"])
+        bearish_oi = (not pcr_rising and spurts['call'] > spurts['put']) or (oi_status in ["SHORT_BUILDUP", "LONG_UNWINDING"])
+
+        # 3. Instrument data
         call_sym = self.streamer.symbols.get('atm_call')
         put_sym = self.streamer.symbols.get('atm_put')
-
         call_levels = self.engine.option_levels.get(call_sym, {})
         put_levels = self.engine.option_levels.get(put_sym, {})
-
         call_tick = self.last_ticks.get('atm_call')
         put_tick = self.last_ticks.get('atm_put')
 
         if not call_tick or not put_tick or not call_levels or not put_levels: return
 
-        # Logging Pulse as requested
-        # [TIME] [SIGNAL] [UNDERLYING_LEVEL] [OI_CONFIRMATION] [INVERSE_STATUS]
-        oi_conf = "BULLISH" if pcr_rising else "BEARISH"
+        call_vwap = self.streamer.vwap.get('atm_call', 0)
+        put_vwap = self.streamer.vwap.get('atm_put', 0)
 
-        # Bullish Signal
-        if pcr_rising and spot >= level: # Underlying at/above level
-            call_brk = call_tick['last_price'] > call_levels['last_swing_h']
-            put_brk = put_tick['last_price'] < put_levels['last_swing_l']
+        # Bullish/Bearish Condition Checks
+        is_at_support = (in_zone and spot <= level * 1.0005) or any(abs(spot-s)/s < 0.0005 for s in sup_oi)
+        is_brk_resistance = (in_zone and spot >= level * 0.9995) or any(abs(spot-r)/r < 0.0005 for r in res_oi)
 
-            inv_status = f"CALL_BRK:{call_brk} | PUT_BRK_DWN:{put_brk}"
-            self.log(f"[WATCH] [BULLISH] [LVL:{level}] [OI:{oi_conf}] [{inv_status}]")
+        # Breakout Levels: Must break above Recent Swing High AND VWAP AND ORB High AND Prev 15m High
+        # We use max of these as the hurdle to ensure a true breakout
+        call_brk = call_tick['last_price'] > max(call_levels.get('last_swing_h', 0), call_vwap, call_levels.get('p15_h', 0), call_levels.get('orb_h', 0))
+        put_brk_dwn = put_tick['last_price'] < min(put_levels.get('last_swing_l', 999999), put_levels.get('p15_l', 999999), put_levels.get('orb_l', 999999))
 
-            if call_brk and put_brk:
-                self.log(f"[SIGNAL] CONFLUENCE REACHED - BUYING CALL")
+        put_brk = put_tick['last_price'] > max(put_levels.get('last_swing_h', 0), put_vwap, put_levels.get('p15_h', 0), put_levels.get('orb_h', 0))
+        call_brk_dwn = call_tick['last_price'] < min(call_levels.get('last_swing_l', 999999), call_levels.get('p15_l', 999999), call_levels.get('orb_l', 999999))
+
+        # Confluence metrics for UI
+        oi_conf = "BULLISH" if bullish_oi else "BEARISH" if bearish_oi else "NEUTRAL"
+
+        if self.sio and self.loop:
+            oi_power = "STRONG" if abs(net_spurt) > 500000 else "MODERATE" if abs(net_spurt) > 100000 else "WEAK"
+            asyncio.run_coroutine_threadsafe(
+                self.sio.emit('scalper_metrics', {
+                    'pcr': round(pcr, 2),
+                    'oi_power': oi_power,
+                    'oi_sentiment': oi_conf,
+                    'oi_status': oi_status,
+                    'underlying_level': level or (sup_oi[0] if sup_oi else 0),
+                    'vwap': {
+                        'call': round(call_vwap, 2),
+                        'put': round(put_vwap, 2)
+                    },
+                    'oi_levels': {
+                        'support': sup_oi[:2],
+                        'resistance': res_oi[:2]
+                    },
+                    'confluence': {
+                        'lvl': is_at_support or is_brk_resistance,
+                        'pcr': pcr_rising,
+                        'oi': spurts['put'] > spurts['call'] if bullish_oi else spurts['call'] > spurts['put'],
+                        'opt_brk': call_brk if bullish_oi else put_brk,
+                        'inv_dwn': put_brk_dwn if bullish_oi else call_brk_dwn
+                    }
+                }),
+                self.loop
+            )
+
+        # Bullish Signal (CALL Buying)
+        if (is_at_support or is_brk_resistance) and bullish_oi:
+            if call_brk and put_brk_dwn:
+                self.log(f"[SIGNAL] BULLISH CONFLUENCE - BUYING CALL @ {call_tick['last_price']}")
                 self.executor.execute_buy(call_sym, 'CALL', call_tick['last_price'], call_levels['last_swing_l'])
 
-        # Bearish Signal
-        elif not pcr_rising and spot <= level: # Underlying at/below level
-            put_brk = put_tick['last_price'] > put_levels['last_swing_h']
-            call_brk = call_tick['last_price'] < call_levels['last_swing_l']
+        # Bearish Signal (PUT Buying)
+        elif (is_at_support or is_brk_resistance) and bearish_oi:
+            # Put Option breaks local Swing High OR VWAP
+            put_brk = put_tick['last_price'] > max(put_levels['last_swing_h'], put_vwap if put_vwap > 0 else 0)
+            # Call Option breaking down below local Swing Low
+            call_brk_dwn = call_tick['last_price'] < call_levels['last_swing_l']
 
-            inv_status = f"PUT_BRK:{put_brk} | CALL_BRK_DWN:{call_brk}"
-            self.log(f"[WATCH] [BEARISH] [LVL:{level}] [OI:{oi_conf}] [{inv_status}]")
-
-            if put_brk and call_brk:
-                self.log(f"[SIGNAL] CONFLUENCE REACHED - BUYING PUT")
+            if put_brk and call_brk_dwn:
+                self.log(f"[SIGNAL] BEARISH CONFLUENCE - BUYING PUT @ {put_tick['last_price']}")
                 self.executor.execute_buy(put_sym, 'PUT', put_tick['last_price'], put_levels['last_swing_l'])
 
 # Global instance

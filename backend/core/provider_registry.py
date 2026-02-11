@@ -11,6 +11,7 @@ class ProviderRegistry(Generic[T]):
     def __init__(self, interface_type: Type[T]):
         self.interface_type = interface_type
         self.providers: Dict[str, T] = {}
+        self.priorities: Dict[str, int] = {}
         self.priority_list: List[str] = []
 
     def register(self, name: str, provider: T, priority: int = 0):
@@ -19,10 +20,14 @@ class ProviderRegistry(Generic[T]):
             raise TypeError(f"Provider {name} must implement {self.interface_type.__name__}")
 
         self.providers[name] = provider
-        # Simple priority logic: higher priority at front
-        self.priority_list.append(name)
-        self.priority_list.sort(key=lambda x: priority, reverse=True)
-        logger.info(f"Registered {self.interface_type.__name__} provider: {name}")
+        self.priorities[name] = priority
+
+        if name not in self.priority_list:
+            self.priority_list.append(name)
+
+        # Sort priority list based on stored priorities
+        self.priority_list.sort(key=lambda x: self.priorities.get(x, 0), reverse=True)
+        logger.info(f"Registered {self.interface_type.__name__} provider: {name} (priority: {priority})")
 
     def get_provider(self, name: str) -> Optional[T]:
         """Get a specific provider by name."""
