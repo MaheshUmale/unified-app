@@ -2,6 +2,7 @@ import logging
 import pandas as pd
 import numpy as np
 from datetime import datetime
+import pytz
 import asyncio
 import json
 import csv
@@ -316,7 +317,8 @@ class NSEConfluenceScalper:
         self.loop = loop
 
     def log(self, message):
-        timestamp = datetime.now().strftime("%H:%M:%S")
+        ist = pytz.timezone('Asia/Kolkata')
+        timestamp = datetime.now(ist).strftime("%H:%M:%S")
         formatted_msg = f"[{timestamp}] {message}"
         logger.info(formatted_msg)
         if self.sio and self.loop:
