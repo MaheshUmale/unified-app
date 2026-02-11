@@ -353,7 +353,20 @@ async def get_options_chain_with_greeks(
         if res:
             spot_price = res[0]['price']
         else:
-            spot_price = 0
+            # Fallback to latest snapshot price
+            res_snap = db.query(
+                "SELECT ltp FROM options_snapshots WHERE underlying = ? ORDER BY timestamp DESC LIMIT 1",
+                (underlying,)
+            )
+            if res_snap:
+                spot_price = res_snap[0]['ltp']
+            else:
+                # Fallback to pcr history spot_price
+                res_pcr = db.query(
+                    "SELECT spot_price FROM pcr_history WHERE underlying = ? ORDER BY timestamp DESC LIMIT 1",
+                    (underlying,)
+                )
+                spot_price = res_pcr[0]['spot_price'] if res_pcr else 0
     
     # Categorize strikes
     for item in chain_data.get('chain', []):
@@ -539,7 +552,11 @@ async def build_strategy(request: Request):
                 logger.warning(f"Unknown strategy type: {st_input}, falling back to CUSTOM")
 
         underlying = body.get('underlying')
-        spot_price = body.get('spot_price', 0)
+        spot_price = body.get('spot_price')
+        if not spot_price:
+            res = db.query("SELECT price FROM ticks WHERE instrumentKey = ? ORDER BY ts_ms DESC LIMIT 1", (underlying,))
+            spot_price = res[0]['price'] if res else 0
+
         legs = body.get('legs', [])
         
         strategy = strategy_builder.create_strategy(
@@ -562,9 +579,17 @@ async def create_bull_call_spread(request: Request):
     try:
         body = await request.json()
         
+        underlying = body.get('underlying')
+        spot_price = body.get('spot_price')
+
+        if not spot_price:
+            # Try to get spot price
+            res = db.query("SELECT price FROM ticks WHERE instrumentKey = ? ORDER BY ts_ms DESC LIMIT 1", (underlying,))
+            spot_price = res[0]['price'] if res else 0
+
         strategy = strategy_builder.create_bull_call_spread(
-            underlying=body.get('underlying'),
-            spot_price=body.get('spot_price'),
+            underlying=underlying,
+            spot_price=spot_price or 0,
             lower_strike=body.get('lower_strike'),
             higher_strike=body.get('higher_strike'),
             lower_premium=body.get('lower_premium'),
@@ -589,9 +614,16 @@ async def create_iron_condor(request: Request):
     try:
         body = await request.json()
         
+        underlying = body.get('underlying')
+        spot_price = body.get('spot_price')
+
+        if not spot_price:
+            res = db.query("SELECT price FROM ticks WHERE instrumentKey = ? ORDER BY ts_ms DESC LIMIT 1", (underlying,))
+            spot_price = res[0]['price'] if res else 0
+
         strategy = strategy_builder.create_iron_condor(
-            underlying=body.get('underlying'),
-            spot_price=body.get('spot_price'),
+            underlying=underlying,
+            spot_price=spot_price or 0,
             put_sell_strike=body.get('put_sell_strike'),
             put_buy_strike=body.get('put_buy_strike'),
             call_sell_strike=body.get('call_sell_strike'),
@@ -617,9 +649,16 @@ async def create_long_straddle(request: Request):
     try:
         body = await request.json()
         
+        underlying = body.get('underlying')
+        spot_price = body.get('spot_price')
+
+        if not spot_price:
+            res = db.query("SELECT price FROM ticks WHERE instrumentKey = ? ORDER BY ts_ms DESC LIMIT 1", (underlying,))
+            spot_price = res[0]['price'] if res else 0
+
         strategy = strategy_builder.create_long_straddle(
-            underlying=body.get('underlying'),
-            spot_price=body.get('spot_price'),
+            underlying=underlying,
+            spot_price=spot_price or 0,
             strike=body.get('strike'),
             call_premium=body.get('call_premium'),
             put_premium=body.get('put_premium'),

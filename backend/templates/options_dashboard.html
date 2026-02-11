@@ -169,7 +169,9 @@
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     <div class="glass-panel rounded-xl p-4">
                         <h3 class="text-xs font-bold uppercase tracking-wider mb-4">OI Distribution</h3>
-                        <canvas id="oiChart" height="250"></canvas>
+                        <div class="h-[300px] relative">
+                            <canvas id="oiChart"></canvas>
+                        </div>
                     </div>
                     <div class="glass-panel rounded-xl p-4">
                         <h3 class="text-xs font-bold uppercase tracking-wider mb-4">Support & Resistance</h3>
@@ -184,7 +186,9 @@
             <div id="pcr-trendTab" class="tab-pane hidden">
                 <div class="glass-panel rounded-xl p-4">
                     <h3 class="text-xs font-bold uppercase tracking-wider mb-4">PCR Trend (Today)</h3>
-                    <canvas id="pcrChart" height="300"></canvas>
+                    <div class="h-[400px] relative">
+                        <canvas id="pcrChart"></canvas>
+                    </div>
                 </div>
             </div>
 
@@ -193,11 +197,15 @@
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     <div class="glass-panel rounded-xl p-4">
                         <h3 class="text-xs font-bold uppercase tracking-wider mb-4">Delta Distribution</h3>
-                        <canvas id="deltaChart" height="250"></canvas>
+                        <div class="h-[300px] relative">
+                            <canvas id="deltaChart"></canvas>
+                        </div>
                     </div>
                     <div class="glass-panel rounded-xl p-4">
                         <h3 class="text-xs font-bold uppercase tracking-wider mb-4">Theta (Time Decay)</h3>
-                        <canvas id="thetaChart" height="250"></canvas>
+                        <div class="h-[300px] relative">
+                            <canvas id="thetaChart"></canvas>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -242,10 +250,13 @@
                             </button>
                         </div>
                     </div>
-                    <div class="glass-panel rounded-xl p-4 lg:col-span-2">
+                    <div class="glass-panel rounded-xl p-4 lg:col-span-2 flex flex-col">
                         <h3 class="text-xs font-bold uppercase tracking-wider mb-4">Strategy Analysis</h3>
-                        <div id="strategyAnalysis">
+                        <div id="strategyAnalysis" class="flex-1 overflow-y-auto custom-scrollbar pr-2">
                             <p class="text-gray-500 text-xs">Select a strategy to see analysis</p>
+                        </div>
+                        <div id="payoffChartContainer" class="hidden mt-4 pt-4 border-t border-white/5 h-[250px] relative">
+                            <canvas id="payoffChart"></canvas>
                         </div>
                     </div>
                 </div>
@@ -451,6 +462,10 @@
             tbody.innerHTML = '';
 
             const chain = data.chain || [];
+            if (chain.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="13" class="py-10 text-center text-gray-500 font-bold">No data available. Please click "Backfill" or wait for the next snapshot.</td></tr>';
+                return;
+            }
             const spotPrice = data.spot_price || 0;
 
             // Group by strike
@@ -956,65 +971,136 @@
 
         function renderStrategyAnalysis(analysis) {
             const container = document.getElementById('strategyAnalysis');
+            const chartContainer = document.getElementById('payoffChartContainer');
             
             if (!analysis || analysis.error) {
-                container.innerHTML = '<p class="text-gray-500 text-xs">Error loading strategy analysis</p>';
+                container.innerHTML = `<p class="text-red-500 text-xs">Error: ${analysis?.error || 'Failed to load analysis'}</p>`;
+                chartContainer.classList.add('hidden');
                 return;
             }
 
             container.innerHTML = `
                 <div class="space-y-4">
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <div class="bg-slate-900/50 rounded p-3">
-                            <div class="text-[9px] text-gray-500 uppercase">Net Premium</div>
-                            <div class="text-lg font-bold ${analysis.net_premium >= 0 ? 'text-green-500' : 'text-red-500'}">${analysis.net_premium > 0 ? '+' : ''}${analysis.net_premium}</div>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+                        <div class="bg-slate-900/50 rounded p-2">
+                            <div class="text-[8px] text-gray-500 uppercase">Net Premium</div>
+                            <div class="text-sm font-bold ${analysis.net_premium >= 0 ? 'text-green-500' : 'text-red-500'}">${analysis.net_premium > 0 ? '+' : ''}${analysis.net_premium}</div>
                         </div>
-                        <div class="bg-slate-900/50 rounded p-3">
-                            <div class="text-[9px] text-gray-500 uppercase">Max Profit</div>
-                            <div class="text-lg font-bold text-green-500">${analysis.max_profit}</div>
+                        <div class="bg-slate-900/50 rounded p-2">
+                            <div class="text-[8px] text-gray-500 uppercase">Max Profit</div>
+                            <div class="text-sm font-bold text-green-500">${analysis.max_profit}</div>
                         </div>
-                        <div class="bg-slate-900/50 rounded p-3">
-                            <div class="text-[9px] text-gray-500 uppercase">Max Loss</div>
-                            <div class="text-lg font-bold text-red-500">${analysis.max_loss}</div>
+                        <div class="bg-slate-900/50 rounded p-2">
+                            <div class="text-[8px] text-gray-500 uppercase">Max Loss</div>
+                            <div class="text-sm font-bold text-red-500">${analysis.max_loss}</div>
                         </div>
-                        <div class="bg-slate-900/50 rounded p-3">
-                            <div class="text-[9px] text-gray-500 uppercase">Breakeven</div>
-                            <div class="text-lg font-bold text-blue-500">${analysis.breakeven_points?.join(', ') || '-'}</div>
+                        <div class="bg-slate-900/50 rounded p-2">
+                            <div class="text-[8px] text-gray-500 uppercase">Breakeven</div>
+                            <div class="text-sm font-bold text-blue-500">${analysis.breakeven_points?.length > 0 ? analysis.breakeven_points.map(b => Math.round(b)).join(', ') : '-'}</div>
                         </div>
                     </div>
                     
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <div class="bg-slate-900/50 rounded p-3">
-                            <div class="text-[9px] text-gray-500 uppercase">Net Delta</div>
-                            <div class="text-lg font-bold">${analysis.net_delta}</div>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+                        <div class="bg-slate-900/50 rounded p-2">
+                            <div class="text-[8px] text-gray-500 uppercase">Delta</div>
+                            <div class="text-sm font-bold">${analysis.net_delta}</div>
                         </div>
-                        <div class="bg-slate-900/50 rounded p-3">
-                            <div class="text-[9px] text-gray-500 uppercase">Net Gamma</div>
-                            <div class="text-lg font-bold">${analysis.net_gamma}</div>
+                        <div class="bg-slate-900/50 rounded p-2">
+                            <div class="text-[8px] text-gray-500 uppercase">Gamma</div>
+                            <div class="text-sm font-bold">${analysis.net_gamma}</div>
                         </div>
-                        <div class="bg-slate-900/50 rounded p-3">
-                            <div class="text-[9px] text-gray-500 uppercase">Net Theta</div>
-                            <div class="text-lg font-bold ${analysis.net_theta >= 0 ? 'text-green-500' : 'text-red-500'}">${analysis.net_theta}</div>
+                        <div class="bg-slate-900/50 rounded p-2">
+                            <div class="text-[8px] text-gray-500 uppercase">Theta</div>
+                            <div class="text-sm font-bold ${analysis.net_theta >= 0 ? 'text-green-500' : 'text-red-500'}">${analysis.net_theta}</div>
                         </div>
-                        <div class="bg-slate-900/50 rounded p-3">
-                            <div class="text-[9px] text-gray-500 uppercase">Net Vega</div>
-                            <div class="text-lg font-bold">${analysis.net_vega}</div>
+                        <div class="bg-slate-900/50 rounded p-2">
+                            <div class="text-[8px] text-gray-500 uppercase">Vega</div>
+                            <div class="text-sm font-bold">${analysis.net_vega}</div>
                         </div>
                     </div>
 
                     <div>
-                        <h4 class="text-[10px] text-gray-400 uppercase mb-2">Legs</h4>
-                        <div class="space-y-2">
+                        <h4 class="text-[9px] text-gray-400 uppercase mb-1">Legs</h4>
+                        <div class="space-y-1">
                             ${analysis.legs?.map(leg => `
-                                <div class="flex justify-between items-center bg-slate-900/50 rounded p-2 text-xs">
-                                    <span class="font-bold">${leg.position.toUpperCase()} ${leg.strike} ${leg.option_type.toUpperCase()}</span>
-                                    <span class="${leg.position === 'long' ? 'text-red-500' : 'text-green-500'}">${leg.net_premium}</span>
+                                <div class="flex justify-between items-center bg-slate-900/50 rounded px-2 py-1 text-[10px]">
+                                    <div class="flex gap-2">
+                                        <span class="font-bold uppercase ${leg.position === 'long' ? 'text-blue-500' : 'text-orange-500'}">${leg.position}</span>
+                                        <span>${leg.strike} ${leg.option_type.toUpperCase()}</span>
+                                    </div>
+                                    <div class="${leg.net_premium >= 0 ? 'text-green-500' : 'text-red-500'}">${leg.net_premium}</div>
                                 </div>
                             `).join('') || ''}
                         </div>
                     </div>
                 </div>
             `;
+
+            if (analysis.payoff_chart_data) {
+                chartContainer.classList.remove('hidden');
+                renderPayoffChart(analysis.payoff_chart_data);
+            } else {
+                chartContainer.classList.add('hidden');
+            }
+        }
+
+        function renderPayoffChart(data) {
+            const ctx = document.getElementById('payoffChart').getContext('2d');
+            if (charts.payoff) charts.payoff.destroy();
+
+            charts.payoff = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: data.prices.map(p => Math.round(p)),
+                    datasets: [{
+                        label: 'P&L',
+                        data: data.pnl,
+                        borderColor: '#3b82f6',
+                        backgroundColor: (context) => {
+                            const chart = context.chart;
+                            const {ctx, chartArea} = chart;
+                            if (!chartArea) return null;
+                            const zero = chart.scales.y.getPixelForValue(0);
+                            const gradient = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+                            const zeroPos = (zero - chartArea.top) / (chartArea.bottom - chartArea.top);
+                            if (zeroPos > 0 && zeroPos < 1) {
+                                gradient.addColorStop(0, 'rgba(34, 197, 94, 0.2)');
+                                gradient.addColorStop(zeroPos, 'rgba(34, 197, 94, 0)');
+                                gradient.addColorStop(zeroPos, 'rgba(239, 68, 68, 0)');
+                                gradient.addColorStop(1, 'rgba(239, 68, 68, 0.2)');
+                            }
+                            return gradient;
+                        },
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                            callbacks: {
+                                label: (context) => `P&L: ${context.parsed.y.toFixed(2)}`
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                            ticks: { color: '#64748b', font: { size: 8 } }
+                        },
+                        y: {
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                            ticks: { color: '#64748b', font: { size: 8 } }
+                        }
+                    }
+                }
+            });
         }
 
         async function loadAlerts() {
