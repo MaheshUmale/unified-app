@@ -36,6 +36,10 @@ A minimal, high-performance trading terminal featuring TradingView charting, rea
   - **Unified Search**: Search for indices (NIFTY, BANKNIFTY) or stocks (RELIANCE) and get instant results.
   - **Options Discovery**: Automatically merges results from the TradingView Options Scanner.
   - **Technical Search**: Search using exact technical strings (e.g., `NIFTY260210C25600`) for precise contract selection.
+- **Confluence Visuals**:
+  - **OI Profile Overlay**: Toggleable vertical histogram directly on the chart showing Call vs Put Open Interest across all strikes.
+  - **Analysis Center Sidebar**: Integrated panel showing OiGenie predictions (institutional control), OI Buildup Pulse, and real-time Scalper metrics.
+  - **Synchronized Replay**: Historical replay mode now fully synchronizes with historical OI and PCR data, simulating the exact market state for strategy refinement.
 - **Efficient Backend**: Built with FastAPI and DuckDB for low-latency data handling and persistence.
 - **DuckDB Viewer**: A dedicated SQL-based viewer at `/db-viewer` that shares the application's database connection, allowing real-time table inspection and custom queries without file-locking issues.
 - **Options Analysis Dashboard**:
@@ -115,11 +119,20 @@ python3 backend/api_server.py
 
 ### 5. Candle Replay
 - **Enter Mode**: Click the **REPLAY** button.
+- **Data Sync**: Upon entering Replay, the terminal fetches full historical options data for the day.
 - **Select Start**: Click on any historical candle to set the starting point.
-- **Controls**: Use **Play/Pause**, **Next**, and **Previous** to step through the price action candle-by-candle.
+- **Controls**: Use **Play/Pause**, **Next**, and **Previous** to step through the price action.
+- **Simulated Confluence**: As you step through candles, the **OI Profile** and **Analysis Sidebar** automatically update to show the nearest available historical OI/PCR/Scalper data for that specific point in time.
 - **Exit**: Click **EXIT** to return to the real-time feed.
 
-### 6. Persistence
+### 6. Confluence Tools
+- **OI Profile**: Toggle this in the header to see the option chain distribution overlaid on your price chart. Red bars represent Call OI (resistance), and green bars represent Put OI (support).
+- **Analysis Sidebar**: Toggle this to view a high-level summary of:
+  - **OiGenie**: Detects whether buyers or sellers are in control and predicts potential sideways movement.
+  - **OI Buildup Pulse**: Real-time census of Long/Short buildup and covering across all strikes.
+  - **Scalper Pulse**: If the NSE Confluence Scalper is running, its live metrics and confluence dots will appear here.
+
+### 7. Persistence
 - Your layout configuration, selected symbols, timeframes, and drawings are automatically saved to your browser's local storage. They will be restored exactly as you left them when you return to the application.
 
 ## Development & Customization
