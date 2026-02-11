@@ -110,6 +110,8 @@ class ChartInstance {
             //     return;
             // }
 
+            
+
             // // 2. Use the findIndex
             // const idx = this.fullHistory.candles.findIndex(c => c.time === param.time);
 
