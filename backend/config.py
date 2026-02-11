@@ -107,9 +107,12 @@ STRATEGY_CONFIG = {
         "PUT_CALENDAR"
     ]
 }
+import rookiepy 
 
-# TradingView Cookie (Optional)
-TV_COOKIE = os.getenv("TV_COOKIE", "")
+# 1. Retrieve Brave cookies for TradingView
+# Passing the domain helps filter for specific site data
+cookies = rookiepy.to_cookiejar(rookiepy.brave(['.tradingview.com']))
+TV_COOKIE =cookies
 
 # Database Configuration
 DATABASE_CONFIG = {
@@ -172,3 +175,6 @@ UI_CONFIG = {
     "chart_history_days": 30,
     "max_strikes_displayed": 50
 }
+
+
+TV_STUDY_ID ='USER:f9c7fa68b382417ba34df4122c632dcf'
