@@ -728,6 +728,9 @@ class OptionsManager:
         total_call_oi_chg = sum(r['oi_change'] for r in calls)
         total_put_oi_chg = sum(r['oi_change'] for r in puts)
         
+        total_oi = total_call_oi + total_put_oi
+        total_oi_change = total_call_oi_chg + total_put_oi_chg
+
         pcr_oi = total_put_oi / total_call_oi if total_call_oi > 0 else 0
         pcr_vol = total_put_vol / total_call_vol if total_call_vol > 0 else 0
         pcr_oi_change = total_put_oi_chg / total_call_oi_chg if total_call_oi_chg != 0 else 0
@@ -761,7 +764,9 @@ class OptionsManager:
             'pcr_oi_change': pcr_oi_change,
             'underlying_price': underlying_price,
             'max_pain': max_pain,
-            'spot_price': spot_price
+            'spot_price': spot_price,
+            'total_oi': total_oi,
+            'total_oi_change': total_oi_change
         })
         
         # Track IV for analysis

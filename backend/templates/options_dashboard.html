@@ -125,6 +125,7 @@
             <button class="tab-btn pb-2 text-xs font-bold text-gray-500 uppercase tracking-wider hover:text-white transition-colors" data-tab="buildup">OI Buildup</button>
             <button class="tab-btn pb-2 text-xs font-bold text-gray-500 uppercase tracking-wider hover:text-white transition-colors" data-tab="strategies">Strategies</button>
             <button class="tab-btn pb-2 text-xs font-bold text-gray-500 uppercase tracking-wider hover:text-white transition-colors" data-tab="alerts">Alerts</button>
+            <button class="tab-btn pb-2 text-xs font-bold text-gray-500 uppercase tracking-wider hover:text-white transition-colors" data-tab="scalper">Scalper</button>
         </div>
 
         <!-- Tab Content -->
@@ -184,10 +185,32 @@
 
             <!-- PCR Trend Tab -->
             <div id="pcr-trendTab" class="tab-pane hidden">
-                <div class="glass-panel rounded-xl p-4">
-                    <h3 class="text-xs font-bold uppercase tracking-wider mb-4">PCR Trend (Today)</h3>
-                    <div class="h-[400px] relative">
-                        <canvas id="pcrChart"></canvas>
+                <div class="grid grid-cols-1 gap-4">
+                    <div class="glass-panel rounded-xl p-4">
+                        <h3 class="text-xs font-bold uppercase tracking-wider mb-4">Spot Price Trend</h3>
+                        <div class="h-[300px] relative">
+                            <canvas id="spotTrendChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="glass-panel rounded-xl p-4">
+                        <h3 class="text-xs font-bold uppercase tracking-wider mb-4">PCR Trend (Today)</h3>
+                        <div class="h-[300px] relative">
+                            <canvas id="pcrChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <div class="glass-panel rounded-xl p-4">
+                            <h3 class="text-xs font-bold uppercase tracking-wider mb-4">Total OI Trend</h3>
+                            <div class="h-[300px] relative">
+                                <canvas id="totalOIChart"></canvas>
+                            </div>
+                        </div>
+                        <div class="glass-panel rounded-xl p-4">
+                            <h3 class="text-xs font-bold uppercase tracking-wider mb-4">OI Change Trend</h3>
+                            <div class="h-[300px] relative">
+                                <canvas id="oiChangeChart"></canvas>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -292,6 +315,54 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Scalper Tab -->
+            <div id="scalperTab" class="tab-pane hidden">
+                <div class="grid grid-cols-1 lg:grid-cols-4 gap-4">
+                    <div class="lg:col-span-1 space-y-4">
+                        <div class="glass-panel rounded-xl p-4">
+                            <h3 class="text-xs font-bold uppercase tracking-wider mb-4">Scalper Control</h3>
+                            <div class="space-y-3">
+                                <div class="flex flex-col gap-1">
+                                    <label class="text-[10px] text-gray-500 uppercase">Underlying</label>
+                                    <select id="scalperUnderlying" class="w-full bg-slate-900 border border-white/10 rounded px-3 py-2 text-xs">
+                                        <option value="NSE:NIFTY">NIFTY 50</option>
+                                        <option value="NSE:BANKNIFTY">BANKNIFTY</option>
+                                        <option value="NSE:FINNIFTY">FINNIFTY</option>
+                                    </select>
+                                </div>
+                                <div id="scalperStatus" class="flex items-center gap-2 py-2 px-3 bg-slate-900/50 rounded border border-white/5">
+                                    <div id="statusDot" class="w-2 h-2 rounded-full bg-red-500"></div>
+                                    <span id="statusText" class="text-[10px] font-bold text-gray-400 uppercase">Inactive</span>
+                                </div>
+                                <button id="startScalperBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2 rounded transition-all">
+                                    Start Scalper
+                                </button>
+                                <button id="stopScalperBtn" class="w-full bg-red-600 hover:bg-red-700 text-white text-xs font-bold py-2 rounded transition-all hidden">
+                                    Stop Scalper
+                                </button>
+                            </div>
+                        </div>
+                        <div class="glass-panel rounded-xl p-4">
+                            <h3 class="text-xs font-bold uppercase tracking-wider mb-2">Active Trades</h3>
+                            <div id="activeTradesList" class="space-y-2">
+                                <p class="text-[10px] text-gray-500">No active trades</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="lg:col-span-3">
+                        <div class="glass-panel rounded-xl p-4 h-[600px] flex flex-col">
+                            <div class="flex justify-between items-center mb-4">
+                                <h3 class="text-xs font-bold uppercase tracking-wider">Scalper Log Pulse</h3>
+                                <button id="clearLogBtn" class="text-[10px] text-gray-500 hover:text-white uppercase font-bold">Clear Log</button>
+                            </div>
+                            <div id="scalperLog" class="flex-1 bg-black/40 rounded p-4 font-mono text-[11px] overflow-y-auto custom-scrollbar space-y-1">
+                                <p class="text-gray-600 italic">Connecting to scalper stream...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </main>
 
@@ -359,6 +430,25 @@
             socket.on('options_alert', (data) => {
                 showAlert(data.message);
             });
+
+            socket.on('scalper_log', (data) => {
+                const logEl = document.getElementById('scalperLog');
+                const p = document.createElement('p');
+
+                // Colorize logs
+                if (data.message.includes('[SIGNAL]')) p.className = 'text-green-400 font-bold';
+                else if (data.message.includes('[WATCH]')) p.className = 'text-blue-400';
+                else if (data.message.includes('CLOSE')) p.className = 'text-orange-400 font-bold';
+                else if (data.message.includes('ERROR')) p.className = 'text-red-500';
+                else p.className = 'text-gray-300';
+
+                p.textContent = data.message;
+                logEl.appendChild(p);
+                logEl.scrollTop = logEl.scrollHeight;
+
+                // Sync status if needed
+                updateScalperStatusUI();
+            });
         }
 
         function setupEventListeners() {
@@ -425,6 +515,13 @@
 
             // Create Alert button
             document.getElementById('createAlertBtn').addEventListener('click', createAlert);
+
+            // Scalper Start/Stop
+            document.getElementById('startScalperBtn').addEventListener('click', startScalper);
+            document.getElementById('stopScalperBtn').addEventListener('click', stopScalper);
+            document.getElementById('clearLogBtn').addEventListener('click', () => {
+                document.getElementById('scalperLog').innerHTML = '';
+            });
         }
 
         function addLegRow() {
@@ -469,6 +566,7 @@
             if (tabId === 'greeks') loadGreeks();
             if (tabId === 'buildup') loadBuildupAnalysis();
             if (tabId === 'alerts') loadAlerts();
+            if (tabId === 'scalper') updateScalperStatusUI();
         }
 
         async function loadData() {
@@ -742,25 +840,21 @@
         }
 
         function renderPCRChart(data) {
-            const ctx = document.getElementById('pcrChart').getContext('2d');
-            
-            if (charts.pcr) {
-                charts.pcr.destroy();
-            }
-
             const history = data.history || [];
             const timestamps = history.map(h => new Date(h.timestamp).toLocaleTimeString());
-            const pcrOI = history.map(h => h.pcr_oi);
-            const pcrVol = history.map(h => h.pcr_vol);
 
-            charts.pcr = new Chart(ctx, {
+            // 1. PCR Chart
+            const pcrCtx = document.getElementById('pcrChart').getContext('2d');
+            if (charts.pcr) charts.pcr.destroy();
+
+            charts.pcr = new Chart(pcrCtx, {
                 type: 'line',
                 data: {
                     labels: timestamps,
                     datasets: [
                         {
                             label: 'PCR (OI)',
-                            data: pcrOI,
+                            data: history.map(h => h.pcr_oi),
                             borderColor: 'rgba(59, 130, 246, 1)',
                             backgroundColor: 'rgba(59, 130, 246, 0.1)',
                             fill: true,
@@ -768,7 +862,7 @@
                         },
                         {
                             label: 'PCR (Volume)',
-                            data: pcrVol,
+                            data: history.map(h => h.pcr_vol),
                             borderColor: 'rgba(168, 85, 247, 1)',
                             backgroundColor: 'rgba(168, 85, 247, 0.1)',
                             fill: true,
@@ -777,19 +871,91 @@
                     ]
                 },
                 options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
+                    responsive: true, maintainAspectRatio: false,
                     scales: {
                         x: { ticks: { color: '#94a3b8', font: { size: 9 } } },
-                        y: { 
-                            ticks: { color: '#94a3b8', font: { size: 9 } },
-                            suggestedMin: 0.5,
-                            suggestedMax: 1.5
-                        }
+                        y: { ticks: { color: '#94a3b8', font: { size: 9 } }, suggestedMin: 0.5, suggestedMax: 1.5 }
                     },
-                    plugins: {
-                        legend: { labels: { color: '#f8fafc', font: { size: 10 } } }
-                    }
+                    plugins: { legend: { labels: { color: '#f8fafc', font: { size: 10 } } } }
+                }
+            });
+
+            // 2. Spot Trend Chart
+            const spotCtx = document.getElementById('spotTrendChart').getContext('2d');
+            if (charts.spot) charts.spot.destroy();
+
+            charts.spot = new Chart(spotCtx, {
+                type: 'line',
+                data: {
+                    labels: timestamps,
+                    datasets: [{
+                        label: 'Spot Price',
+                        data: history.map(h => h.spot_price || h.underlying_price),
+                        borderColor: 'rgba(255, 255, 255, 1)',
+                        borderWidth: 2,
+                        fill: false,
+                        tension: 0.2,
+                        pointRadius: 0
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    scales: {
+                        x: { ticks: { color: '#94a3b8', font: { size: 9 } } },
+                        y: { ticks: { color: '#94a3b8', font: { size: 9 } }, beginAtZero: false }
+                    },
+                    plugins: { legend: { display: false } }
+                }
+            });
+
+            // 3. Total OI Chart
+            const oiCtx = document.getElementById('totalOIChart').getContext('2d');
+            if (charts.totalOI) charts.totalOI.destroy();
+
+            charts.totalOI = new Chart(oiCtx, {
+                type: 'line',
+                data: {
+                    labels: timestamps,
+                    datasets: [{
+                        label: 'Total OI',
+                        data: history.map(h => h.total_oi),
+                        borderColor: 'rgba(34, 197, 94, 1)',
+                        backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    scales: {
+                        x: { ticks: { color: '#94a3b8', font: { size: 9 } } },
+                        y: { ticks: { color: '#94a3b8', font: { size: 9 } } }
+                    },
+                    plugins: { legend: { display: false } }
+                }
+            });
+
+            // 4. OI Change Chart
+            const oicCtx = document.getElementById('oiChangeChart').getContext('2d');
+            if (charts.oiChange) charts.oiChange.destroy();
+
+            charts.oiChange = new Chart(oicCtx, {
+                type: 'bar',
+                data: {
+                    labels: timestamps,
+                    datasets: [{
+                        label: 'OI Change',
+                        data: history.map(h => h.total_oi_change),
+                        backgroundColor: history.map(h => h.total_oi_change >= 0 ? 'rgba(34, 197, 94, 0.6)' : 'rgba(239, 68, 68, 0.6)'),
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    scales: {
+                        x: { ticks: { color: '#94a3b8', font: { size: 9 } } },
+                        y: { ticks: { color: '#94a3b8', font: { size: 9 } } }
+                    },
+                    plugins: { legend: { display: false } }
                 }
             });
         }
@@ -1262,6 +1428,78 @@
             if (confirm('Are you sure you want to delete this alert?')) {
                 await fetch(`/api/alerts/${id}`, { method: 'DELETE' });
                 loadAlerts();
+            }
+        }
+
+        // ==================== SCALPER LOGIC ====================
+
+        async function updateScalperStatusUI() {
+            try {
+                const response = await fetch('/api/scalper/status');
+                const data = await response.json();
+
+                const dot = document.getElementById('statusDot');
+                const text = document.getElementById('statusText');
+                const startBtn = document.getElementById('startScalperBtn');
+                const stopBtn = document.getElementById('stopScalperBtn');
+
+                if (data.is_running) {
+                    dot.className = 'w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]';
+                    text.textContent = 'Active: ' + data.underlying;
+                    text.className = 'text-[10px] font-bold text-green-400 uppercase';
+                    startBtn.classList.add('hidden');
+                    stopBtn.classList.remove('hidden');
+                } else {
+                    dot.className = 'w-2 h-2 rounded-full bg-red-500';
+                    text.textContent = 'Inactive';
+                    text.className = 'text-[10px] font-bold text-gray-400 uppercase';
+                    startBtn.classList.remove('hidden');
+                    stopBtn.classList.add('hidden');
+                }
+
+                // Update active trades
+                const tradesList = document.getElementById('activeTradesList');
+                if (data.active_trades && data.active_trades.length > 0) {
+                    tradesList.innerHTML = data.active_trades.map(t => `
+                        <div class="bg-slate-900/50 border border-white/5 rounded p-2">
+                            <div class="flex justify-between items-center mb-1">
+                                <span class="text-[10px] font-black ${t.side === 'CALL' ? 'text-green-500' : 'text-red-500'}">${t.side}</span>
+                                <span class="text-[10px] font-bold text-blue-400">LTP: ${t.last_price}</span>
+                            </div>
+                            <div class="flex justify-between text-[8px] text-gray-500">
+                                <span>Entry: ${t.entry_price}</span>
+                                <span>SL: ${t.sl}</span>
+                                <span>TP: ${t.tp}</span>
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    tradesList.innerHTML = '<p class="text-[10px] text-gray-500">No active trades</p>';
+                }
+
+            } catch (error) {
+                console.error('Error updating scalper UI:', error);
+            }
+        }
+
+        async function startScalper() {
+            const underlying = document.getElementById('scalperUnderlying').value;
+            try {
+                const response = await fetch(`/api/scalper/start?underlying=${underlying}`, { method: 'POST' });
+                const data = await response.json();
+                updateScalperStatusUI();
+            } catch (error) {
+                console.error('Error starting scalper:', error);
+            }
+        }
+
+        async function stopScalper() {
+            try {
+                const response = await fetch('/api/scalper/stop', { method: 'POST' });
+                const data = await response.json();
+                updateScalperStatusUI();
+            } catch (error) {
+                console.error('Error stopping scalper:', error);
             }
         }
 

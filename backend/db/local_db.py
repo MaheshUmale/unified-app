@@ -116,7 +116,9 @@ class LocalDB:
                 pcr_oi_change DOUBLE,
                 underlying_price DOUBLE,
                 max_pain DOUBLE,
-                spot_price DOUBLE
+                spot_price DOUBLE,
+                total_oi BIGINT,
+                total_oi_change BIGINT
             )
         """)
 
@@ -151,7 +153,9 @@ class LocalDB:
             missing_pcr_cols = {
                 'pcr_oi_change': 'DOUBLE',
                 'underlying_price': 'DOUBLE',
-                'spot_price': 'DOUBLE'
+                'spot_price': 'DOUBLE',
+                'total_oi': 'BIGINT',
+                'total_oi_change': 'BIGINT'
             }
             for col, dtype in missing_pcr_cols.items():
                 if col not in cols:
@@ -249,7 +253,7 @@ class LocalDB:
             self.conn.execute(f"INSERT INTO options_snapshots ({', '.join(cols)}) SELECT * FROM df")
 
     def insert_pcr_history(self, record: Dict[str, Any]):
-        cols = ['timestamp', 'underlying', 'pcr_oi', 'pcr_vol', 'pcr_oi_change', 'underlying_price', 'max_pain', 'spot_price']
+        cols = ['timestamp', 'underlying', 'pcr_oi', 'pcr_vol', 'pcr_oi_change', 'underlying_price', 'max_pain', 'spot_price', 'total_oi', 'total_oi_change']
         # Ensure all columns exist in record
         for c in cols:
             if c not in record: record[c] = 0
