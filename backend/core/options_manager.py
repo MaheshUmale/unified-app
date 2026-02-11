@@ -854,6 +854,72 @@ class OptionsManager:
         chain = self.get_chain_with_greeks(underlying).get('chain', [])
         return oi_buildup_analyzer.get_support_resistance_from_oi(chain)
 
+    async def get_price_boundaries(self, underlying: str) -> Dict[str, Any]:
+        """Calculates the realistic price boundaries for the day."""
+        spot = await self.get_spot_price(underlying)
+        if spot == 0: return {"lower": 0, "upper": 0}
+
+        # Using 1% as a default daily IV for boundary calculation if historical not available
+        # Boundaries = Spot * (1 +/- IV * sqrt(1/365))
+        # For NIFTY, 1% daily move is a reasonable "realistic" boundary
+        daily_iv = 0.01
+
+        upper = spot * (1 + daily_iv)
+        lower = spot * (1 - daily_iv)
+
+        # Fine tune with OI concentrations
+        sr = self.get_support_resistance(underlying)
+        if sr.get('resistance_levels'):
+            upper = min(upper, sr['resistance_levels'][0]['strike'])
+        if sr.get('support_levels'):
+            lower = max(lower, sr['support_levels'][0]['strike'])
+
+        return {
+            "lower": round(lower, 2),
+            "upper": round(upper, 2),
+            "spot": spot
+        }
+
+    def get_high_activity_strikes(self, underlying: str) -> List[Dict[str, Any]]:
+        """Highlights strikes with maximum OI, volume, and activity."""
+        chain = self.get_chain_with_greeks(underlying).get('chain', [])
+        if not chain: return []
+
+        # Sort by Net Score: OI + Volume + |OI Change|
+        scored = []
+        for item in chain:
+            score = item.get('oi', 0) + item.get('volume', 0) + abs(item.get('oi_change', 0))
+            scored.append({**item, 'activity_score': score})
+
+        top_active = sorted(scored, key=lambda x: x['activity_score'], reverse=True)
+        return top_active[:5]
+
+    async def get_genie_insights(self, underlying: str) -> Dict[str, Any]:
+        """Consolidated Genie insights for the dashboard."""
+        chain_res = self.get_chain_with_greeks(underlying)
+        chain = chain_res.get('chain', [])
+        spot = chain_res.get('spot_price', 0)
+
+        distribution = oi_buildup_analyzer.detect_institutional_distribution(chain, spot)
+        control = oi_buildup_analyzer.detect_market_control(chain)
+
+        # Fetch history for sideways prediction
+        history_res = db.query(
+            "SELECT spot_price, underlying_price FROM pcr_history WHERE underlying = ? ORDER BY timestamp DESC LIMIT 10",
+            (underlying,)
+        )
+        sideways = oi_buildup_analyzer.predict_sideways_session(history_res)
+
+        boundaries = await self.get_price_boundaries(underlying)
+
+        return {
+            "distribution": distribution,
+            "control": control,
+            "sideways_expected": sideways,
+            "boundaries": boundaries,
+            "sentiment": "BULLISH" if control == "BUYERS_IN_CONTROL" else "BEARISH" if control == "SELLERS_IN_CONTROL" else "NEUTRAL"
+        }
+
 
 # Global instance
 options_manager = OptionsManager()

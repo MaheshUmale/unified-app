@@ -9,22 +9,57 @@
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
-        body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: #f8fafc; }
-        .glass-panel { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.05); }
+
+        /* Default Dark Theme */
+        :root {
+            --bg-color: #0f172a;
+            --text-color: #f8fafc;
+            --panel-bg: rgba(30, 41, 59, 0.7);
+            --border-color: rgba(255, 255, 255, 0.05);
+            --header-bg: #1e293b;
+            --tab-inactive: #64748b;
+            --input-bg: #0f172a;
+        }
+
+        /* Light Theme */
+        body.light-theme {
+            --bg-color: #f1f5f9;
+            --text-color: #0f172a;
+            --panel-bg: rgba(255, 255, 255, 0.9);
+            --border-color: rgba(0, 0, 0, 0.1);
+            --header-bg: #f8fafc;
+            --tab-inactive: #64748b;
+            --input-bg: #ffffff;
+        }
+
+        body { font-family: 'Inter', sans-serif; background-color: var(--bg-color); color: var(--text-color); transition: background-color 0.3s, color 0.3s; }
+        .glass-panel { background: var(--panel-bg); backdrop-filter: blur(12px); border: 1px solid var(--border-color); }
         .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+
         .flash-up { animation: flash-green 0.8s ease-out; }
         .flash-down { animation: flash-red 0.8s ease-out; }
         @keyframes flash-green { 0% { background-color: rgba(34, 197, 94, 0.3); } 100% { background-color: transparent; } }
         @keyframes flash-red { 0% { background-color: rgba(239, 68, 68, 0.3); } 100% { background-color: transparent; } }
-        .sticky-header th { position: sticky; top: 0; z-index: 10; background: #1e293b; }
+
+        .sticky-header th { position: sticky; top: 0; z-index: 10; background: var(--header-bg); }
         .tab-active { border-bottom: 2px solid #3b82f6; color: #3b82f6; }
         .greek-positive { color: #22c55e; }
         .greek-negative { color: #ef4444; }
+
+        /* Component Overrides for Themes */
+        .theme-text-muted { color: var(--tab-inactive); }
+        .theme-input { background-color: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-color); }
+        .light-theme .text-white { color: #0f172a; }
+        .light-theme .text-gray-400 { color: #475569; }
+        .light-theme .text-gray-500 { color: #64748b; }
+        .light-theme .bg-slate-900 { background-color: #e2e8f0; }
+        .light-theme .bg-slate-800 { background-color: #f1f5f9; }
+        .light-theme .bg-black\/40 { background-color: rgba(255, 255, 255, 0.5); }
     </style>
 </head>
-<body class="h-full flex flex-col overflow-hidden custom-scrollbar">
+<body class="h-full flex flex-col overflow-hidden custom-scrollbar light-theme">
     <!-- Header -->
     <header class="h-14 py-2 glass-panel border-b border-white/5 px-4 md:px-6 flex items-center justify-between shrink-0">
         <div class="flex items-center gap-6">
@@ -114,6 +149,21 @@
                     <div id="deltaSignal" class="text-[10px] font-black bg-gray-500/20 text-gray-400 px-2 py-0.5 rounded uppercase">-</div>
                 </div>
                 <div class="text-[9px] text-gray-500 mt-1">Theta: <span id="netTheta">-</span></div>
+            </div>
+
+            <!-- Genie Insights Card -->
+            <div class="glass-panel rounded-xl p-4 flex flex-col justify-between border-l-4 border-blue-500">
+                <div class="text-[10px] text-blue-400 font-black uppercase tracking-wider flex justify-between">
+                    OiGenie Predicts
+                    <span id="sidewaysBadge" class="hidden text-[8px] bg-yellow-500/20 text-yellow-500 px-1 rounded">SIDEWAYS</span>
+                </div>
+                <div class="mt-2">
+                    <div id="genieControl" class="text-lg font-black text-white uppercase">-</div>
+                    <div id="genieDistribution" class="text-[9px] font-bold text-gray-500 mt-1 uppercase">-</div>
+                </div>
+                <div class="text-[9px] text-gray-400 mt-2">
+                    Range: <span id="genieRange" class="text-blue-400 font-black">-</span>
+                </div>
             </div>
         </div>
 
@@ -422,6 +472,28 @@
         let currentUnderlying = 'NSE:NIFTY';
         let socket = null;
         let charts = {};
+        let theme = localStorage.getItem('theme') || 'light';
+
+        function applyTheme(newTheme) {
+            theme = newTheme;
+            localStorage.setItem('theme', theme);
+            if (theme === 'light') {
+                document.body.classList.add('light-theme');
+            } else {
+                document.body.classList.remove('light-theme');
+            }
+            // Redraw charts if needed
+            Object.values(charts).forEach(chart => {
+                if (chart && chart.options) {
+                    chart.options.scales.x.ticks.color = theme === 'light' ? '#475569' : '#94a3b8';
+                    chart.options.scales.y.ticks.color = theme === 'light' ? '#475569' : '#94a3b8';
+                    if (chart.options.plugins.legend && chart.options.plugins.legend.labels) {
+                        chart.options.plugins.legend.labels.color = theme === 'light' ? '#0f172a' : '#f8fafc';
+                    }
+                    chart.update();
+                }
+            });
+        }
 
         function formatIST(timestamp) {
             return new Intl.DateTimeFormat('en-IN', {
@@ -435,6 +507,7 @@
 
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
+            applyTheme(localStorage.getItem('theme') || 'light');
             initSocket();
             loadData();
             setupEventListeners();
@@ -683,7 +756,18 @@
                 // Load option chain
                 const chainResponse = await fetch(`/api/options/chain/${currentUnderlying}/with-greeks`);
                 const chainData = await chainResponse.json();
-                renderOptionChain(chainData);
+
+                // Load high activity strikes for highlighting
+                const activityRes = await fetch(`/api/options/high-activity/${currentUnderlying}`);
+                const activityData = await activityRes.json();
+                const highActivityStrikes = new Set(activityData.map(s => s.strike));
+
+                renderOptionChain(chainData, highActivityStrikes);
+
+                // Load Genie Insights
+                const genieRes = await fetch(`/api/options/genie-insights/${currentUnderlying}`);
+                const genieData = await genieRes.json();
+                updateGenieCard(genieData);
 
                 // Update source if available
                 if (chainData.source) {
@@ -710,7 +794,7 @@
             }
         }
 
-        function renderOptionChain(data) {
+        function renderOptionChain(data, highActivityStrikes = new Set()) {
             const tbody = document.getElementById('optionChainBody');
             tbody.innerHTML = '';
 
@@ -744,7 +828,10 @@
                 const put = data.put || {};
 
                 const isATM = Math.abs(parseFloat(strike) - spotPrice) / spotPrice < 0.01;
-                const rowClass = isATM ? 'bg-blue-500/10' : '';
+                const isHighActivity = highActivityStrikes.has(parseFloat(strike));
+
+                let rowClass = isATM ? 'bg-blue-500/10' : '';
+                if (isHighActivity) rowClass = 'bg-yellow-500/5 border-l-2 border-yellow-500/50';
 
                 const row = document.createElement('tr');
                 row.className = `${rowClass} hover:bg-white/5 transition-colors`;
@@ -755,7 +842,7 @@
                     <td class="py-2 px-3 text-right font-bold text-green-400">${call.ltp?.toFixed(2) || '-'}</td>
                     <td class="py-2 px-3 text-right ${call.oi_change > 0 ? 'text-green-400' : 'text-red-400'}">${call.oi_change || '-'}</td>
                     <td class="py-2 px-3 text-right border-r border-white/5">${call.oi?.toLocaleString() || '-'}</td>
-                    <td class="py-2 px-3 text-center font-black text-sm ${isATM ? 'text-blue-400' : 'text-white'} bg-slate-800">${strike}</td>
+                    <td class="py-2 px-3 text-center font-black text-sm ${isATM ? 'text-blue-400' : (isHighActivity ? 'text-yellow-400' : 'text-white')} bg-slate-800">${strike}</td>
                     <td class="py-2 px-3 text-left">${put.oi?.toLocaleString() || '-'}</td>
                     <td class="py-2 px-3 text-left ${put.oi_change > 0 ? 'text-green-400' : 'text-red-400'}">${put.oi_change || '-'}</td>
                     <td class="py-2 px-3 text-left font-bold text-red-400">${put.ltp?.toFixed(2) || '-'}</td>
@@ -822,6 +909,26 @@
                 ivSignal.textContent = 'NORMAL';
                 ivSignal.className = 'text-[10px] font-black bg-gray-500/20 text-gray-400 px-2 py-0.5 rounded uppercase';
             }
+        }
+
+        function updateGenieCard(data) {
+            const controlEl = document.getElementById('genieControl');
+            const distEl = document.getElementById('genieDistribution');
+            const rangeEl = document.getElementById('genieRange');
+            const sidewaysBadge = document.getElementById('sidewaysBadge');
+
+            controlEl.textContent = data.control.replace('_', ' ');
+            if (data.control === 'BUYERS_IN_CONTROL') controlEl.className = 'text-lg font-black text-green-500 uppercase';
+            else if (data.control === 'SELLERS_IN_CONTROL') controlEl.className = 'text-lg font-black text-red-500 uppercase';
+            else controlEl.className = 'text-lg font-black text-white uppercase';
+
+            distEl.textContent = data.distribution.status;
+            distEl.className = data.distribution.is_aggressive_distribution ? 'text-[9px] font-black text-red-400 mt-1 uppercase' : 'text-[9px] font-bold text-gray-500 mt-1 uppercase';
+
+            rangeEl.textContent = `${data.boundaries.lower} - ${data.boundaries.upper}`;
+
+            if (data.sideways_expected) sidewaysBadge.classList.remove('hidden');
+            else sidewaysBadge.classList.add('hidden');
         }
 
         async function loadOIAnalysis() {
