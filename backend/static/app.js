@@ -118,7 +118,14 @@ class ChartInstance {
 
         this.chart.subscribeClick((param) => {
             if (this.isReplayMode && param.time && this.replayIndex === -1) {
-                const idx = this.fullHistory.candles.findIndex(c => c.time === param.time);
+                 // Convert Map keys to an Array and find the index of the timestamp
+                const keys = Array.from(this.fullHistory.candles.keys());
+                const idx = keys.indexOf(param.time);
+
+                if (idx !== -1) {
+                    console.log("Found at index:", idx);
+                }
+                // const idx = this.fullHistory.candles.findIndex(c => c.time === param.time);
                 if (idx !== -1) {
                     this.replayIndex = idx;
                     this.stepReplay(0);
@@ -637,7 +644,7 @@ class ChartInstance {
             this.renderReplaySidebar(activePCR);
         }
     }
-
+    
     renderReplaySidebar(pcrData) {
         if (!pcrData) return;
 
@@ -955,6 +962,13 @@ function initSearch() {
     document.addEventListener('click', (e) => { if (!searchInput.contains(e.target) && !resultsDiv.contains(e.target)) resultsDiv.classList.add('hidden'); });
 }
 
+function formatIST(ts) {
+    if (!ts) return '-';
+    const date = new Date(ts);
+    return new Intl.DateTimeFormat('en-IN', {
+        timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+    }).format(date);
+}
 function displaySearchResults(symbols) {
     const resultsDiv = document.getElementById('searchResults');
     resultsDiv.innerHTML = '';

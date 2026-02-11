@@ -1128,16 +1128,16 @@
                             tension: 0.4,
                             yAxisID: 'y-pcr'
                         },
-                        {
-                            label: 'PCR (Vol)',
-                            data: history.map(h => h.pcr_vol),
-                            borderColor: 'rgba(168, 85, 247, 1)',
-                            backgroundColor: 'rgba(168, 85, 247, 0.1)',
-                            fill: false,
-                            borderDash: [5, 5],
-                            tension: 0.4,
-                            yAxisID: 'y-pcr'
-                        }
+                        // {
+                        //     label: 'PCR (Vol)',
+                        //     data: history.map(h => h.pcr_vol),
+                        //     borderColor: 'rgba(168, 85, 247, 1)',
+                        //     backgroundColor: 'rgba(168, 85, 247, 0.1)',
+                        //     fill: false,
+                        //     borderDash: [5, 5],
+                        //     tension: 0.4,
+                        //     yAxisID: 'y-pcr'
+                        // }
                     ]
                 },
                 options: {
@@ -1159,8 +1159,15 @@
                             position: 'right',
                             ticks: { color: '#22c55e', font: { size: 9, weight: 'bold' } },
                             grid: { drawOnChartArea: false },
-                            suggestedMin: 0.5,
-                            suggestedMax: 1.5,
+                            
+                            // Autoscale logic
+                            beginAtZero: false,      // Allows the axis to start at the data's minimum
+                            suggestedMin: undefined, // Let Chart.js determine the min from data
+                            suggestedMax: undefined, // Let Chart.js determine the max from data
+                            grace: '5%',              // Optional: Adds a small buffer above/below data
+                            
+                            // suggestedMin: 0.5,
+                            // suggestedMax: 1.5,
                             title: { display: true, text: 'PCR', color: '#22c55e', font: { size: 10, weight: 'bold' } }
                         }
                     },
