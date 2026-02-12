@@ -839,6 +839,38 @@ class OptionsManager:
 
         source = chain[0].get('source', 'unknown') if chain else 'unknown'
         
+        # Calculate PCR and Max Pain from this specific snapshot
+        calls = [r for r in chain if r['option_type'] == 'call']
+        puts = [r for r in chain if r['option_type'] == 'put']
+
+        total_call_oi = sum(r.get('oi', 0) or 0 for r in calls)
+        total_put_oi = sum(r.get('oi', 0) or 0 for r in puts)
+        total_call_vol = sum(r.get('volume', 0) or 0 for r in calls)
+        total_put_vol = sum(r.get('volume', 0) or 0 for r in puts)
+        total_call_oi_chg = sum(r.get('oi_change', 0) or 0 for r in calls)
+        total_put_oi_chg = sum(r.get('oi_change', 0) or 0 for r in puts)
+
+        pcr_oi = total_put_oi / total_call_oi if total_call_oi > 0 else 0
+        pcr_vol = total_put_vol / total_call_vol if total_call_vol > 0 else 0
+        pcr_oi_change = total_put_oi_chg / total_call_oi_chg if total_call_oi_chg != 0 else 0
+
+        # Max Pain calculation
+        strikes = sorted(list(set(r['strike'] for r in chain)))
+        min_pain = float('inf')
+        max_pain = strikes[0] if strikes else 0
+
+        for s in strikes:
+            pain = 0
+            for r in calls:
+                if s > r['strike']:
+                    pain += (s - r['strike']) * (r.get('oi', 0) or 0)
+            for r in puts:
+                if r['strike'] > s:
+                    pain += (r['strike'] - s) * (r.get('oi', 0) or 0)
+            if pain < min_pain:
+                min_pain = pain
+                max_pain = s
+
         # Fetch spot price from pcr_history
         spot_res = db.query(
             "SELECT spot_price, underlying_price FROM pcr_history WHERE underlying = ? AND timestamp <= ? ORDER BY timestamp DESC LIMIT 1",
@@ -849,8 +881,8 @@ class OptionsManager:
             spot_price = spot_res[0].get('spot_price') or spot_res[0].get('underlying_price') or 0
 
         # Calculate aggregate Greeks
-        net_delta = sum(item.get('delta', 0) * item.get('oi', 0) for item in chain)
-        net_theta = sum(item.get('theta', 0) * item.get('oi', 0) for item in chain)
+        net_delta = sum(item.get('delta', 0) * (item.get('oi', 0) or 0) for item in chain)
+        net_theta = sum(item.get('theta', 0) * (item.get('oi', 0) or 0) for item in chain)
 
         return {
             "timestamp": latest_ts,
@@ -858,7 +890,11 @@ class OptionsManager:
             "spot_price": spot_price,
             "source": source,
             "net_delta": round(net_delta, 2),
-            "net_theta": round(net_theta, 2)
+            "net_theta": round(net_theta, 2),
+            "pcr_oi": round(pcr_oi, 2),
+            "pcr_vol": round(pcr_vol, 2),
+            "pcr_oi_change": round(pcr_oi_change, 2),
+            "max_pain": max_pain
         }
     
     def get_oi_buildup_analysis(self, underlying: str) -> Dict[str, Any]:
@@ -982,7 +1018,8 @@ class OptionsManager:
             "control": control,
             "sideways_expected": sideways,
             "boundaries": boundaries,
-            "sentiment": "BULLISH" if control == "BUYERS_IN_CONTROL" else "BEARISH" if control == "SELLERS_IN_CONTROL" else "NEUTRAL"
+            "sentiment": "BULLISH" if control == "BUYERS_IN_CONTROL" else "BEARISH" if control == "SELLERS_IN_CONTROL" else "NEUTRAL",
+            "pcr": chain_res.get('pcr_oi', 0)
         }
 
 
