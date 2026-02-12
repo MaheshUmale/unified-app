@@ -21,13 +21,13 @@ async def fetch_option_chain(underlying: str):
 
     payload = {
         "columns": [
-            "name", "description", "option-type", "strike", "volume", "close", "expiration", "open_interest"
+            "name", "description", "option-type", "strike", "volume", "close", "expiration"
         ],
         "filter": [
             {"left": "type", "operation": "equal", "right": "option"},
             {"left": "root", "operation": "equal", "right": root}
         ],
-        "ignore_unknown_fields": False,
+        "ignore_unknown_fields": True,
         "sort": {"sortBy": "name", "sortOrder": "asc"},
         "index_filters": [
             {"name": "underlying_symbol", "values": [tv_underlying]}
