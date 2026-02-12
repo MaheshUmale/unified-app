@@ -1196,7 +1196,10 @@
 
         function renderPCRChart(data) {
             const history = data.history || [];
-            const timestamps = history.map(h => formatIST(h.timestamp));
+            // Filter out invalid spot prices to ensure correct auto-scaling
+            const validHistory = history.filter(h => (h.spot_price || h.underlying_price) > 0);
+
+            const timestamps = validHistory.map(h => formatIST(h.timestamp));
             const theme = localStorage.getItem('theme') || 'light';
             const textColor = theme === 'light' ? '#0f172a' : '#f8fafc';
             const mutedColor = theme === 'light' ? '#475569' : '#94a3b8';
@@ -1212,7 +1215,7 @@
                     datasets: [
                         {
                             label: 'Spot Price',
-                            data: history.map(h => h.spot_price || h.underlying_price),
+                            data: validHistory.map(h => h.spot_price || h.underlying_price),
                             borderColor: theme === 'light' ? '#2563eb' : '#3b82f6',
                             borderWidth: 2,
                             fill: false,
@@ -1222,7 +1225,7 @@
                         },
                         {
                             label: 'PCR (OI)',
-                            data: history.map(h => h.pcr_oi),
+                            data: validHistory.map(h => h.pcr_oi),
                             borderColor: 'rgba(34, 197, 94, 1)',
                             backgroundColor: 'rgba(34, 197, 94, 0.1)',
                             fill: true,
@@ -1252,6 +1255,7 @@
                             position: 'left',
                             ticks: { color: '#3b82f6', font: { size: 9, weight: 'bold' } },
                             beginAtZero: false,
+                            grace: '5%',
                             title: { display: true, text: 'SPOT PRICE', color: '#3b82f6', font: { size: 10, weight: 'bold' } }
                         },
                         'y-pcr': {
@@ -1260,15 +1264,8 @@
                             position: 'right',
                             ticks: { color: '#22c55e', font: { size: 9, weight: 'bold' } },
                             grid: { drawOnChartArea: false },
-                            
-                            // Autoscale logic
-                            beginAtZero: false,      // Allows the axis to start at the data's minimum
-                            suggestedMin: undefined, // Let Chart.js determine the min from data
-                            suggestedMax: undefined, // Let Chart.js determine the max from data
-                            grace: '5%',              // Optional: Adds a small buffer above/below data
-                            
-                            // suggestedMin: 0.5,
-                            // suggestedMax: 1.5,
+                            beginAtZero: false,
+                            grace: '5%',
                             title: { display: true, text: 'PCR', color: '#22c55e', font: { size: 10, weight: 'bold' } }
                         }
                     },
