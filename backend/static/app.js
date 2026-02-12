@@ -200,7 +200,7 @@ class ChartInstance {
             // Strike Label
             if (callW > 20 || putW > 20) {
                 ctx.fillStyle = '#64748b';
-                ctx.font = '8px Inter';
+                ctx.font = '8px "Plus Jakarta Sans"';
                 ctx.textAlign = 'right';
                 ctx.fillText(d.strike, width - 5, y + 3);
             }
