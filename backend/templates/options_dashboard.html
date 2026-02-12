@@ -19,6 +19,8 @@
             --color-primary: #3b82f6;
             --input-bg: #1e293b;
             --tab-inactive: #64748b;
+            --btn-bg-muted: #334155;
+            --btn-text: #ffffff;
         }
 
         body.light-theme {
@@ -28,6 +30,8 @@
             --text-muted: #475569;
             --border-subtle: rgba(0, 0, 0, 0.1);
             --input-bg: #ffffff;
+            --btn-bg-muted: #e2e8f0;
+            --btn-text: #0f172a;
         }
 
         body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: var(--bg-main); color: var(--text-primary); transition: background-color 0.3s, color 0.3s; -webkit-font-smoothing: antialiased; letter-spacing: -0.01em; }
@@ -53,12 +57,14 @@
         /* Component Overrides for Themes */
         .theme-text-muted { color: var(--text-muted); }
         .theme-input { background-color: var(--input-bg); border: 1px solid var(--border-subtle); color: var(--text-primary); }
-        .light-theme .text-white { color: var(--text-primary); }
-        .light-theme .text-gray-400 { color: #475569; }
-        .light-theme .text-gray-500 { color: #64748b; }
-        .light-theme .bg-slate-900 { background-color: #e2e8f0; color: #0f172a; }
-        .light-theme .bg-slate-800 { background-color: #f1f5f9; color: #0f172a; }
-        .light-theme .bg-black\/40 { background-color: rgba(255, 255, 255, 0.5); }
+        .light-theme .text-white { color: var(--text-primary) !important; }
+        .light-theme .text-gray-400 { color: var(--text-muted) !important; }
+        .light-theme .text-gray-500 { color: #64748b !important; }
+        .light-theme .bg-slate-900,
+        .light-theme .bg-gray-900 { background-color: var(--btn-bg-muted) !important; color: var(--text-primary) !important; }
+        .light-theme .bg-slate-800 { background-color: #f1f5f9 !important; color: #0f172a !important; }
+        .light-theme .bg-black\/40 { background-color: rgba(255, 255, 255, 0.5) !important; }
+        .light-theme .bg-black\/30 { background-color: rgba(0, 0, 0, 0.05) !important; }
     </style>
 </head>
 <body class="h-full flex flex-col overflow-hidden custom-scrollbar light-theme">
@@ -85,7 +91,7 @@
                 <button id="refreshBtn" class="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black px-6 py-2 rounded-full transition-all uppercase tracking-tighter shadow-lg shadow-blue-500/20 active:scale-95">
                     REFRESH
                 </button>
-                <button id="backfillBtn" class="bg-slate-700 hover:bg-slate-600 text-white text-[10px] font-black px-6 py-2 rounded-full transition-all uppercase tracking-tighter ml-1 active:scale-95">
+                <button id="backfillBtn" class="bg-slate-700 hover:bg-slate-600 text-white text-[10px] font-black px-6 py-2 rounded-full transition-all uppercase tracking-tighter ml-1 active:scale-95" style="background: var(--btn-bg-muted); color: var(--btn-text);">
                     BACKFILL
                 </button>
                 <button id="alertsBtn" class="text-gray-400 hover:text-white p-1.5 transition-colors">
