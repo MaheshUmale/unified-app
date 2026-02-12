@@ -147,14 +147,19 @@ class OptionsManager:
             try:
                 logger.info(f"Processing backfill for {underlying} on {target_date_str}")
                 
-                # Check if already backfilled for this date
-                existing = db.query(
-                    "SELECT COUNT(*) as count FROM pcr_history WHERE underlying = ? AND CAST(timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata' AS DATE) = ?",
+                # Get existing timestamps to avoid duplicate work and fill gaps
+                existing_data = db.query(
+                    "SELECT timestamp FROM pcr_history WHERE underlying = ? AND CAST(timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata' AS DATE) = ?",
                     (underlying, target_date_str)
                 )
-                if existing and existing[0]['count'] > (len(time_slots) * 0.8):
-                    logger.info(f"Sufficient data already exists for {underlying} on {target_date_str}, skipping.")
-                    continue
+                existing_times = set()
+                if existing_data:
+                    for r in existing_data:
+                        ts = r['timestamp']
+                        if isinstance(ts, str):
+                            ts = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+                        if hasattr(ts, 'astimezone'):
+                            existing_times.add(ts.astimezone(ist).strftime("%H:%M"))
                 
                 # Get historical spot prices using primary historical provider
                 hist_provider = historical_data_registry.get_primary()
@@ -169,6 +174,9 @@ class OptionsManager:
                 default_expiry = expiries[0]
                 
                 for ts_str in time_slots:
+                    if ts_str in existing_times:
+                        continue
+
                     data = await opt_provider.get_oi_data(underlying, default_expiry, ts_str)
                     if not data or data.get('head', {}).get('status') != '0':
                         continue

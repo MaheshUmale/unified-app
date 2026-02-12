@@ -31,6 +31,7 @@ class ChartInstance {
         this.colorOverrides = {}; // Keyed by indicator title or marker text
         this.oiData = null;
         this.showOiProfile = document.getElementById('oiProfileToggle')?.checked || false;
+        this.lastUpdatedTime = 0;
 
         // Replay State
         this.isReplayMode = false;
@@ -377,6 +378,10 @@ class ChartInstance {
         this.candleSeries.setData(displayCandles);
         this.volumeSeries.setData(Array.from(this.fullHistory.volume.values()).sort((a, b) => a.time - b.time));
 
+        if (displayCandles.length > 0) {
+            this.lastUpdatedTime = displayCandles[displayCandles.length - 1].time;
+        }
+
         // Restore indicators
         Object.entries(this.fullHistory.indicators).forEach(([id, data]) => {
             if (this.indicatorSeries[id]) {
@@ -409,6 +414,7 @@ class ChartInstance {
             }
             this.lastCandle = { time: candleTime, open: price, high: price, low: price, close: price, volume: ltq };
             this.candleSeries.update(this.lastCandle);
+            this.lastUpdatedTime = candleTime;
             this.volumeSeries.update({ time: candleTime, value: ltq, color: 'rgba(59, 130, 246, 0.5)' });
         } else if (candleTime === this.lastCandle.time) {
             this.lastCandle.close = price;
@@ -416,6 +422,7 @@ class ChartInstance {
             this.lastCandle.low = Math.min(this.lastCandle.low, price);
             this.lastCandle.volume += ltq;
             this.candleSeries.update(this.lastCandle);
+            this.lastUpdatedTime = candleTime;
             this.volumeSeries.update({
                 time: this.lastCandle.time, value: this.lastCandle.volume,
                 color: this.lastCandle.close >= this.lastCandle.open ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'
@@ -456,8 +463,11 @@ class ChartInstance {
                         if (candles.length > 10) this.renderData();
                         else {
                             candles.forEach((c, idx) => {
-                                this.candleSeries.update(c);
-                                this.volumeSeries.update(vol[idx]);
+                                if (c.time >= this.lastUpdatedTime) {
+                                    this.candleSeries.update(c);
+                                    this.volumeSeries.update(vol[idx]);
+                                    this.lastUpdatedTime = Math.max(this.lastUpdatedTime, c.time);
+                                }
                             });
                         }
                     }
@@ -662,6 +672,7 @@ class ChartInstance {
 
             this.candleSeries.setData(vC);
             this.volumeSeries.setData(vV);
+            if (vC.length > 0) this.lastUpdatedTime = vC[vC.length - 1].time;
 
             // Subset indicators
             Object.entries(this.fullHistory.indicators).forEach(([id, data]) => {
