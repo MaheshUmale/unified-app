@@ -21,6 +21,11 @@
             --tab-inactive: #64748b;
             --btn-bg-muted: #334155;
             --btn-text: #ffffff;
+            --btn-primary-bg: #2563eb;
+            --btn-primary-text: #ffffff;
+            --tab-active-bg: transparent;
+            --tab-active-text: #3b82f6;
+            --header-group-bg: rgba(0, 0, 0, 0.4);
         }
 
         body.light-theme {
@@ -32,6 +37,11 @@
             --input-bg: #ffffff;
             --btn-bg-muted: #e2e8f0;
             --btn-text: #0f172a;
+            --btn-primary-bg: #dbeafe;
+            --btn-primary-text: #1e40af;
+            --tab-active-bg: #dbeafe;
+            --tab-active-text: #1e40af;
+            --header-group-bg: rgba(0, 0, 0, 0.05);
         }
 
         body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: var(--bg-main); color: var(--text-primary); transition: background-color 0.3s, color 0.3s; -webkit-font-smoothing: antialiased; letter-spacing: -0.01em; }
@@ -46,9 +56,10 @@
         @keyframes flash-red { 0% { background-color: rgba(239, 68, 68, 0.3); } 100% { background-color: transparent; } }
 
         .sticky-header th { position: sticky; top: 0; z-index: 10; background: var(--input-bg); border-bottom: 2px solid var(--border-subtle); color: var(--text-primary); font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; }
-        .tab-btn { color: var(--text-muted); transition: all 0.2s ease; border-bottom: 3px solid transparent; }
+        .tab-btn { color: var(--text-muted); transition: all 0.2s ease; border-bottom: 3px solid transparent; padding-left: 1rem; padding-right: 1rem; border-radius: 9999px 9999px 0 0; }
         .tab-btn:hover { color: var(--text-primary); background: rgba(255,255,255,0.05); }
-        .tab-active { border-bottom: 3px solid #3b82f6 !important; color: #3b82f6 !important; font-weight: 800; }
+        .tab-active { background-color: var(--tab-active-bg) !important; color: var(--tab-active-text) !important; border-bottom: 3px solid var(--tab-active-text) !important; font-weight: 800; }
+        .btn-primary { background-color: var(--btn-primary-bg) !important; color: var(--btn-primary-text) !important; }
         .greek-positive { color: #22c55e; font-weight: 700; }
         .greek-negative { color: #ef4444; font-weight: 700; }
         .strike-cell { background-color: var(--input-bg); font-weight: 900 !important; color: #f59e0b !important; }
@@ -87,11 +98,11 @@
             </div>
         </div>
         <div class="flex items-center gap-2">
-            <div class="flex items-center gap-1 bg-black/30 p-1 rounded-full border border-white/10 shadow-inner">
-                <button id="refreshBtn" class="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black px-6 py-2 rounded-full transition-all uppercase tracking-tighter shadow-lg shadow-blue-500/20 active:scale-95">
+            <div class="flex items-center gap-1 bg-black/30 p-1 rounded-full border border-white/10 shadow-inner" style="background: var(--header-group-bg);">
+                <button id="refreshBtn" class="btn-primary text-[10px] font-black px-6 py-2 rounded-full transition-all uppercase tracking-tighter shadow-lg active:scale-95">
                     REFRESH
                 </button>
-                <button id="backfillBtn" class="bg-slate-700 hover:bg-slate-600 text-white text-[10px] font-black px-6 py-2 rounded-full transition-all uppercase tracking-tighter ml-1 active:scale-95" style="background: var(--btn-bg-muted); color: var(--btn-text);">
+                <button id="backfillBtn" class="text-[10px] font-black px-6 py-2 rounded-full transition-all uppercase tracking-tighter ml-1 active:scale-95" style="background: var(--btn-bg-muted); color: var(--btn-text);">
                     BACKFILL
                 </button>
                 <button id="alertsBtn" class="text-gray-400 hover:text-white p-1.5 transition-colors">
@@ -315,7 +326,7 @@
                                 </div>
                             </div>
 
-                            <button id="buildStrategyBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2 rounded transition-all">
+                            <button id="buildStrategyBtn" class="btn-primary w-full text-xs font-bold py-2 rounded transition-all">
                                 Build Strategy
                             </button>
                         </div>
@@ -348,7 +359,7 @@
                                 <option value="iv_rank_below">IV Rank Below</option>
                             </select>
                             <input id="alertThreshold" type="number" step="0.01" placeholder="Threshold Value" class="w-full bg-slate-900 border border-white/10 rounded px-3 py-2 text-xs">
-                            <button id="createAlertBtn" class="w-full bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold py-2 rounded transition-all">
+                            <button id="createAlertBtn" class="btn-primary w-full text-xs font-bold py-2 rounded transition-all">
                                 Create Alert
                             </button>
                         </div>
@@ -382,7 +393,7 @@
                                     <div id="statusDot" class="w-2 h-2 rounded-full bg-red-500"></div>
                                     <span id="statusText" class="text-[10px] font-bold text-gray-400 uppercase">Inactive</span>
                                 </div>
-                                <button id="startScalperBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2 rounded transition-all">
+                                <button id="startScalperBtn" class="btn-primary w-full text-xs font-bold py-2 rounded transition-all">
                                     Start Scalper
                                 </button>
                                 <button id="stopScalperBtn" class="w-full bg-red-600 hover:bg-red-700 text-white text-xs font-bold py-2 rounded transition-all hidden">
