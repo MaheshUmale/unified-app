@@ -116,6 +116,64 @@ class ChartInstance {
             if (this.showOiProfile) this.renderOiProfile();
         });
 
+        this.chart.subscribeCrosshairMove((param) => {
+            if (!this.showOiProfile || !this.oiData || !param.point) {
+                if (this.tooltip) this.tooltip.style.display = 'none';
+                return;
+            }
+
+            const price = this.candleSeries.coordinateToPrice(param.point.y);
+            if (!price) return;
+
+            const closest = this.oiData.reduce((prev, curr) => {
+                return (Math.abs(curr.strike - price) < Math.abs(prev.strike - price) ? curr : prev);
+            });
+
+            if (closest && Math.abs(closest.strike - price) / closest.strike < 0.01) {
+                if (!this.tooltip) {
+                    this.tooltip = document.createElement('div');
+                    this.tooltip.style.position = 'absolute';
+                    this.tooltip.style.display = 'none';
+                    this.tooltip.style.padding = '8px';
+                    this.tooltip.style.boxSizing = 'border-box';
+                    this.tooltip.style.fontSize = '10px';
+                    this.tooltip.style.zIndex = '1000';
+                    this.tooltip.style.top = '12px';
+                    this.tooltip.style.left = '12px';
+                    this.tooltip.style.pointerEvents = 'none';
+                    this.tooltip.style.borderRadius = '4px';
+                    this.tooltip.style.border = '1px solid rgba(255, 255, 255, 0.1)';
+                    this.tooltip.style.background = 'rgba(15, 23, 42, 0.9)';
+                    this.tooltip.style.backdropFilter = 'blur(4px)';
+                    this.tooltip.style.color = '#f8fafc';
+                    this.tooltip.style.boxShadow = '0 10px 15px -3px rgba(0, 0, 0, 0.1)';
+                    container.parentElement.appendChild(this.tooltip);
+                }
+
+                // Only show if mouse is on the right side (where the profile is)
+                if (param.point.x > container.clientWidth * 0.7) {
+                    this.tooltip.style.display = 'block';
+                    this.tooltip.innerHTML = `
+                        <div style="font-weight: 800; color: #3b82f6; margin-bottom: 4px;">STRIKE: ${closest.strike}</div>
+                        <div style="display: flex; justify-content: space-between; gap: 12px;">
+                            <span style="color: #ef4444; font-weight: 600;">CALL OI:</span>
+                            <span>${closest.call_oi.toLocaleString()}</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; gap: 12px;">
+                            <span style="color: #22c55e; font-weight: 600;">PUT OI:</span>
+                            <span>${closest.put_oi.toLocaleString()}</span>
+                        </div>
+                    `;
+                    this.tooltip.style.left = (param.point.x - 140) + 'px';
+                    this.tooltip.style.top = (param.point.y - 60) + 'px';
+                } else {
+                    this.tooltip.style.display = 'none';
+                }
+            } else {
+                if (this.tooltip) this.tooltip.style.display = 'none';
+            }
+        });
+
         this.chart.subscribeClick((param) => {
             if (this.isReplayMode && param.time && this.replayIndex === -1) {
                  // Convert Map keys to an Array and find the index of the timestamp
@@ -770,6 +828,7 @@ function renderSidebarGenie(data) {
     const controlEl = document.getElementById('genieControl');
     const statusEl = document.getElementById('genieStatus');
     const rangeEl = document.getElementById('genieRange');
+    const pcrEl = document.getElementById('sideCurrentPcr');
 
     controlEl.textContent = (data.control || "").replace(/_/g, ' ');
     if (data.control === 'BUYERS_IN_CONTROL') controlEl.className = 'text-xs font-black text-green-600 uppercase';
@@ -778,6 +837,12 @@ function renderSidebarGenie(data) {
 
     statusEl.textContent = data.distribution?.status || "-";
     rangeEl.textContent = `RANGE: ${data.boundaries?.lower || "-"} - ${data.boundaries?.upper || "-"}`;
+
+    if (pcrEl) {
+        const pcr = data.pcr || 0;
+        pcrEl.textContent = pcr.toFixed(2);
+        pcrEl.className = `text-[9px] font-black ${pcr > 1.3 ? 'text-red-500' : pcr > 1.1 ? 'text-red-400' : pcr < 0.7 ? 'text-green-500' : pcr < 0.9 ? 'text-green-400' : 'text-blue-500'}`;
+    }
 }
 
 function renderSidebarBuildup(data) {
