@@ -881,9 +881,35 @@ class OptionsManager:
         }
     
     def get_support_resistance(self, underlying: str) -> Dict[str, Any]:
-        """Get support and resistance levels based on OI."""
-        chain = self.get_chain_with_greeks(underlying).get('chain', [])
-        return oi_buildup_analyzer.get_support_resistance_from_oi(chain)
+        """Get support and resistance levels based on OI with historical trend."""
+        chain_res = self.get_chain_with_greeks(underlying)
+        chain = chain_res.get('chain', [])
+        sr_data = oi_buildup_analyzer.get_support_resistance_from_oi(chain)
+
+        # Add historical trend for these strikes
+        latest_ts_res = db.query(
+            "SELECT DISTINCT timestamp FROM options_snapshots WHERE underlying = ? ORDER BY timestamp DESC LIMIT 10",
+            (underlying,)
+        )
+        if not latest_ts_res:
+            return sr_data
+
+        timestamps = [r['timestamp'] for r in reversed(latest_ts_res)]
+        if not timestamps: return sr_data
+
+        for level_type in ['resistance_levels', 'support_levels']:
+            for level in sr_data[level_type]:
+                strike = level['strike']
+                opt_type = 'call' if level_type == 'resistance_levels' else 'put'
+
+                history = db.query(
+                    f"SELECT timestamp, oi FROM options_snapshots WHERE underlying = ? AND strike = ? AND option_type = ? AND timestamp IN ({','.join(['?']*len(timestamps))}) ORDER BY timestamp ASC",
+                    (underlying, strike, opt_type, *timestamps),
+                    json_serialize=True
+                )
+                level['oi_history'] = [h['oi'] for h in history]
+
+        return sr_data
 
     async def get_price_boundaries(self, underlying: str) -> Dict[str, Any]:
         """Calculates the realistic price boundaries for the day."""
