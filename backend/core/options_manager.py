@@ -87,8 +87,12 @@ class OptionsManager:
             except Exception as e:
                 logger.error(f"Error initializing symbols for {underlying}: {e}")
         
-        # Trigger backfill in background
-        asyncio.create_task(self.backfill_today())
+        # Trigger backfill and repair in background
+        async def backfill_and_repair():
+            await self.backfill_today()
+            await self.repair_zero_spot_prices()
+
+        asyncio.create_task(backfill_and_repair())
         
         self._task = asyncio.create_task(self._snapshot_loop())
         
@@ -149,21 +153,23 @@ class OptionsManager:
                 
                 # Get existing timestamps to avoid duplicate work and fill gaps
                 existing_data = db.query(
-                    "SELECT timestamp FROM pcr_history WHERE underlying = ? AND CAST(timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata' AS DATE) = ?",
+                    "SELECT timestamp, spot_price FROM pcr_history WHERE underlying = ? AND CAST(timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata' AS DATE) = ?",
                     (underlying, target_date_str)
                 )
-                existing_times = set()
+                existing_times_with_price = {}
                 if existing_data:
                     for r in existing_data:
                         ts = r['timestamp']
                         if isinstance(ts, str):
                             ts = datetime.fromisoformat(ts.replace('Z', '+00:00'))
                         if hasattr(ts, 'astimezone'):
-                            existing_times.add(ts.astimezone(ist).strftime("%H:%M"))
+                            time_key = ts.astimezone(ist).strftime("%H:%M")
+                            existing_times_with_price[time_key] = r.get('spot_price', 0)
                 
                 # Get historical spot prices using primary historical provider
+                # Using 1m interval for better accuracy and to fill gaps where spot was recorded as 0
                 hist_provider = historical_data_registry.get_primary()
-                hist_spot = await hist_provider.get_hist_candles(underlying, '5', 300)
+                hist_spot = await hist_provider.get_hist_candles(underlying, '1', 500)
                 spot_map = {c[0]: c[4] for c in hist_spot} if hist_spot else {}
                 
                 # Use primary options provider
@@ -174,7 +180,8 @@ class OptionsManager:
                 default_expiry = expiries[0]
                 
                 for ts_str in time_slots:
-                    if ts_str in existing_times:
+                    # Only skip if we already have a valid (non-zero) spot price for this slot
+                    if ts_str in existing_times_with_price and existing_times_with_price[ts_str] > 0:
                         continue
 
                     data = await opt_provider.get_oi_data(underlying, default_expiry, ts_str)
@@ -192,13 +199,13 @@ class OptionsManager:
                     snapshot_time = ist_dt.astimezone(pytz.utc)
                     unix_ts = int(ist_dt.timestamp())
                     
-                    # Find closest spot price
+                    # Find closest spot price using 1m map
                     spot_price = spot_map.get(unix_ts, 0)
                     if not spot_price:
-                        sorted_ts = sorted(spot_map.keys())
-                        for ts in sorted_ts:
-                            if ts <= unix_ts:
-                                spot_price = spot_map[ts]
+                        # Try to find the closest timestamp that is less than or equal to unix_ts
+                        potential_ts = sorted([t for t in spot_map.keys() if t <= unix_ts])
+                        if potential_ts:
+                            spot_price = spot_map[potential_ts[-1]]
                     
                     # Process chain data with enhanced metrics
                     rows = self._process_chain_data(
@@ -677,11 +684,13 @@ class OptionsManager:
                         time_to_expiry = days_to_expiry / 365.0
 
                 # Use Greeks from TV if available, else calculate
+                # Indices matching tv_options_scanner columns (no rho):
+                # 9: delta, 10: gamma, 11: iv, 12: theta, 13: vega
                 tv_delta = f[9] if len(f) > 9 else None
                 tv_gamma = f[10] if len(f) > 10 else None
                 tv_iv = f[11] if len(f) > 11 else None
-                tv_theta = f[13] if len(f) > 13 else None
-                tv_vega = f[14] if len(f) > 14 else None
+                tv_theta = f[12] if len(f) > 12 else None
+                tv_vega = f[13] if len(f) > 13 else None
 
                 if tv_iv is not None and tv_iv > 0:
                     greeks = {
@@ -839,38 +848,6 @@ class OptionsManager:
 
         source = chain[0].get('source', 'unknown') if chain else 'unknown'
         
-        # Calculate PCR and Max Pain from this specific snapshot
-        calls = [r for r in chain if r['option_type'] == 'call']
-        puts = [r for r in chain if r['option_type'] == 'put']
-
-        total_call_oi = sum(r.get('oi', 0) or 0 for r in calls)
-        total_put_oi = sum(r.get('oi', 0) or 0 for r in puts)
-        total_call_vol = sum(r.get('volume', 0) or 0 for r in calls)
-        total_put_vol = sum(r.get('volume', 0) or 0 for r in puts)
-        total_call_oi_chg = sum(r.get('oi_change', 0) or 0 for r in calls)
-        total_put_oi_chg = sum(r.get('oi_change', 0) or 0 for r in puts)
-
-        pcr_oi = total_put_oi / total_call_oi if total_call_oi > 0 else 0
-        pcr_vol = total_put_vol / total_call_vol if total_call_vol > 0 else 0
-        pcr_oi_change = total_put_oi_chg / total_call_oi_chg if total_call_oi_chg != 0 else 0
-
-        # Max Pain calculation
-        strikes = sorted(list(set(r['strike'] for r in chain)))
-        min_pain = float('inf')
-        max_pain = strikes[0] if strikes else 0
-
-        for s in strikes:
-            pain = 0
-            for r in calls:
-                if s > r['strike']:
-                    pain += (s - r['strike']) * (r.get('oi', 0) or 0)
-            for r in puts:
-                if r['strike'] > s:
-                    pain += (r['strike'] - s) * (r.get('oi', 0) or 0)
-            if pain < min_pain:
-                min_pain = pain
-                max_pain = s
-
         # Fetch spot price from pcr_history
         spot_res = db.query(
             "SELECT spot_price, underlying_price FROM pcr_history WHERE underlying = ? AND timestamp <= ? ORDER BY timestamp DESC LIMIT 1",
@@ -881,8 +858,8 @@ class OptionsManager:
             spot_price = spot_res[0].get('spot_price') or spot_res[0].get('underlying_price') or 0
 
         # Calculate aggregate Greeks
-        net_delta = sum(item.get('delta', 0) * (item.get('oi', 0) or 0) for item in chain)
-        net_theta = sum(item.get('theta', 0) * (item.get('oi', 0) or 0) for item in chain)
+        net_delta = sum(item.get('delta', 0) * item.get('oi', 0) for item in chain)
+        net_theta = sum(item.get('theta', 0) * item.get('oi', 0) for item in chain)
 
         return {
             "timestamp": latest_ts,
@@ -890,11 +867,7 @@ class OptionsManager:
             "spot_price": spot_price,
             "source": source,
             "net_delta": round(net_delta, 2),
-            "net_theta": round(net_theta, 2),
-            "pcr_oi": round(pcr_oi, 2),
-            "pcr_vol": round(pcr_vol, 2),
-            "pcr_oi_change": round(pcr_oi_change, 2),
-            "max_pain": max_pain
+            "net_theta": round(net_theta, 2)
         }
     
     def get_oi_buildup_analysis(self, underlying: str) -> Dict[str, Any]:
@@ -1018,9 +991,73 @@ class OptionsManager:
             "control": control,
             "sideways_expected": sideways,
             "boundaries": boundaries,
-            "sentiment": "BULLISH" if control == "BUYERS_IN_CONTROL" else "BEARISH" if control == "SELLERS_IN_CONTROL" else "NEUTRAL",
-            "pcr": chain_res.get('pcr_oi', 0)
+            "sentiment": "BULLISH" if control == "BUYERS_IN_CONTROL" else "BEARISH" if control == "SELLERS_IN_CONTROL" else "NEUTRAL"
         }
+
+    async def repair_zero_spot_prices(self):
+        """Identifies and repairs records in pcr_history that have 0 or invalid spot prices."""
+        logger.info("Starting spot price repair for historical records...")
+
+        try:
+            # Find records with invalid spot prices
+            invalid_records = db.query("""
+                SELECT timestamp, underlying FROM pcr_history
+                WHERE spot_price <= 0 OR spot_price IS NULL
+                ORDER BY timestamp DESC
+            """)
+
+            if not invalid_records:
+                logger.info("No invalid spot prices found to repair.")
+                return
+
+            logger.info(f"Found {len(invalid_records)} records with invalid spot prices. Attempting repair...")
+
+            hist_provider = historical_data_registry.get_primary()
+            if not hist_provider:
+                logger.error("No historical provider available for repair.")
+                return
+
+            for record in invalid_records:
+                ts = record['timestamp']
+                underlying = record['underlying']
+
+                # Convert timestamp if it is a string
+                if isinstance(ts, str):
+                    ts_dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+                else:
+                    ts_dt = ts
+
+                unix_ts = int(ts_dt.timestamp())
+
+                # Fetch small window of 1m candles around the timestamp
+                hist = await hist_provider.get_hist_candles(underlying, '1', 20)
+                if not hist:
+                    continue
+
+                # Find the closest price in the historical data
+                best_price = 0
+                closest_diff = float('inf')
+                for candle in hist:
+                    candle_ts = candle[0]
+                    diff = abs(candle_ts - unix_ts)
+                    if diff < closest_diff:
+                        closest_diff = diff
+                        best_price = candle[4] # Close price
+
+                # Tolerance of 10 minutes for "closest" match
+                if best_price > 0 and closest_diff <= 600:
+                    logger.info(f"Repairing {underlying} at {ts}: New Spot Price = {best_price}")
+                    # Update pcr_history
+                    db.execute("""
+                        UPDATE pcr_history
+                        SET spot_price = ?, underlying_price = ?
+                        WHERE underlying = ? AND timestamp = ?
+                    """, (best_price, best_price, underlying, ts))
+
+            logger.info("Spot price repair completed.")
+
+        except Exception as e:
+            logger.error(f"Error during spot price repair: {e}")
 
 
 # Global instance

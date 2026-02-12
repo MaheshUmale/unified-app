@@ -20,10 +20,6 @@
             --input-bg: #1e293b;
             --btn-bg-muted: #334155;
             --btn-text: #ffffff;
-            --btn-primary-bg: #2563eb;
-            --btn-primary-text: #ffffff;
-            --btn-active-bg: #2563eb;
-            --btn-active-text: #ffffff;
             --header-group-bg: rgba(0, 0, 0, 0.4);
         }
 
@@ -36,10 +32,6 @@
             --input-bg: #ffffff;
             --btn-bg-muted: #e2e8f0;
             --btn-text: #0f172a;
-            --btn-primary-bg: #dbeafe;
-            --btn-primary-text: #1e40af;
-            --btn-active-bg: #dbeafe;
-            --btn-active-text: #1e40af;
             --header-group-bg: rgba(0, 0, 0, 0.05);
         }
 
@@ -49,7 +41,6 @@
         /* Theme overrides */
         body.light-theme .text-gray-400 { color: var(--text-muted) !important; }
         body.light-theme .text-gray-300 { color: var(--text-muted) !important; }
-        body.light-theme .text-white { color: var(--text-primary) !important; }
         body.light-theme .bg-gray-900 { background-color: var(--input-bg) !important; border-color: var(--border-subtle) !important; color: var(--text-primary) !important; }
 
         .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
@@ -68,10 +59,6 @@
         .search-item { transition: background-color 0.2s; }
         .search-item:hover { background-color: rgba(59, 130, 246, 0.2) !important; }
         .search-item em { font-style: normal; color: #fff; background-color: rgba(59, 130, 246, 0.4); border-radius: 2px; padding: 0 1px; }
-
-        .tf-btn.active { background-color: var(--btn-active-bg) !important; color: var(--btn-active-text) !important; }
-        .layout-btn.active { background-color: var(--btn-active-bg) !important; color: var(--btn-active-text) !important; }
-        .btn-primary { background-color: var(--btn-primary-bg) !important; color: var(--btn-primary-text) !important; }
     </style>
 </head>
 <body class="h-full flex flex-col light-theme">
@@ -103,20 +90,20 @@
                 <!-- Group: Timeframe & Layout -->
                 <div class="flex items-center gap-2 p-1 rounded-full border border-white/10 shadow-lg" style="background: var(--header-group-bg);">
                     <div id="timeframeSelector" class="flex items-center gap-1 px-1">
-                        <button data-interval="1" class="tf-btn active px-3 py-1.5 text-[10px] font-black rounded-full transition-all hover:bg-white/5">1M</button>
-                        <button data-interval="5" class="tf-btn px-3 py-1.5 text-[10px] font-black rounded-full transition-all hover:bg-white/5">5M</button>
-                        <button data-interval="15" class="tf-btn px-3 py-1.5 text-[10px] font-black rounded-full transition-all hover:bg-white/5">15M</button>
-                        <button data-interval="60" class="tf-btn px-3 py-1.5 text-[10px] font-black rounded-full transition-all hover:bg-white/5">1H</button>
+                        <button data-interval="1" class="tf-btn active px-3 py-1.5 text-[10px] font-black rounded-full transition-all hover:bg-white/5 [&.active]:bg-blue-600 [&.active]:text-white">1M</button>
+                        <button data-interval="5" class="tf-btn px-3 py-1.5 text-[10px] font-black rounded-full transition-all hover:bg-white/5 [&.active]:bg-blue-600 [&.active]:text-white">5M</button>
+                        <button data-interval="15" class="tf-btn px-3 py-1.5 text-[10px] font-black rounded-full transition-all hover:bg-white/5 [&.active]:bg-blue-600 [&.active]:text-white">15M</button>
+                        <button data-interval="60" class="tf-btn px-3 py-1.5 text-[10px] font-black rounded-full transition-all hover:bg-white/5 [&.active]:bg-blue-600 [&.active]:text-white">1H</button>
                     </div>
                     <div class="w-px h-5 bg-white/10 mx-1"></div>
                     <div id="layoutSelector" class="flex items-center gap-1 px-1">
-                        <button data-layout="1" class="layout-btn active p-2 rounded-full transition-all hover:bg-white/5 text-gray-500" title="1 Chart">
+                        <button data-layout="1" class="layout-btn active p-2 rounded-full transition-all hover:bg-white/5 text-gray-500 [&.active]:text-blue-500 [&.active]:bg-blue-500/10" title="1 Chart">
                             <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><rect x="3" y="3" width="14" height="14" rx="1"/></svg>
                         </button>
-                        <button data-layout="2" class="layout-btn p-2 rounded-full transition-all hover:bg-white/5 text-gray-500" title="2 Charts">
+                        <button data-layout="2" class="layout-btn p-2 rounded-full transition-all hover:bg-white/5 text-gray-500 [&.active]:text-blue-500 [&.active]:bg-blue-500/10" title="2 Charts">
                             <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><rect x="3" y="3" width="6" height="14" rx="1"/><rect x="11" y="3" width="6" height="14" rx="1"/></svg>
                         </button>
-                        <button data-layout="4" class="layout-btn p-2 rounded-full transition-all hover:bg-white/5 text-gray-500" title="4 Charts">
+                        <button data-layout="4" class="layout-btn p-2 rounded-full transition-all hover:bg-white/5 text-gray-500 [&.active]:text-blue-500 [&.active]:bg-blue-500/10" title="4 Charts">
                             <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="11" y="3" width="6" height="14" rx="1"/><rect x="3" y="11" width="6" height="6" rx="1"/><rect x="11" y="11" width="6" height="6" rx="1"/></svg>
                         </button>
                     </div>
@@ -140,7 +127,7 @@
                         <button id="drawingToolBtn" class="text-[10px] font-black px-3.5 py-1.5 rounded-full transition-all uppercase tracking-tight shadow-sm active:scale-95" title="Shift+Click to place Horizontal Line" style="background: var(--btn-bg-muted); color: var(--btn-text);">H-Line</button>
                         <button id="clearDrawingsBtn" class="text-[10px] font-black px-3.5 py-1.5 rounded-full transition-all uppercase tracking-tight shadow-sm active:scale-95" style="background: var(--btn-bg-muted); color: var(--btn-text);">Clear</button>
                         <button id="toggleIndicatorsBtn" class="hidden"></button>
-                        <button id="replayModeBtn" class="btn-primary text-[10px] font-black px-4 py-1.5 rounded-full transition-all uppercase tracking-tight shadow-md active:scale-95">Replay</button>
+                        <button id="replayModeBtn" class="text-[10px] font-black px-4 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-full text-white transition-all uppercase tracking-tight shadow-md shadow-blue-500/20 active:scale-95">Replay</button>
                     </div>
 
                     <div class="flex items-center gap-1 p-1 rounded-full border border-white/5" style="background: var(--header-group-bg);">
@@ -198,13 +185,7 @@
             <div id="sidebarContent" class="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-6">
                 <!-- Genie Insights -->
                 <div class="space-y-2">
-                    <div class="flex justify-between items-center">
-                        <h4 class="text-[9px] font-black text-gray-500 uppercase tracking-tighter">OiGenie Prediction</h4>
-                        <div id="sidePcrContainer" class="flex items-center gap-1 bg-blue-500/10 px-2 py-0.5 rounded">
-                            <span class="text-[8px] text-blue-500 font-black">PCR:</span>
-                            <span id="sideCurrentPcr" class="text-[9px] font-black text-blue-600">-</span>
-                        </div>
-                    </div>
+                    <h4 class="text-[9px] font-black text-gray-500 uppercase tracking-tighter">OiGenie Prediction</h4>
                     <div class="p-3 bg-blue-500/5 border border-blue-500/20 rounded-lg">
                         <div id="genieControl" class="text-xs font-black text-gray-800 uppercase">-</div>
                         <div id="genieStatus" class="text-[9px] font-bold text-gray-500 mt-1 uppercase">-</div>

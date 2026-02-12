@@ -9,7 +9,7 @@ async def fetch_option_chain(underlying: str):
     Fetches the full option chain for a given underlying from TradingView Scanner.
     underlying: e.g. 'NSE:NIFTY'
     """
-    # Use options-builder product as suggested by user
+    # Use options-builder product as it supports Greeks and is more robust for option chains
     url = "https://scanner.tradingview.com/options/scan2?label-product=options-builder"
 
     # Standardize underlying
@@ -20,10 +20,25 @@ async def fetch_option_chain(underlying: str):
 
     root = tv_underlying.split(":")[-1]
 
+    # Explicitly define columns that are known to work with options-builder
+    # Removed 'open_interest' as it causes 400 Bad Request on some TV scanner labels
     payload = {
         "columns": [
-            "name", "description", "option-type", "strike", "volume", "close", "expiration",
-            "ask", "bid", "delta", "gamma", "iv", "rho", "theta", "vega", "theoPrice"
+            "name",
+            "description",
+            "option-type",
+            "strike",
+            "volume",
+            "close",
+            "expiration",
+            "ask",
+            "bid",
+            "delta",
+            "gamma",
+            "iv",
+            "theta",
+            "vega",
+            "theoPrice"
         ],
         "filter": [
             {"left": "type", "operation": "equal", "right": "option"},
@@ -59,6 +74,8 @@ async def fetch_option_chain(underlying: str):
                 return data
             else:
                 logger.error(f"Options builder failed: {response.status_code} {response.text}")
+                # Log the payload for debugging if it fails
+                logger.debug(f"Failed payload: {payload}")
                 return None
     except Exception as e:
         logger.error(f"Error calling options builder: {e}")

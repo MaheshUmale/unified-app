@@ -204,6 +204,10 @@ class LocalDB:
         if res: return {'hrn': res[0], 'metadata': json.loads(res[1])}
         return None
 
+    def execute(self, sql: str, params: tuple = ()):
+        with self._execute_lock:
+            self.conn.execute(sql, params)
+
     def query(self, sql: str, params: tuple = (), json_serialize: bool = False) -> List[Dict[str, Any]]:
         with self._execute_lock:
             df = self.conn.execute(sql, params).fetch_df()
