@@ -8,7 +8,7 @@
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,800&display=swap');
 
         :root {
             --bg-main: #0f172a;
@@ -29,7 +29,7 @@
             --input-bg: #ffffff;
         }
 
-        body { font-family: 'Inter', sans-serif; background-color: var(--bg-main); color: var(--text-primary); overflow: hidden; transition: background-color 0.3s, color 0.3s; }
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: var(--bg-main); color: var(--text-primary); overflow: hidden; transition: background-color 0.3s, color 0.3s; letter-spacing: -0.01em; }
         .glass-panel { background: var(--bg-panel); backdrop-filter: blur(12px); border: 1px solid var(--border-subtle); }
 
         /* Theme overrides */
@@ -117,11 +117,11 @@
                     </div>
 
                     <div class="flex items-center gap-1">
-                        <button id="manageIndicatorsBtn" class="text-[9px] font-black px-3 py-1.5 bg-gray-800/50 hover:bg-gray-700 rounded-full text-gray-400 transition-colors uppercase">Plots</button>
-                        <button id="drawingToolBtn" class="text-[9px] font-black px-3 py-1.5 bg-gray-800/50 hover:bg-gray-700 rounded-full text-gray-400 transition-colors uppercase" title="Shift+Click to place Horizontal Line">H-Line</button>
-                        <button id="clearDrawingsBtn" class="text-[9px] font-black px-3 py-1.5 bg-gray-800/50 hover:bg-gray-700 rounded-full text-gray-400 transition-colors uppercase">Clear</button>
+                        <button id="manageIndicatorsBtn" class="text-[10px] font-black px-3.5 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-full text-white transition-all uppercase tracking-tight shadow-sm active:scale-95">Plots</button>
+                        <button id="drawingToolBtn" class="text-[10px] font-black px-3.5 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-full text-white transition-all uppercase tracking-tight shadow-sm active:scale-95" title="Shift+Click to place Horizontal Line">H-Line</button>
+                        <button id="clearDrawingsBtn" class="text-[10px] font-black px-3.5 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-full text-white transition-all uppercase tracking-tight shadow-sm active:scale-95">Clear</button>
                         <button id="toggleIndicatorsBtn" class="hidden"></button>
-                        <button id="replayModeBtn" class="text-[9px] font-black px-3 py-1.5 bg-blue-600/80 hover:bg-blue-600 rounded-full text-white transition-colors uppercase">Replay</button>
+                        <button id="replayModeBtn" class="text-[10px] font-black px-4 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-full text-white transition-all uppercase tracking-tight shadow-md shadow-blue-500/20 active:scale-95">Replay</button>
                     </div>
 
                     <div class="flex items-center gap-1 bg-black/20 p-1 rounded-full border border-white/5">
