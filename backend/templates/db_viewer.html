@@ -16,6 +16,8 @@
             --border-subtle: rgba(255, 255, 255, 0.05);
             --color-primary: #3b82f6;
             --input-bg: #1e293b;
+            --btn-primary-bg: #2563eb;
+            --btn-primary-text: #ffffff;
         }
 
         body.light-theme {
@@ -25,9 +27,14 @@
             --text-muted: #475569;
             --border-subtle: rgba(0, 0, 0, 0.1);
             --input-bg: #ffffff;
+            --btn-primary-bg: #dbeafe;
+            --btn-primary-text: #1e40af;
         }
 
         body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: var(--bg-main); color: var(--text-primary); transition: background-color 0.3s, color 0.3s; letter-spacing: -0.01em; }
+        .btn-primary { background-color: var(--btn-primary-bg) !important; color: var(--btn-primary-text) !important; }
+        .light-theme .text-white { color: var(--text-primary) !important; }
+        .light-theme .text-slate-500 { color: var(--text-muted) !important; }
         .glass-panel { background: var(--bg-panel); backdrop-filter: blur(12px); border: 1px solid var(--border-subtle); }
         .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
@@ -76,7 +83,7 @@
                             <button onclick="setQuery('SELECT * FROM pcr_history ORDER BY timestamp DESC LIMIT 100')" class="text-[9px] bg-white/5 hover:bg-white/10 px-2 py-0.5 rounded text-gray-400 border border-white/5">PCR Hist</button>
                         </div>
                     </div>
-                    <button id="runBtn" class="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black px-8 py-2.5 rounded-full transition-all uppercase tracking-tighter shadow-lg shadow-blue-500/20 active:scale-95">RUN QUERY</button>
+                    <button id="runBtn" class="btn-primary text-[10px] font-black px-8 py-2.5 rounded-full transition-all uppercase tracking-tighter shadow-lg active:scale-95">RUN QUERY</button>
                 </div>
                 <textarea id="sqlInput" class="bg-black/50 border border-white/10 rounded-xl p-4 text-sm font-mono text-blue-400 outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all h-32 resize-none custom-scrollbar shadow-inner" placeholder="SELECT * FROM ticks LIMIT 100"></textarea>
             </div>
