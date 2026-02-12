@@ -655,15 +655,30 @@ class OptionsManager:
                 ltp = float(f[5]) if f[5] is not None else 0
 
                 # Expiration and OI from augmented TV scanner columns
-                expiration_ts = f[6] if len(f) > 6 else None
+                expiration_val = f[6] if len(f) > 6 else None
+                # Safe indexing for OI since we removed it from TV scanner columns
                 oi = int(f[7]) if len(f) > 7 and f[7] is not None else 0
 
                 expiry_date = None
                 time_to_expiry = 0.01 # Default ~4 days
-                if expiration_ts:
-                    expiry_date = datetime.fromtimestamp(expiration_ts, pytz.utc).date()
-                    days_to_expiry = max((expiry_date - timestamp.date()).days, 0)
-                    time_to_expiry = days_to_expiry / 365.0
+                if expiration_val:
+                    if isinstance(expiration_val, int) and expiration_val > 20000000:
+                        # Handle YYYYMMDD format (e.g. 20260310)
+                        try:
+                            expiry_date = datetime.strptime(str(expiration_val), "%Y%m%d").date()
+                        except:
+                            pass
+
+                    if not expiry_date:
+                        # Fallback to unix timestamp
+                        try:
+                            expiry_date = datetime.fromtimestamp(expiration_val, pytz.utc).date()
+                        except:
+                            pass
+
+                    if expiry_date:
+                        days_to_expiry = max((expiry_date - timestamp.date()).days, 0)
+                        time_to_expiry = days_to_expiry / 365.0
 
                 # Calculate real Greeks instead of defaults
                 greeks = greeks_calculator.calculate_all_greeks(
