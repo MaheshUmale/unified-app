@@ -474,16 +474,7 @@ class OptionsManager:
                     logger.warning(f"Using STALE Spot Price from PCR History for {underlying}: {price}")
                     return price
 
-            # Layer 4: Last known snapshot price
-            logger.info(f"PCR history failed for {underlying}, trying last snapshot LTP...")
-            last_snap = db.query("""
-                SELECT ltp FROM options_snapshots
-                WHERE underlying = ? AND ltp > 0
-                ORDER BY timestamp DESC LIMIT 1
-            """, (underlying,))
-            if last_snap:
-                logger.warning(f"Using STALE Spot Price from last Snapshot for {underlying}: {last_snap[0]['ltp']}")
-                return last_snap[0]['ltp']
+            # Layer 4 removed: Avoid using random option LTPs as spot price
 
         except Exception as e:
             logger.error(f"Error in multi-layer spot discovery for {underlying}: {e}")
