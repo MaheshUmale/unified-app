@@ -198,7 +198,13 @@
             <div id="sidebarContent" class="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-6">
                 <!-- Genie Insights -->
                 <div class="space-y-2">
-                    <h4 class="text-[9px] font-black text-gray-500 uppercase tracking-tighter">OiGenie Prediction</h4>
+                    <div class="flex justify-between items-center">
+                        <h4 class="text-[9px] font-black text-gray-500 uppercase tracking-tighter">OiGenie Prediction</h4>
+                        <div id="sidePcrContainer" class="flex items-center gap-1 bg-blue-500/10 px-2 py-0.5 rounded">
+                            <span class="text-[8px] text-blue-500 font-black">PCR:</span>
+                            <span id="sideCurrentPcr" class="text-[9px] font-black text-blue-600">-</span>
+                        </div>
+                    </div>
                     <div class="p-3 bg-blue-500/5 border border-blue-500/20 rounded-lg">
                         <div id="genieControl" class="text-xs font-black text-gray-800 uppercase">-</div>
                         <div id="genieStatus" class="text-[9px] font-bold text-gray-500 mt-1 uppercase">-</div>
