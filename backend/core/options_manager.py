@@ -654,23 +654,20 @@ class OptionsManager:
                 volume = int(f[4]) if f[4] is not None else 0
                 ltp = float(f[5]) if f[5] is not None else 0
 
-                # Expiration and OI from augmented TV scanner columns
+                # Expiration and Greeks from augmented TV scanner columns
                 expiration_val = f[6] if len(f) > 6 else None
-                # Safe indexing for OI since we removed it from TV scanner columns
-                oi = int(f[7]) if len(f) > 7 and f[7] is not None else 0
+                oi = 0 # OI not available in current TV scanner for NSE
 
                 expiry_date = None
                 time_to_expiry = 0.01 # Default ~4 days
                 if expiration_val:
                     if isinstance(expiration_val, int) and expiration_val > 20000000:
-                        # Handle YYYYMMDD format (e.g. 20260310)
                         try:
                             expiry_date = datetime.strptime(str(expiration_val), "%Y%m%d").date()
                         except:
                             pass
 
                     if not expiry_date:
-                        # Fallback to unix timestamp
                         try:
                             expiry_date = datetime.fromtimestamp(expiration_val, pytz.utc).date()
                         except:
@@ -680,10 +677,27 @@ class OptionsManager:
                         days_to_expiry = max((expiry_date - timestamp.date()).days, 0)
                         time_to_expiry = days_to_expiry / 365.0
 
-                # Calculate real Greeks instead of defaults
-                greeks = greeks_calculator.calculate_all_greeks(
-                    spot_price, strike, time_to_expiry, 0.20, opt_type, ltp
-                )
+                # Use Greeks from TV if available, else calculate
+                tv_delta = f[9] if len(f) > 9 else None
+                tv_gamma = f[10] if len(f) > 10 else None
+                tv_iv = f[11] if len(f) > 11 else None
+                tv_theta = f[13] if len(f) > 13 else None
+                tv_vega = f[14] if len(f) > 14 else None
+
+                if tv_iv is not None and tv_iv > 0:
+                    greeks = {
+                        'implied_volatility': tv_iv,
+                        'delta': tv_delta or 0,
+                        'gamma': tv_gamma or 0,
+                        'theta': tv_theta or 0,
+                        'vega': tv_vega or 0,
+                        'intrinsic_value': 0, # Not provided by TV directly
+                        'time_value': 0
+                    }
+                else:
+                    greeks = greeks_calculator.calculate_all_greeks(
+                        spot_price, strike, time_to_expiry, 0.20, opt_type, ltp
+                    )
                 
                 self.symbol_map_cache[underlying][f"{strike}_{opt_type}"] = symbol
                 
@@ -695,7 +709,7 @@ class OptionsManager:
                     'strike': strike,
                     'option_type': opt_type,
                     'oi': oi,
-                    'oi_change': 0, # TV doesn't provide OI change in scanner easily
+                    'oi_change': 0,
                     'volume': volume,
                     'ltp': ltp,
                     'iv': greeks['implied_volatility'],
@@ -703,8 +717,8 @@ class OptionsManager:
                     'gamma': greeks['gamma'],
                     'theta': greeks['theta'],
                     'vega': greeks['vega'],
-                    'intrinsic_value': greeks['intrinsic_value'],
-                    'time_value': greeks['time_value'],
+                    'intrinsic_value': greeks.get('intrinsic_value', 0),
+                    'time_value': greeks.get('time_value', 0),
                     'source': 'tradingview_fallback'
                 })
             except Exception as e:

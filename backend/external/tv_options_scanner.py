@@ -9,7 +9,8 @@ async def fetch_option_chain(underlying: str):
     Fetches the full option chain for a given underlying from TradingView Scanner.
     underlying: e.g. 'NSE:NIFTY'
     """
-    url = "https://scanner.tradingview.com/options/scan2?label-product=options-symbol-search"
+    # Use options-builder product as suggested by user
+    url = "https://scanner.tradingview.com/options/scan2?label-product=options-builder"
 
     # Standardize underlying
     if ":" not in underlying:
@@ -21,7 +22,8 @@ async def fetch_option_chain(underlying: str):
 
     payload = {
         "columns": [
-            "name", "description", "option-type", "strike", "volume", "close", "expiration"
+            "name", "description", "option-type", "strike", "volume", "close", "expiration",
+            "ask", "bid", "delta", "gamma", "iv", "rho", "theta", "vega", "theoPrice"
         ],
         "filter": [
             {"left": "type", "operation": "equal", "right": "option"},
@@ -53,7 +55,7 @@ async def fetch_option_chain(underlying: str):
             if response.status_code == 200:
                 data = response.json()
                 count = len(data.get('symbols', []))
-                logger.info(f"Fetched {count} options for {underlying}")
+                logger.info(f"Fetched {count} options for {underlying} using options-builder")
                 return data
             else:
                 logger.error(f"Options builder failed: {response.status_code} {response.text}")
