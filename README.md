@@ -44,12 +44,12 @@ A minimal, high-performance trading terminal featuring TradingView charting, rea
 - **DuckDB Viewer**: A dedicated SQL-based viewer at `/db-viewer` that shares the application's database connection, allowing real-time table inspection and custom queries without file-locking issues.
 - **Options Analysis Dashboard**:
   - A specialized dashboard at `/options` for deep-dive options analysis.
-  - **Real-time Option Chain**: Live streaming of LTP, Volume, Bid, and Ask data.
-  - **OI Analysis**: Visual distribution of Call/Put Open Interest and OI Change across all strikes (using Chart.js).
-  - **PCR & Max Pain Trends**: Historical tracking of Put-Call Ratio (OI & Volume), Max Pain, and Underlying Spot Price.
-  - **Advanced Historical Analysis**: Interactive charts for Spot Price, Total OI, and OI Change with IST localization and auto-scaling.
+  - **Analysis Overview**: A unified cockpit merging Spot-PCR Confluence, OI Distribution, and Merged OI Trends (Total vs Chg) into a single view.
+  - **Real-time Option Chain**: Live streaming of LTP, Greeks (Delta, Theta, IV), and OI metrics.
+  - **Institutional Control**: OiGenie Market Control pulse and institutional range detection.
+  - **OI Buildup Pulse**: Real-time census of Long/Short buildup and covering across all strikes.
   - **NSE Confluence Scalper**: Automated option buying engine using price action and OI confluence.
-  - **Automated Data Management**: Background backfilling and periodic snapshots (every 5 minutes) using Trendlyne, NSE India, and TradingView data sources.
+  - **Automated Data Management**: Background backfilling and periodic snapshots (every 5 minutes).
 
 ## Architecture
 
@@ -132,8 +132,23 @@ python3 backend/api_server.py
   - **OI Buildup Pulse**: Real-time census of Long/Short buildup and covering across all strikes.
   - **Scalper Pulse**: If the NSE Confluence Scalper is running, its live metrics and confluence dots will appear here.
 
-### 7. Persistence
-- Your layout configuration, selected symbols, timeframes, and drawings are automatically saved to your browser's local storage. They will be restored exactly as you left them when you return to the application.
+### 7. Settings & Customization
+- **Theme Management**: Use the **Moon/Sun** icon in the header to toggle between **Modern Dark Mode** and **High-Visibility Light Theme**.
+- **Theming Logic**: The application uses a unified CSS variable engine (`--bg-main`, `--text-primary`, etc.) ensuring consistent colors across all charts, tables, and dashboards.
+- **Typography**: Optimized for readability using the **Plus Jakarta Sans** font family, with distinct weights for data (600) and headers (800).
+- **Layout Persistence**: Your layout configuration, selected symbols, timeframes, and drawings are automatically saved to `localStorage`. They will be restored exactly as you left them when you return to the application.
+
+### 8. Changing Features & Config
+- **Market Hours**: Most analysis tools default to Indian Standard Time (IST). Ensure your system clock is accurate for optimal real-time synchronization.
+- **Data Intervals**: Toggle between 1M, 5M, 15M, and 1H intervals in the terminal header. Note that Options Snapshot data defaults to a 5-minute granularity.
+- **DB Inspection**: Use the `/db-viewer` to run raw SQL queries if you need to extract custom datasets or verify snapshot integrity.
+
+### 9. Advanced Configuration (backend/config.py)
+Advanced users can tune the system by modifying `backend/config.py`:
+- **Greeks Config**: Adjust the `risk_free_rate` (default 10%) or `default_volatility` for Black-Scholes calculations.
+- **IV Thresholds**: Change `high_iv_threshold` (default 70) and `low_iv_threshold` (30) to customize IV Rank signals.
+- **Snapshot Timing**: Modify `SNAPSHOT_CONFIG` to change the frequency of data collection (default is 180 seconds).
+- **Symbol List**: Update `OPTIONS_UNDERLYINGS` to track additional indices or stocks in the Options Dashboard.
 
 ## Development & Customization
 

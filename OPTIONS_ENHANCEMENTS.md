@@ -104,19 +104,17 @@ This document outlines the comprehensive enhancements made to the NSE Options Tr
 - `POST /api/alerts/{alert_id}/pause` - Pause alert
 - `POST /api/alerts/{alert_id}/resume` - Resume alert
 
-### 6. Enhanced Options Dashboard
+### 6. Refined Options Dashboard (Unified UI)
 
-**New UI Features:**
-- Real-time Greeks display in option chain
-- IV Rank card with trading signals
-- Net Delta tracking
-- Tabbed interface:
-  - Option Chain (with Greeks)
-  - OI Analysis (charts + support/resistance)
-  - PCR Trend (historical chart)
-  - Greeks (Delta & Theta distribution charts)
-  - OI Buildup (pattern analysis)
-  - Strategies (builder + analysis)
+**Implementation Details:**
+- **Analysis Overview**: Merges three distinct analysis views into a single cockpit to minimize tab-switching.
+- **Net Delta & Theta**: Calculated as `Σ(OI * Greek)` for the entire chain, providing a "Market Net Exposure" metric in Millions (M).
+- **IV Rank Logic**: Robust calculation using `(Current IV - Min IV) / (Max IV - Min IV)`. Fallback to 0.0 if sufficient history is unavailable, ensuring high-integrity signals.
+- **Tabbed Interface**:
+  - **Chain**: Real-time Greeks, Volume, and OI profile.
+  - **Analysis Overview**: Spot-PCR Confluence, OI Distribution, and Merged Trend charts.
+  - **Strategies**: Payoff charts and risk/reward metrics for multi-leg positions.
+  - **Scalper**: Real-time confluence tracking and automated execution logs.
 
 ## Database Schema Updates
 
