@@ -72,33 +72,33 @@
             <!-- Search Area -->
             <div class="relative flex-1 max-w-xl mx-4">
                 <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                    <svg class="w-3.5 h-3.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                    <svg class="w-4 h-4 text-blue-500/70" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
                 </div>
-                <input type="text" id="symbolSearch" placeholder="SEARCH SYMBOL..." class="bg-gray-900 border border-white/5 rounded-full pl-10 pr-6 py-1.5 text-xs font-bold text-gray-200 outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all w-full">
-                <div id="searchResults" class="hidden absolute top-full left-0 w-full bg-gray-900 border border-white/10 rounded-xl mt-2 z-[100] max-h-80 overflow-y-auto custom-scrollbar shadow-2xl">
+                <input type="text" id="symbolSearch" placeholder="SEARCH SYMBOL (e.g. NSE:NIFTY)..." class="bg-gray-900/80 border border-white/10 rounded-full pl-11 pr-6 py-2 text-xs font-black text-white outline-none focus:ring-2 focus:ring-blue-500 focus:bg-black transition-all w-full shadow-inner tracking-wider">
+                <div id="searchResults" class="hidden absolute top-full left-0 w-full bg-gray-900 border border-white/10 rounded-2xl mt-2 z-[100] max-h-96 overflow-y-auto custom-scrollbar shadow-2xl backdrop-blur-xl">
                 </div>
             </div>
 
             <!-- Controls Groups -->
             <div class="flex items-center gap-3">
                 <!-- Group: Timeframe & Layout -->
-                <div class="flex items-center gap-2 bg-black/20 p-1 rounded-full border border-white/5">
-                    <div id="timeframeSelector" class="flex items-center gap-0.5">
-                        <button data-interval="1" class="tf-btn active px-2.5 py-1 text-[10px] font-black rounded-full transition-all">1M</button>
-                        <button data-interval="5" class="tf-btn px-2.5 py-1 text-[10px] font-black rounded-full transition-all">5M</button>
-                        <button data-interval="15" class="tf-btn px-2.5 py-1 text-[10px] font-black rounded-full transition-all">15M</button>
-                        <button data-interval="60" class="tf-btn px-2.5 py-1 text-[10px] font-black rounded-full transition-all">1H</button>
+                <div class="flex items-center gap-2 bg-black/40 p-1 rounded-full border border-white/10 shadow-lg">
+                    <div id="timeframeSelector" class="flex items-center gap-1 px-1">
+                        <button data-interval="1" class="tf-btn active px-3 py-1.5 text-[10px] font-black rounded-full transition-all hover:bg-white/5 [&.active]:bg-blue-600 [&.active]:text-white">1M</button>
+                        <button data-interval="5" class="tf-btn px-3 py-1.5 text-[10px] font-black rounded-full transition-all hover:bg-white/5 [&.active]:bg-blue-600 [&.active]:text-white">5M</button>
+                        <button data-interval="15" class="tf-btn px-3 py-1.5 text-[10px] font-black rounded-full transition-all hover:bg-white/5 [&.active]:bg-blue-600 [&.active]:text-white">15M</button>
+                        <button data-interval="60" class="tf-btn px-3 py-1.5 text-[10px] font-black rounded-full transition-all hover:bg-white/5 [&.active]:bg-blue-600 [&.active]:text-white">1H</button>
                     </div>
-                    <div class="w-px h-4 bg-white/10 mx-1"></div>
-                    <div id="layoutSelector" class="flex items-center gap-0.5">
-                        <button data-layout="1" class="layout-btn active p-1 rounded-full transition-all hover:bg-white/5 text-gray-500 [&.active]:text-blue-500" title="1 Chart">
-                            <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><rect x="3" y="3" width="14" height="14" rx="1"/></svg>
+                    <div class="w-px h-5 bg-white/10 mx-1"></div>
+                    <div id="layoutSelector" class="flex items-center gap-1 px-1">
+                        <button data-layout="1" class="layout-btn active p-2 rounded-full transition-all hover:bg-white/5 text-gray-500 [&.active]:text-blue-500 [&.active]:bg-blue-500/10" title="1 Chart">
+                            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><rect x="3" y="3" width="14" height="14" rx="1"/></svg>
                         </button>
-                        <button data-layout="2" class="layout-btn p-1 rounded-full transition-all hover:bg-white/5 text-gray-500 [&.active]:text-blue-500" title="2 Charts">
-                            <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><rect x="3" y="3" width="6" height="14" rx="1"/><rect x="11" y="3" width="6" height="14" rx="1"/></svg>
+                        <button data-layout="2" class="layout-btn p-2 rounded-full transition-all hover:bg-white/5 text-gray-500 [&.active]:text-blue-500 [&.active]:bg-blue-500/10" title="2 Charts">
+                            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><rect x="3" y="3" width="6" height="14" rx="1"/><rect x="11" y="3" width="6" height="14" rx="1"/></svg>
                         </button>
-                        <button data-layout="4" class="layout-btn p-1 rounded-full transition-all hover:bg-white/5 text-gray-500 [&.active]:text-blue-500" title="4 Charts">
-                            <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="11" y="3" width="6" height="6" rx="1"/><rect x="3" y="11" width="6" height="6" rx="1"/><rect x="11" y="11" width="6" height="6" rx="1"/></svg>
+                        <button data-layout="4" class="layout-btn p-2 rounded-full transition-all hover:bg-white/5 text-gray-500 [&.active]:text-blue-500 [&.active]:bg-blue-500/10" title="4 Charts">
+                            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="11" y="3" width="6" height="14" rx="1"/><rect x="3" y="11" width="6" height="6" rx="1"/><rect x="11" y="11" width="6" height="6" rx="1"/></svg>
                         </button>
                     </div>
                 </div>

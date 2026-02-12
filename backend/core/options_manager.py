@@ -820,7 +820,18 @@ class OptionsManager:
         if spot_res:
             spot_price = spot_res[0].get('spot_price') or spot_res[0].get('underlying_price') or 0
 
-        return {"timestamp": latest_ts, "chain": chain, "spot_price": spot_price, "source": source}
+        # Calculate aggregate Greeks
+        net_delta = sum(item.get('delta', 0) * item.get('oi', 0) for item in chain)
+        net_theta = sum(item.get('theta', 0) * item.get('oi', 0) for item in chain)
+
+        return {
+            "timestamp": latest_ts,
+            "chain": chain,
+            "spot_price": spot_price,
+            "source": source,
+            "net_delta": round(net_delta, 2),
+            "net_theta": round(net_theta, 2)
+        }
     
     def get_oi_buildup_analysis(self, underlying: str) -> Dict[str, Any]:
         """Get OI buildup analysis."""

@@ -79,15 +79,19 @@ class IVAnalyzer:
         """
         history = self._get_history(underlying, days)
         
-        if len(history) < 30:  # Need minimum data
-            return 50.0  # Neutral if insufficient data
+        # If very little data, return 0 instead of 50 to avoid fake neutral signal
+        if not history:
+            return 0.0
         
         iv_values = [h['iv'] for h in history]
+        # Include current IV in the range calculation to avoid division by zero or negative rank
+        iv_values.append(current_iv)
+
         iv_low = min(iv_values)
         iv_high = max(iv_values)
         
         if iv_high == iv_low:
-            return 50.0
+            return 0.0
         
         iv_rank = ((current_iv - iv_low) / (iv_high - iv_low)) * 100
         return round(max(0, min(100, iv_rank)), 2)
