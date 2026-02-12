@@ -473,14 +473,23 @@ async def get_pcr_trend(underlying: str):
     """Returns historical PCR data for current trading day."""
     history = db.query(
         """
-        SELECT timestamp, pcr_oi, pcr_vol, pcr_oi_change, underlying_price, max_pain, spot_price, total_oi, total_oi_change
+        SELECT timestamp,
+            AVG(pcr_oi) as pcr_oi,
+            AVG(pcr_vol) as pcr_vol,
+            AVG(pcr_oi_change) as pcr_oi_change,
+            AVG(underlying_price) as underlying_price,
+            MAX(max_pain) as max_pain,
+            AVG(spot_price) as spot_price,
+            MAX(total_oi) as total_oi,
+            MAX(total_oi_change) as total_oi_change
         FROM pcr_history
         WHERE underlying = ?
         AND CAST((timestamp AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata' AS DATE) =
-            CAST(( ((SELECT MAX(timestamp) FROM pcr_history)) AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata' AS DATE)
+            CAST(( ((SELECT MAX(timestamp) FROM pcr_history WHERE underlying = ?)) AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata' AS DATE)
+        GROUP BY timestamp
         ORDER BY timestamp ASC
         """,
-        (underlying,),
+        (underlying, underlying),
         json_serialize=True
     )
     
@@ -492,14 +501,23 @@ async def get_full_options_history(underlying: str):
     """Returns all PCR and Option Snapshots for today for REPLAY."""
     pcr_history = db.query(
         """
-        SELECT timestamp, pcr_oi, pcr_vol, pcr_oi_change, underlying_price, max_pain, spot_price, total_oi, total_oi_change
+        SELECT timestamp,
+            AVG(pcr_oi) as pcr_oi,
+            AVG(pcr_vol) as pcr_vol,
+            AVG(pcr_oi_change) as pcr_oi_change,
+            AVG(underlying_price) as underlying_price,
+            MAX(max_pain) as max_pain,
+            AVG(spot_price) as spot_price,
+            MAX(total_oi) as total_oi,
+            MAX(total_oi_change) as total_oi_change
         FROM pcr_history
         WHERE underlying = ?
         AND CAST((timestamp AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata' AS DATE) =
-            CAST(( ((SELECT MAX(timestamp) FROM pcr_history)) AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata' AS DATE)
+            CAST(( ((SELECT MAX(timestamp) FROM pcr_history WHERE underlying = ?)) AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Kolkata' AS DATE)
+        GROUP BY timestamp
         ORDER BY timestamp ASC
         """,
-        (underlying,),
+        (underlying, underlying),
         json_serialize=True
     )
 
