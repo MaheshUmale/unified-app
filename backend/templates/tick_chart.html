@@ -202,10 +202,12 @@
         async function loadHistory() {
             setStatus('Loading History...', 'bg-yellow-500');
             try {
+                console.log(`Fetching history for ${symbol}...`);
                 const res = await fetch(`/api/ticks/history/${encodeURIComponent(symbol)}?limit=10000`);
                 if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
                 const data = await res.json();
                 const ticks = data.history || [];
+                console.log(`Received ${ticks.length} ticks from server.`);
 
                 const candles = [];
                 const volumes = [];
@@ -214,15 +216,17 @@
                 aggregator.currentCandle = null;
                 aggregator.currentTickCount = 0;
 
-                ticks.forEach(t => {
+                console.log(`Processing ${ticks.length} historical ticks...`);
+                ticks.forEach((t, i) => {
                     const result = aggregator.processTick(t);
                     if (result.type === 'new') {
-                        candles.push(result.candle);
-                    } else {
+                        candles.push({...result.candle});
+                    } else if (candles.length > 0) {
                         // In history processing, we just keep updating the last element
                         candles[candles.length - 1] = {...result.candle};
                     }
                 });
+                console.log(`Aggregation complete. Formed ${candles.length} candles.`);
 
                 // Convert to individual volume points for the histogram
                 candles.forEach(c => {

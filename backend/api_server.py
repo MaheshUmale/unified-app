@@ -861,16 +861,21 @@ async def resume_alert(alert_id: str):
 # ==================== TICK CHART API ====================
 
 @fastapi_app.get("/api/ticks/history/{instrument_key}")
-async def get_tick_history(instrument_key: str, limit: int = 5000):
+async def get_tick_history(instrument_key: str, limit: int = 10000):
     """Fetches last N ticks for an instrument."""
     try:
         clean_key = unquote(instrument_key)
+        logger.info(f"Fetching tick history for {clean_key} (limit: {limit})")
+
         # Fetch ticks from DuckDB ticks table
         history = db.query(
             "SELECT ts_ms, price, qty FROM ticks WHERE instrumentKey = ? ORDER BY ts_ms DESC LIMIT ?",
             (clean_key, limit),
             json_serialize=True
         )
+
+        logger.info(f"Retrieved {len(history)} ticks for {clean_key}")
+
         # Return in ascending order for the chart
         return {"history": history[::-1]}
     except Exception as e:
