@@ -50,6 +50,11 @@ A minimal, high-performance trading terminal featuring TradingView charting, rea
   - **OI Buildup Pulse**: Real-time census of Long/Short buildup and covering across all strikes.
   - **NSE Confluence Scalper**: Automated option buying engine using price action and OI confluence.
   - **Automated Data Management**: Background backfilling and periodic snapshots (every 5 minutes).
+- **Specialized Tick-Based Charts**:
+  - **Tick Chart**: A dedicated chart at `/tick` that aggregates raw ticks into OHLC candles based on a customizable "ticks per candle" setting.
+  - **Renko Chart**: A price-movement-based chart at `/renko` that forms "bricks" based on a customizable box size, filtering out noise.
+  - **IST Timestamps**: All tick-based charts are standardized to Indian Standard Time (IST) for accurate market tracking.
+  - **Tick/Renko Replay**: Full replay support for both specialized charts, allowing historical tick-by-tick analysis.
 
 ## Architecture
 
@@ -89,6 +94,8 @@ python3 backend/api_server.py
 
 - **Main Terminal**: `http://localhost:5051/`
 - **Options Dashboard**: `http://localhost:5051/options`
+- **Tick Chart**: `http://localhost:5051/tick`
+- **Renko Chart**: `http://localhost:5051/renko`
 - **DB Viewer**: `http://localhost:5051/db-viewer`
 
 ## User Guide
@@ -125,25 +132,36 @@ python3 backend/api_server.py
 - **Simulated Confluence**: As you step through candles, the **OI Profile** and **Analysis Sidebar** automatically update to show the nearest available historical OI/PCR/Scalper data for that specific point in time.
 - **Exit**: Click **EXIT** to return to the real-time feed.
 
-### 6. Confluence Tools
+### 6. Specialized Charts (Tick & Renko)
+- **Tick Chart (`/tick`)**:
+  - Visualizes market data as candles formed by a fixed number of ticks (e.g., 50, 100).
+  - Use the **Ticks** input in the header to adjust aggregation on the fly.
+  - Supports full **Replay** of historical ticks stored in the database.
+- **Renko Chart (`/renko`)**:
+  - Aggregates price movement into "bricks" of a fixed **Box Size**.
+  - Ideal for identifying trends and filtering out minor price fluctuations.
+  - Like the tick chart, it supports **Replay** for back-testing and analysis.
+- **Timestamps**: Both charts display timestamps in **IST** (Asia/Kolkata) for consistency with Indian market hours.
+
+### 7. Confluence Tools
 - **OI Profile**: Toggle this in the header to see the option chain distribution overlaid on your price chart. Red bars represent Call OI (resistance), and green bars represent Put OI (support).
 - **Analysis Sidebar**: Toggle this to view a high-level summary of:
   - **OiGenie**: Detects whether buyers or sellers are in control and predicts potential sideways movement.
   - **OI Buildup Pulse**: Real-time census of Long/Short buildup and covering across all strikes.
   - **Scalper Pulse**: If the NSE Confluence Scalper is running, its live metrics and confluence dots will appear here.
 
-### 7. Settings & Customization
+### 8. Settings & Customization
 - **Theme Management**: Use the **Moon/Sun** icon in the header to toggle between **Modern Dark Mode** and **High-Visibility Light Theme**.
 - **Theming Logic**: The application uses a unified CSS variable engine (`--bg-main`, `--text-primary`, etc.) ensuring consistent colors across all charts, tables, and dashboards.
 - **Typography**: Optimized for readability using the **Plus Jakarta Sans** font family, with distinct weights for data (600) and headers (800).
 - **Layout Persistence**: Your layout configuration, selected symbols, timeframes, and drawings are automatically saved to `localStorage`. They will be restored exactly as you left them when you return to the application.
 
-### 8. Changing Features & Config
+### 9. Changing Features & Config
 - **Market Hours**: Most analysis tools default to Indian Standard Time (IST). Ensure your system clock is accurate for optimal real-time synchronization.
 - **Data Intervals**: Toggle between 1M, 5M, 15M, and 1H intervals in the terminal header. Note that Options Snapshot data defaults to a 5-minute granularity.
 - **DB Inspection**: Use the `/db-viewer` to run raw SQL queries if you need to extract custom datasets or verify snapshot integrity.
 
-### 9. Advanced Configuration (backend/config.py)
+### 10. Advanced Configuration (backend/config.py)
 Advanced users can tune the system by modifying `backend/config.py`:
 - **Greeks Config**: Adjust the `risk_free_rate` (default 10%) or `default_volatility` for Black-Scholes calculations.
 - **IV Thresholds**: Change `high_iv_threshold` (default 70) and `low_iv_threshold` (30) to customize IV Rank signals.
