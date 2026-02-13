@@ -612,8 +612,7 @@ async def build_strategy(request: Request):
         underlying = body.get('underlying')
         spot_price = body.get('spot_price')
         if not spot_price:
-            res = db.query("SELECT price FROM ticks WHERE instrumentKey = ? ORDER BY ts_ms DESC LIMIT 1", (underlying,))
-            spot_price = res[0]['price'] if res else 0
+            spot_price = await options_manager.get_spot_price(underlying)
 
         legs = body.get('legs', [])
         
@@ -641,9 +640,7 @@ async def create_bull_call_spread(request: Request):
         spot_price = body.get('spot_price')
 
         if not spot_price:
-            # Try to get spot price
-            res = db.query("SELECT price FROM ticks WHERE instrumentKey = ? ORDER BY ts_ms DESC LIMIT 1", (underlying,))
-            spot_price = res[0]['price'] if res else 0
+            spot_price = await options_manager.get_spot_price(underlying)
 
         strategy = strategy_builder.create_bull_call_spread(
             underlying=underlying,
@@ -676,8 +673,7 @@ async def create_iron_condor(request: Request):
         spot_price = body.get('spot_price')
 
         if not spot_price:
-            res = db.query("SELECT price FROM ticks WHERE instrumentKey = ? ORDER BY ts_ms DESC LIMIT 1", (underlying,))
-            spot_price = res[0]['price'] if res else 0
+            spot_price = await options_manager.get_spot_price(underlying)
 
         strategy = strategy_builder.create_iron_condor(
             underlying=underlying,
@@ -711,8 +707,7 @@ async def create_long_straddle(request: Request):
         spot_price = body.get('spot_price')
 
         if not spot_price:
-            res = db.query("SELECT price FROM ticks WHERE instrumentKey = ? ORDER BY ts_ms DESC LIMIT 1", (underlying,))
-            spot_price = res[0]['price'] if res else 0
+            spot_price = await options_manager.get_spot_price(underlying)
 
         strategy = strategy_builder.create_long_straddle(
             underlying=underlying,
