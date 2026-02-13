@@ -890,6 +890,13 @@ async def serve_tick_chart(request: Request, path: Optional[str] = None):
     return templates.TemplateResponse("tick_chart.html", {"request": request})
 
 
+@fastapi_app.get("/renko")
+@fastapi_app.get("/renko/{path:path}")
+async def serve_renko_chart(request: Request, path: Optional[str] = None):
+    """Serves the separate Renko chart page."""
+    return templates.TemplateResponse("renko_chart.html", {"request": request})
+
+
 # ==================== STATIC FILES & TEMPLATES ====================
 
 templates = Jinja2Templates(directory="backend/templates")
