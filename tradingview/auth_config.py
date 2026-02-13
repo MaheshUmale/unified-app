@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 
 """
-TradingView账号配置管理器
-支持环境变量优先级和配置文件存储
+TradingView Account Configuration Manager
+Supports environment variable priority and persistent configuration file storage.
 """
 
 import os
@@ -26,44 +26,44 @@ logger = get_logger(__name__)
 
 @dataclass
 class TradingViewAccount:
-    """TradingView账号配置"""
-    name: str                           # 账号名称/标识
+    """TradingView Account Configuration"""
+    name: str                           # Account name/identifier
     session_token: str                  # TV_SESSION
     signature: str                      # TV_SIGNATURE
-    server: str = "data"               # 服务器选择
-    description: str = ""              # 账号描述
-    is_active: bool = True             # 是否激活
-    created_at: Optional[str] = None   # 创建时间
-    last_used: Optional[str] = None    # 最后使用时间
+    server: str = "data"               # Selected server
+    description: str = ""              # Account description
+    is_active: bool = True             # Whether account is active
+    created_at: Optional[str] = None   # Creation time
+    last_used: Optional[str] = None    # Last used time
 
     def __post_init__(self):
         if self.created_at is None:
             self.created_at = datetime.now().isoformat()
 
     def to_dict(self) -> Dict[str, Any]:
-        """转换为字典"""
+        """Convert to dictionary"""
         return asdict(self)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'TradingViewAccount':
-        """从字典创建实例"""
+        """Create instance from dictionary"""
         return cls(**data)
 
     def update_last_used(self):
-        """更新最后使用时间"""
+        """Update last used timestamp"""
         self.last_used = datetime.now().isoformat()
 
 
 @dataclass
 class AuthConfig:
-    """认证配置"""
+    """Authentication Configuration"""
     accounts: List[TradingViewAccount]
-    default_account: Optional[str] = None   # 默认账号名称
-    encryption_enabled: bool = False        # 是否启用加密
+    default_account: Optional[str] = None   # Name of the default account
+    encryption_enabled: bool = False        # Whether encryption is enabled
     config_version: str = "1.0"
 
     def to_dict(self) -> Dict[str, Any]:
-        """转换为字典"""
+        """Convert to dictionary"""
         return {
             'accounts': [acc.to_dict() for acc in self.accounts],
             'default_account': self.default_account,
@@ -73,7 +73,7 @@ class AuthConfig:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'AuthConfig':
-        """从字典创建实例"""
+        """Create instance from dictionary"""
         accounts = [TradingViewAccount.from_dict(acc_data) for acc_data in data.get('accounts', [])]
         return cls(
             accounts=accounts,
@@ -84,7 +84,7 @@ class AuthConfig:
 
 
 class ConfigEncryption:
-    """配置文件加密管理"""
+    """Configuration File Encryption Management"""
 
     def __init__(self, password: Optional[str] = None):
         self.password = password or self._get_default_password()
@@ -92,21 +92,21 @@ class ConfigEncryption:
         self.cipher_suite = Fernet(self.key)
 
     def _get_default_password(self) -> str:
-        """获取默认密码"""
-        # 从环境变量或使用机器唯一标识生成默认密码
+        """Get default password"""
+        # Get from env or generate from machine identifier
         env_password = os.getenv('TV_CONFIG_PASSWORD')
         if env_password:
             return env_password
 
-        # 使用机器信息生成唯一密码
+        # Use machine info for unique password
         import platform
         machine_info = f"{platform.node()}-{platform.machine()}-{platform.system()}"
         return hashlib.sha256(machine_info.encode()).hexdigest()[:32]
 
     def _derive_key(self, password: str) -> bytes:
-        """从密码派生加密密钥"""
+        """Derive encryption key from password"""
         password_bytes = password.encode()
-        salt = b'tradingview_auth_salt_2024'  # 固定盐值，生产环境应该随机生成
+        salt = b'tradingview_auth_salt_2024'  # Static salt for now
 
         kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
@@ -118,109 +118,108 @@ class ConfigEncryption:
         return key
 
     def encrypt(self, data: str) -> str:
-        """加密数据"""
+        """Encrypt data"""
         try:
             encrypted_data = self.cipher_suite.encrypt(data.encode())
             return base64.urlsafe_b64encode(encrypted_data).decode()
         except Exception as e:
-            logger.error(f"数据加密失败: {e}")
+            logger.error(f"Data encryption failed: {e}")
             raise
 
     def decrypt(self, encrypted_data: str) -> str:
-        """解密数据"""
+        """Decrypt data"""
         try:
             encrypted_data_bytes = base64.urlsafe_b64decode(encrypted_data.encode())
             decrypted_data = self.cipher_suite.decrypt(encrypted_data_bytes)
             return decrypted_data.decode()
         except Exception as e:
-            logger.error(f"数据解密失败: {e}")
+            logger.error(f"Data decryption failed: {e}")
             raise
 
 
 class TradingViewAuthManager:
-    """TradingView认证管理器"""
+    """TradingView Authentication Manager"""
 
     def __init__(self, config_file: Optional[str] = None, encryption_password: Optional[str] = None):
         """
-        初始化认证管理器
+        Initialize auth manager.
 
         Args:
-            config_file: 配置文件路径
-            encryption_password: 加密密码
+            config_file: Config file path
+            encryption_password: Password for encryption
         """
         self.config_file = config_file or self._get_default_config_path()
         self.config_dir = Path(self.config_file).parent
         self.config_dir.mkdir(parents=True, exist_ok=True)
 
-        # 加密管理器
+        # Encryption manager
         self.encryption = ConfigEncryption(encryption_password)
 
-        # 认证配置
+        # Auth config
         self.auth_config: Optional[AuthConfig] = None
 
-        # 环境变量配置缓存
+        # Env config cache
         self._env_config_cache: Optional[TradingViewAccount] = None
 
-        # 加载配置
+        # Load config
         self._load_config()
 
     def _get_default_config_path(self) -> str:
-        """获取默认配置文件路径"""
-        # 优先使用环境变量指定的配置文件路径
+        """Get default config file path"""
+        # Env variable has priority
         env_config_path = os.getenv('TV_AUTH_CONFIG_PATH')
         if env_config_path:
             return env_config_path
 
-        # 使用项目默认路径
+        # Default project path
         project_root = Path(__file__).parent.parent
         config_path = project_root / "config" / "tradingview_auth.yaml"
         return str(config_path)
 
     def _load_config(self):
-        """加载配置文件"""
+        """Load configuration file"""
         try:
             config_path = Path(self.config_file)
 
             if not config_path.exists():
-                logger.info(f"配置文件不存在，创建默认配置: {self.config_file}")
+                logger.info(f"Config file not found, creating default: {self.config_file}")
                 self.auth_config = AuthConfig(accounts=[])
                 self._save_config()
                 return
 
-            # 读取配置文件
+            # Read file
             with open(config_path, 'r', encoding='utf-8') as f:
                 if config_path.suffix.lower() == '.json':
                     data = json.load(f)
                 else:
                     data = yaml.safe_load(f) or {}
 
-            # 检查是否加密
+            # Check for encryption
             if data.get('encrypted', False):
                 encrypted_content = data.get('content', '')
                 if encrypted_content:
                     decrypted_content = self.encryption.decrypt(encrypted_content)
                     data = json.loads(decrypted_content)
                 else:
-                    logger.warning("配置文件标记为加密但内容为空")
+                    logger.warning("Config marked as encrypted but content is empty")
                     data = {}
 
-            # 解析配置
+            # Parse config
             self.auth_config = AuthConfig.from_dict(data)
-            logger.info(f"已加载配置文件: {self.config_file}, 账号数量: {len(self.auth_config.accounts)}")
+            logger.info(f"Loaded config: {self.config_file}, Account count: {len(self.auth_config.accounts)}")
 
         except Exception as e:
-            logger.error(f"加载配置文件失败: {e}")
+            logger.error(f"Failed to load config: {e}")
             self.auth_config = AuthConfig(accounts=[])
 
     def _save_config(self):
-        """保存配置文件"""
+        """Save configuration to file"""
         try:
             config_path = Path(self.config_file)
             config_data = self.auth_config.to_dict()
 
-            # 是否启用加密
+            # Handle encryption
             if self.auth_config.encryption_enabled:
-                # 加密配置内容
                 content_json = json.dumps(config_data, ensure_ascii=False, indent=2)
                 encrypted_content = self.encryption.encrypt(content_json)
 
@@ -233,23 +232,23 @@ class TradingViewAuthManager:
             else:
                 final_data = config_data
 
-            # 保存文件
+            # Write file
             with open(config_path, 'w', encoding='utf-8') as f:
                 if config_path.suffix.lower() == '.json':
                     json.dump(final_data, f, ensure_ascii=False, indent=2)
                 else:
                     yaml.dump(final_data, f, default_flow_style=False, allow_unicode=True)
 
-            # 设置文件权限（仅所有者可读写）
+            # Set restrictive permissions (owner read/write only)
             config_path.chmod(0o600)
-            logger.info(f"配置文件已保存: {self.config_file}")
+            logger.info(f"Config saved: {self.config_file}")
 
         except Exception as e:
-            logger.error(f"保存配置文件失败: {e}")
+            logger.error(f"Failed to save config: {e}")
             raise
 
     def _get_env_config(self) -> Optional[TradingViewAccount]:
-        """从环境变量获取配置"""
+        """Retrieve configuration from environment variables"""
         if self._env_config_cache:
             return self._env_config_cache
 
@@ -264,175 +263,171 @@ class TradingViewAuthManager:
                 session_token=session_token,
                 signature=signature,
                 server=server,
-                description="从环境变量读取的配置",
+                description="Configuration from environment variables",
                 is_active=True
             )
 
-            logger.info("已从环境变量读取TradingView认证配置")
+            logger.info("Retrieved TradingView auth configuration from environment")
             return self._env_config_cache
 
         return None
 
     def get_account(self, account_name: Optional[str] = None) -> Optional[TradingViewAccount]:
         """
-        获取账号配置
+        Get account configuration.
 
         Args:
-            account_name: 账号名称，为None时使用默认账号
+            account_name: Account name (None for default)
 
         Returns:
-            TradingViewAccount: 账号配置，优先级：环境变量 > 指定账号 > 默认账号
+            TradingViewAccount: Found configuration. Priority: Env > Explicit Name > Default
         """
-        # 1. 优先从环境变量读取
+        # 1. Environment variable priority
         env_config = self._get_env_config()
         if env_config:
             env_config.update_last_used()
             return env_config
 
-        # 2. 从配置文件读取
+        # 2. Check config file
         if not self.auth_config or not self.auth_config.accounts:
-            logger.warning("没有可用的TradingView账号配置")
+            logger.warning("No TradingView account configurations available")
             return None
 
-        # 3. 查找指定账号
+        # 3. Find specific account
         if account_name:
             for account in self.auth_config.accounts:
                 if account.name == account_name and account.is_active:
                     account.update_last_used()
                     return account
 
-            logger.warning(f"未找到指定账号: {account_name}")
+            logger.warning(f"Specified account not found: {account_name}")
             return None
 
-        # 4. 使用默认账号
+        # 4. Use default account
         if self.auth_config.default_account:
             for account in self.auth_config.accounts:
                 if account.name == self.auth_config.default_account and account.is_active:
                     account.update_last_used()
                     return account
 
-        # 5. 使用第一个激活的账号
+        # 5. Fallback to first active account
         for account in self.auth_config.accounts:
             if account.is_active:
                 account.update_last_used()
                 return account
 
-        logger.warning("没有找到可用的激活账号")
+        logger.warning("No active accounts found")
         return None
 
     def add_account(self, account: TradingViewAccount, set_as_default: bool = False) -> bool:
         """
-        添加账号配置
+        Add a new account configuration.
 
         Args:
-            account: 账号配置
-            set_as_default: 是否设为默认账号
+            account: Account config
+            set_as_default: Whether to make this the default
 
         Returns:
-            bool: 是否添加成功
+            bool: Success or failure
         """
         try:
-            # 检查账号名称是否已存在
+            # Check for uniqueness
             for existing_account in self.auth_config.accounts:
                 if existing_account.name == account.name:
-                    logger.warning(f"账号名称已存在: {account.name}")
+                    logger.warning(f"Account name already exists: {account.name}")
                     return False
 
-            # 添加账号
+            # Add account
             self.auth_config.accounts.append(account)
 
-            # 设为默认账号
+            # Set default
             if set_as_default or not self.auth_config.default_account:
                 self.auth_config.default_account = account.name
 
-            # 保存配置
+            # Save
             self._save_config()
 
-            logger.info(f"已添加TradingView账号: {account.name}")
+            logger.info(f"Added TradingView account: {account.name}")
             return True
 
         except Exception as e:
-            logger.error(f"添加账号失败: {e}")
+            logger.error(f"Failed to add account: {e}")
             return False
 
     def update_account(self, account_name: str, **updates) -> bool:
         """
-        更新账号配置
+        Update an existing account configuration.
 
         Args:
-            account_name: 账号名称
-            **updates: 更新的字段
+            account_name: Name of the account
+            **updates: Fields to update
 
         Returns:
-            bool: 是否更新成功
+            bool: Success or failure
         """
         try:
             for account in self.auth_config.accounts:
                 if account.name == account_name:
-                    # 更新字段
                     for key, value in updates.items():
                         if hasattr(account, key):
                             setattr(account, key, value)
                         else:
-                            logger.warning(f"未知的账号字段: {key}")
+                            logger.warning(f"Unknown account field: {key}")
 
-                    # 保存配置
                     self._save_config()
-                    logger.info(f"已更新账号配置: {account_name}")
+                    logger.info(f"Updated account: {account_name}")
                     return True
 
-            logger.warning(f"未找到指定账号: {account_name}")
+            logger.warning(f"Account not found: {account_name}")
             return False
 
         except Exception as e:
-            logger.error(f"更新账号失败: {e}")
+            logger.error(f"Failed to update account: {e}")
             return False
 
     def remove_account(self, account_name: str) -> bool:
         """
-        删除账号配置
+        Remove an account configuration.
 
         Args:
-            account_name: 账号名称
+            account_name: Name of the account
 
         Returns:
-            bool: 是否删除成功
+            bool: Success or failure
         """
         try:
             for i, account in enumerate(self.auth_config.accounts):
                 if account.name == account_name:
-                    # 删除账号
                     del self.auth_config.accounts[i]
 
-                    # 如果删除的是默认账号，重新设置默认账号
+                    # Handle default account removal
                     if self.auth_config.default_account == account_name:
                         if self.auth_config.accounts:
                             self.auth_config.default_account = self.auth_config.accounts[0].name
                         else:
                             self.auth_config.default_account = None
 
-                    # 保存配置
                     self._save_config()
-                    logger.info(f"已删除账号: {account_name}")
+                    logger.info(f"Removed account: {account_name}")
                     return True
 
-            logger.warning(f"未找到指定账号: {account_name}")
+            logger.warning(f"Account not found: {account_name}")
             return False
 
         except Exception as e:
-            logger.error(f"删除账号失败: {e}")
+            logger.error(f"Failed to remove account: {e}")
             return False
 
     def list_accounts(self) -> List[Dict[str, Any]]:
         """
-        列出所有账号配置
+        List all account configurations.
 
         Returns:
-            List[Dict]: 账号信息列表
+            List[Dict]: List of account summaries
         """
         accounts_info = []
 
-        # 环境变量配置
+        # Env config first
         env_config = self._get_env_config()
         if env_config:
             accounts_info.append({
@@ -441,10 +436,10 @@ class TradingViewAuthManager:
                 'description': env_config.description,
                 'is_active': env_config.is_active,
                 'source': 'environment',
-                'is_default': True  # 环境变量优先级最高
+                'is_default': True
             })
 
-        # 配置文件账号
+        # Config file accounts
         if self.auth_config:
             for account in self.auth_config.accounts:
                 accounts_info.append({
@@ -462,39 +457,38 @@ class TradingViewAuthManager:
 
     def set_default_account(self, account_name: str) -> bool:
         """
-        设置默认账号
+        Set the default account.
 
         Args:
-            account_name: 账号名称
+            account_name: Name of the account
 
         Returns:
-            bool: 是否设置成功
+            bool: Success or failure
         """
         try:
-            # 检查账号是否存在
             for account in self.auth_config.accounts:
                 if account.name == account_name:
                     self.auth_config.default_account = account_name
                     self._save_config()
-                    logger.info(f"已设置默认账号: {account_name}")
+                    logger.info(f"Set default account: {account_name}")
                     return True
 
-            logger.warning(f"未找到指定账号: {account_name}")
+            logger.warning(f"Account not found: {account_name}")
             return False
 
         except Exception as e:
-            logger.error(f"设置默认账号失败: {e}")
+            logger.error(f"Failed to set default account: {e}")
             return False
 
     def enable_encryption(self, password: Optional[str] = None) -> bool:
         """
-        启用配置文件加密
+        Enable configuration file encryption.
 
         Args:
-            password: 加密密码，为None时使用默认密码
+            password: Password for encryption (None for default)
 
         Returns:
-            bool: 是否启用成功
+            bool: Success or failure
         """
         try:
             if password:
@@ -503,79 +497,79 @@ class TradingViewAuthManager:
             self.auth_config.encryption_enabled = True
             self._save_config()
 
-            logger.info("已启用配置文件加密")
+            logger.info("Encryption enabled for config file")
             return True
 
         except Exception as e:
-            logger.error(f"启用加密失败: {e}")
+            logger.error(f"Failed to enable encryption: {e}")
             return False
 
     def disable_encryption(self) -> bool:
         """
-        禁用配置文件加密
+        Disable configuration file encryption.
 
         Returns:
-            bool: 是否禁用成功
+            bool: Success or failure
         """
         try:
             self.auth_config.encryption_enabled = False
             self._save_config()
 
-            logger.info("已禁用配置文件加密")
+            logger.info("Encryption disabled for config file")
             return True
 
         except Exception as e:
-            logger.error(f"禁用加密失败: {e}")
+            logger.error(f"Failed to disable encryption: {e}")
             return False
 
     def validate_account(self, account: TradingViewAccount) -> bool:
         """
-        验证账号配置有效性
+        Validate account configuration structure.
 
         Args:
-            account: 账号配置
+            account: Account config
 
         Returns:
-            bool: 是否有效
+            bool: Validity
         """
         try:
-            # 基础字段验证
+            # Basic validation
             if not account.session_token or not account.signature:
-                logger.error("缺少必需的认证信息")
+                logger.error("Missing required authentication info")
                 return False
 
-            # Token格式验证（简单检查）
+            # Simple format check
             if len(account.session_token) < 10 or len(account.signature) < 10:
-                logger.error("认证信息格式无效")
+                logger.error("Invalid authentication info format")
                 return False
 
-            # 服务器选择验证
+            # Server check
             valid_servers = ['data', 'prodata', 'tradingview']
             if account.server not in valid_servers:
-                logger.warning(f"不常见的服务器选择: {account.server}")
+                logger.warning(f"Uncommon server selection: {account.server}")
 
             return True
 
         except Exception as e:
-            logger.error(f"账号验证失败: {e}")
+            logger.error(f"Account validation failed: {e}")
             return False
 
 
-# 全局认证管理器实例
+# Global singleton instance
 _auth_manager: Optional[TradingViewAuthManager] = None
 
 
 def get_auth_manager(config_file: Optional[str] = None,
                     encryption_password: Optional[str] = None) -> TradingViewAuthManager:
     """
-    获取全局认证管理器实例
+    Retrieve the global singleton authentication manager.
 
     Args:
-        config_file: 配置文件路径
-        encryption_password: 加密密码
+        config_file: Config file path
+        encryption_password: Password for encryption
 
     Returns:
-        TradingViewAuthManager: 认证管理器实例
+        TradingViewAuthManager instance
     """
     global _auth_manager
 
@@ -587,13 +581,13 @@ def get_auth_manager(config_file: Optional[str] = None,
 
 def get_tradingview_auth(account_name: Optional[str] = None) -> Optional[Dict[str, str]]:
     """
-    获取TradingView认证信息的便捷函数
+    Helper function to get TradingView auth info.
 
     Args:
-        account_name: 账号名称
+        account_name: Optional account name
 
     Returns:
-        Dict[str, str]: 认证信息字典，包含token、signature、server
+        Dict: Auth info (token, signature, server)
     """
     auth_manager = get_auth_manager()
     account = auth_manager.get_account(account_name)
@@ -608,19 +602,18 @@ def get_tradingview_auth(account_name: Optional[str] = None) -> Optional[Dict[st
     return None
 
 
-# 便捷函数
 def create_account_from_env() -> Optional[TradingViewAccount]:
-    """从环境变量创建账号配置"""
+    """Helper to create account configuration from current environment variables."""
     session_token = os.getenv('TV_SESSION')
     signature = os.getenv('TV_SIGNATURE')
 
     if session_token and signature:
         return TradingViewAccount(
-            name=input("请输入账号名称: ").strip() or "default",
+            name=input("Enter account name: ").strip() or "default",
             session_token=session_token,
             signature=signature,
             server=os.getenv('TV_SERVER', 'data'),
-            description=input("请输入账号描述(可选): ").strip() or "从环境变量创建"
+            description=input("Enter account description (optional): ").strip() or "Created from environment variables"
         )
 
     return None

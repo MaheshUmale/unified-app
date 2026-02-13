@@ -1,184 +1,183 @@
-# TradingView K线API 快速启动指南
+# TradingView K-Line API Quick Start Guide
 
-## 🚀 一分钟快速启动
+## 🚀 One-Minute Quick Start
 
-### 第1步: 安装依赖
+### Step 1: Install Dependencies
 
 ```bash
 pip install fastapi uvicorn
 ```
 
-### 第2步: 启动服务
+### Step 2: Start Service
 
 ```bash
-cd /Users/zerone/code/trading/chan.py
 python -m tradingview.kline_api_server
 ```
 
-你会看到:
+You will see:
 
 ```
 ==========================================
-🚀 TradingView K线数据HTTP API服务
+🚀 TradingView K-Line Data HTTP API Service
 ==========================================
 
-📡 服务地址: http://0.0.0.0:8000
-📚 API文档: http://0.0.0.0:8000/docs
-📊 ReDoc文档: http://0.0.0.0:8000/redoc
+📡 Service Address: http://0.0.0.0:8000
+📚 API Docs: http://0.0.0.0:8000/docs
+📊 ReDoc: http://0.0.0.0:8000/redoc
 
-示例请求:
+Example Requests:
   curl "http://0.0.0.0:8000/klines?symbol=OANDA:XAUUSD&timeframe=15&count=100"
   curl "http://0.0.0.0:8000/klines?symbol=BTCUSDT&timeframe=15m&count=50"
   curl "http://0.0.0.0:8000/health"
   curl "http://0.0.0.0:8000/stats"
 
 ==========================================
-按 Ctrl+C 停止服务
+Press Ctrl+C to stop service
 ```
 
-### 第3步: 测试请求
+### Step 3: Test Request
 
-打开新终端，执行测试:
+Open a new terminal and execute tests:
 
 ```bash
-# 测试1: 健康检查
+# Test 1: Health Check
 curl "http://localhost:8000/health"
 
-# 测试2: 获取黄金15分钟K线
+# Test 2: Get Gold 15-minute K-lines
 curl "http://localhost:8000/klines?symbol=OANDA:XAUUSD&timeframe=15&count=10"
 
-# 测试3: 获取BTC K线（简化格式）
+# Test 3: Get BTC K-lines (Simple format)
 curl "http://localhost:8000/klines?symbol=BTCUSDT&timeframe=15m&count=5&format=simple"
 ```
 
-或者使用测试脚本:
+Or use the test script:
 
 ```bash
 chmod +x test_kline_api.sh
 ./test_kline_api.sh
 ```
 
-### 第4步: 浏览器访问
+### Step 4: Browser Access
 
-在浏览器中打开: http://localhost:8000/docs
+Open in browser: http://localhost:8000/docs
 
-你会看到交互式API文档，可以直接在浏览器中测试所有接口。
+You will see the interactive API documentation where you can test all interfaces directly in the browser.
 
-## 📝 常用命令
+## 📝 Common Commands
 
-### 启动服务
+### Start Service
 
 ```bash
-# 默认端口8000
+# Default port 8000
 python -m tradingview.kline_api_server
 
-# 指定端口
+# Specify port
 python -m tradingview.kline_api_server --port 8080
 
-# 开发模式（自动重载）
+# Development mode (auto-reload)
 python -m tradingview.kline_api_server --reload
 
-# 多进程模式
+# Multi-process mode
 python -m tradingview.kline_api_server --workers 4
 ```
 
-### API请求示例
+### API Request Examples
 
 ```bash
-# 1. 获取黄金15分钟K线
+# 1. Get Gold 15-minute K-lines
 curl "http://localhost:8000/klines?symbol=OANDA:XAUUSD&timeframe=15&count=100"
 
-# 2. 获取比特币1小时K线
+# 2. Get Bitcoin 1-hour K-lines
 curl "http://localhost:8000/klines?symbol=BTCUSDT&timeframe=1h&count=50&format=simple"
 
-# 3. 批量获取多个品种
+# 3. Batch get multiple symbols
 curl "http://localhost:8000/batch_klines?symbols=BTCUSDT,ETHUSDT&timeframe=15&count=20"
 
-# 4. 获取高质量数据
+# 4. Get high-quality data
 curl "http://localhost:8000/klines?symbol=OANDA:XAUUSD&timeframe=15&count=100&quality=financial"
 
-# 5. 健康检查
+# 5. Health Check
 curl "http://localhost:8000/health"
 
-# 6. 服务统计
+# 6. Service Statistics
 curl "http://localhost:8000/stats"
 ```
 
-## 🎯 核心功能
+## 🎯 Core Features
 
-### 1. 单品种K线获取
+### 1. Single Symbol K-Line Retrieval
 
-**最简单的请求**:
+**Simplest request**:
 ```bash
 curl "http://localhost:8000/klines?symbol=OANDA:XAUUSD&timeframe=15&count=100"
 ```
 
-**完整参数**:
+**Full parameters**:
 ```bash
 curl "http://localhost:8000/klines?symbol=OANDA:XAUUSD&timeframe=15&count=100&quality=production&use_cache=true&format=simple"
 ```
 
-### 2. 批量获取
+### 2. Batch Retrieval
 
-**获取多个品种**:
+**Get multiple symbols**:
 ```bash
 curl "http://localhost:8000/batch_klines?symbols=BINANCE:BTCUSDT,BINANCE:ETHUSDT,OANDA:XAUUSD&timeframe=15&count=50"
 ```
 
-### 3. 不同时间框架
+### 3. Different Timeframes
 
 ```bash
-# 1分钟
+# 1 minute
 curl "http://localhost:8000/klines?symbol=BTCUSDT&timeframe=1m&count=60"
 
-# 15分钟
+# 15 minutes
 curl "http://localhost:8000/klines?symbol=BTCUSDT&timeframe=15m&count=100"
 
-# 1小时
+# 1 hour
 curl "http://localhost:8000/klines?symbol=BTCUSDT&timeframe=1h&count=24"
 
-# 4小时
+# 4 hours
 curl "http://localhost:8000/klines?symbol=BTCUSDT&timeframe=4h&count=30"
 
-# 日线
+# Daily
 curl "http://localhost:8000/klines?symbol=BTCUSDT&timeframe=1d&count=365"
 ```
 
-## 🔧 配置说明
+## 🔧 Configuration Description
 
-### 品种格式
+### Symbol Formats
 
-| 输入格式 | 自动转换为 | 说明 |
+| Input Format | Automatically Converted To | Description |
 |---------|-----------|------|
-| `OANDA:XAUUSD` | `OANDA:XAUUSD` | 标准格式，保持不变 |
-| `BTCUSDT` | `BINANCE:BTCUSDT` | 自动添加BINANCE前缀 |
-| `ETHUSDT` | `BINANCE:ETHUSDT` | 自动添加BINANCE前缀 |
+| `OANDA:XAUUSD` | `OANDA:XAUUSD` | Standard format, remains unchanged |
+| `BTCUSDT` | `BINANCE:BTCUSDT` | Automatically adds BINANCE prefix |
+| `ETHUSDT` | `BINANCE:ETHUSDT` | Automatically adds BINANCE prefix |
 
-### 时间框架格式
+### Timeframe Formats
 
-| 输入格式 | 标准格式 | 说明 |
+| Input Format | Standard Format | Description |
 |---------|---------|------|
-| `1`, `1m`, `1min` | `1` | 1分钟 |
-| `5`, `5m` | `5` | 5分钟 |
-| `15`, `15m` | `15` | 15分钟 |
-| `30`, `30m` | `30` | 30分钟 |
-| `60`, `1h` | `60` | 1小时 |
-| `240`, `4h` | `240` | 4小时 |
-| `1D`, `1d` | `1D` | 日线 |
-| `1W`, `1w` | `1W` | 周线 |
-| `1M` | `1M` | 月线 |
+| `1`, `1m`, `1min` | `1` | 1 minute |
+| `5`, `5m` | `5` | 5 minutes |
+| `15`, `15m` | `15` | 15 minutes |
+| `30`, `30m` | `30` | 30 minutes |
+| `60`, `1h` | `60` | 1 hour |
+| `240`, `4h` | `240` | 4 hours |
+| `1D`, `1d` | `1D` | Daily |
+| `1W`, `1w` | `1W` | Weekly |
+| `1M` | `1M` | Monthly |
 
-### 质量等级
+### Quality Levels
 
-| 等级 | 质量要求 | 使用场景 |
+| Level | Quality Requirement | Use Case |
 |-----|---------|---------|
-| `development` | ≥90% | 开发测试 |
-| `production` | ≥95% | 生产环境（默认） |
-| `financial` | ≥98% | 金融级交易 |
+| `development` | ≥90% | Dev/Test |
+| `production` | ≥95% | Production Environment (Default) |
+| `financial` | ≥98% | Financial-grade Trading |
 
-## 📊 响应格式
+## 📊 Response Format
 
-### Simple格式（推荐）
+### Simple Format (Recommended)
 
 ```json
 {
@@ -209,72 +208,72 @@ curl "http://localhost:8000/klines?symbol=BTCUSDT&timeframe=1d&count=365"
 }
 ```
 
-### JSON格式（完整）
+### JSON Format (Full)
 
-包含更多元数据，如质量指标、请求ID、响应时间等。
+Contains more metadata such as quality metrics, request ID, response time, etc.
 
-## 🐛 常见问题
+## 🐛 Common Questions
 
-### Q1: 服务启动失败
+### Q1: Service Failed to Start
 
-**问题**: `ModuleNotFoundError: No module named 'fastapi'`
+**Problem**: `ModuleNotFoundError: No module named 'fastapi'`
 
-**解决**:
+**Solution**:
 ```bash
 pip install fastapi uvicorn
 ```
 
-### Q2: 端口被占用
+### Q2: Port Already Occupied
 
-**问题**: `Address already in use`
+**Problem**: `Address already in use`
 
-**解决**:
+**Solution**:
 ```bash
-# 方法1: 使用其他端口
+# Option 1: Use another port
 python -m tradingview.kline_api_server --port 8080
 
-# 方法2: 停止占用8000端口的进程
+# Option 2: Stop the process occupying port 8000
 lsof -i :8000
 kill -9 <PID>
 ```
 
-### Q3: 获取数据失败
+### Q3: Failed to Retrieve Data
 
-**问题**: 返回500错误
+**Problem**: Returns 500 error
 
-**解决**:
+**Solution**:
 ```bash
-# 1. 检查服务健康
+# 1. Check service health
 curl "http://localhost:8000/health"
 
-# 2. 查看服务日志
-# 服务日志会显示详细错误信息
+# 2. View service logs
+# Service logs will show detailed error messages
 
-# 3. 检查TradingView连接
-# 确保网络正常，TradingView可访问
+# 3. Check TradingView connection
+# Ensure network is normal and TradingView is accessible
 ```
 
-### Q4: 数据质量低
+### Q4: Low Data Quality
 
-**问题**: quality_score < 0.95
+**Problem**: quality_score < 0.95
 
-**解决**:
+**Solution**:
 ```bash
-# 1. 不使用缓存，获取最新数据
+# 1. Don't use cache, get latest data
 curl "http://localhost:8000/klines?symbol=BTCUSDT&timeframe=15&count=100&use_cache=false"
 
-# 2. 降低质量要求
+# 2. Lower quality requirements
 curl "http://localhost:8000/klines?symbol=BTCUSDT&timeframe=15&count=100&quality=development"
 ```
 
-## 🎓 进阶使用
+## 🎓 Advanced Usage
 
-### Python客户端示例
+### Python Client Example
 
 ```python
 import requests
 
-# 获取K线数据
+# Get K-line data
 response = requests.get(
     "http://localhost:8000/klines",
     params={
@@ -288,23 +287,23 @@ response = requests.get(
 data = response.json()
 
 if data["success"]:
-    print(f"获取到 {data['count']} 条K线数据")
-    for kline in data["data"][:5]:  # 打印前5条
-        print(f"{kline['datetime']}: 开={kline['open']}, "
-              f"高={kline['high']}, 低={kline['low']}, 收={kline['close']}")
+    print(f"Obtained {data['count']} K-line data points")
+    for kline in data["data"][:5]:  # Print first 5
+        print(f"{kline['datetime']}: O={kline['open']}, "
+              f"H={kline['high']}, L={kline['low']}, C={kline['close']}")
 else:
-    print(f"获取失败: {data.get('error')}")
+    print(f"Retrieval Failed: {data.get('error')}")
 ```
 
-### JavaScript客户端示例
+### JavaScript Client Example
 
 ```javascript
-// 使用fetch API
+// Using fetch API
 fetch('http://localhost:8000/klines?symbol=BTCUSDT&timeframe=15&count=100&format=simple')
   .then(response => response.json())
   .then(data => {
     if (data.success) {
-      console.log(`获取到 ${data.count} 条K线数据`);
+      console.log(`Obtained ${data.count} K-lines`);
       data.data.forEach(kline => {
         console.log(`${kline.datetime}: ${kline.close}`);
       });
@@ -313,13 +312,13 @@ fetch('http://localhost:8000/klines?symbol=BTCUSDT&timeframe=15&count=100&format
   .catch(error => console.error('Error:', error));
 ```
 
-### 与缠论系统集成
+### Integration with Analysis Systems
 
 ```python
 from tradingview.historical_kline_service import HistoricalKlineService
 import requests
 
-# 通过API获取数据
+# Get data via API
 response = requests.get(
     "http://localhost:8000/klines",
     params={
@@ -332,27 +331,27 @@ response = requests.get(
 
 klines = response.json()["data"]
 
-# 转换为chanpy格式进行分析
-# ... 后续缠论分析逻辑
+# Convert to system format for analysis
+# ... Subsequent analysis logic
 ```
 
-## 📚 相关资源
+## 📚 Resources
 
-- **详细文档**: [README_KLINE_API.md](./README_KLINE_API.md)
-- **API交互文档**: http://localhost:8000/docs
-- **源代码**: [kline_api_server.py](./kline_api_server.py)
-- **服务层**: [historical_kline_service.py](./historical_kline_service.py)
+- **Detailed Documentation**: [README_KLINE_API.md](./README_KLINE_API.md)
+- **Interactive API Docs**: http://localhost:8000/docs
+- **Source Code**: [kline_api_server.py](./kline_api_server.py)
+- **Service Layer**: [historical_kline_service.py](./historical_kline_service.py)
 
-## 🎉 开始使用
+## 🎉 Start Using
 
-现在你已经了解了如何使用K线API服务，开始获取你需要的数据吧！
+Now that you know how to use the K-line API service, start getting the data you need!
 
 ```bash
-# 启动服务
+# Start Service
 python -m tradingview.kline_api_server
 
-# 新终端测试
+# Test in new terminal
 curl "http://localhost:8000/klines?symbol=OANDA:XAUUSD&timeframe=15&count=100"
 ```
 
-祝你使用愉快！🚀
+Enjoy using it! 🚀

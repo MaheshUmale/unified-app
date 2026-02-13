@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 
 """
-TradingView数据缓存管理器
-实现SQLite本地缓存和内存缓存的双层缓存架构
+TradingView Data Cache Manager
+Implements a dual-layer cache architecture using SQLite local cache and memory cache.
 """
 
 import asyncio
@@ -25,7 +25,7 @@ logger = get_logger(__name__)
 
 
 class CacheStatus(Enum):
-    """缓存状态枚举"""
+    """Cache status enum"""
     ACTIVE = "active"
     INACTIVE = "inactive"
     ERROR = "error"
@@ -33,7 +33,7 @@ class CacheStatus(Enum):
 
 
 class CacheLevel(Enum):
-    """缓存级别枚举"""
+    """Cache level enum"""
     MEMORY = "memory"
     SQLITE = "sqlite"
     BOTH = "both"
@@ -41,7 +41,7 @@ class CacheLevel(Enum):
 
 @dataclass
 class CacheEntry:
-    """缓存条目"""
+    """Cache entry"""
     key: str
     data: Dict[str, Any]
     timestamp: int
@@ -53,7 +53,7 @@ class CacheEntry:
 
 @dataclass
 class CacheStatistics:
-    """缓存统计信息"""
+    """Cache statistics information"""
     total_entries: int
     memory_entries: int
     sqlite_entries: int
@@ -65,10 +65,10 @@ class CacheStatistics:
 
 
 class LRUCache:
-    """LRU内存缓存实现"""
+    """LRU memory cache implementation"""
 
     def __init__(self, max_size: int = 1000):
-        """初始化LRU缓存"""
+        """Initialize LRU cache"""
         self.max_size = max_size
         self.cache = OrderedDict()
         self.lock = threading.RLock()
@@ -76,10 +76,10 @@ class LRUCache:
         self.miss_count = 0
 
     def get(self, key: str) -> Optional[CacheEntry]:
-        """获取缓存项"""
+        """Retrieve cache item"""
         with self.lock:
             if key in self.cache:
-                # 移到末尾表示最近使用
+                # Move to end to indicate recent use
                 entry = self.cache.pop(key)
                 self.cache[key] = entry
                 entry.access_count += 1
@@ -90,23 +90,23 @@ class LRUCache:
                 return None
 
     def put(self, key: str, entry: CacheEntry) -> None:
-        """存储缓存项"""
+        """Store cache item"""
         with self.lock:
             if key in self.cache:
-                # 更新现有项
+                # Update existing item
                 self.cache.pop(key)
                 self.cache[key] = entry
             else:
-                # 添加新项
+                # Add new item
                 if len(self.cache) >= self.max_size:
-                    # 移除最久未使用的项
+                    # Remove least recently used item
                     oldest_key, _ = self.cache.popitem(last=False)
-                    logger.debug(f"LRU缓存淘汰: {oldest_key}")
+                    logger.debug(f"LRU cache eviction: {oldest_key}")
 
                 self.cache[key] = entry
 
     def remove(self, key: str) -> bool:
-        """移除缓存项"""
+        """Remove cache item"""
         with self.lock:
             if key in self.cache:
                 del self.cache[key]
@@ -114,34 +114,34 @@ class LRUCache:
             return False
 
     def clear(self) -> None:
-        """清空缓存"""
+        """Clear cache"""
         with self.lock:
             self.cache.clear()
             self.hit_count = 0
             self.miss_count = 0
 
     def get_hit_rate(self) -> float:
-        """获取命中率"""
+        """Get hit rate"""
         total = self.hit_count + self.miss_count
         return self.hit_count / total if total > 0 else 0.0
 
     def get_size(self) -> int:
-        """获取缓存大小"""
+        """Get cache size"""
         return len(self.cache)
 
 
 class SQLiteCacheManager:
-    """SQLite缓存管理器"""
+    """SQLite cache manager"""
 
     def __init__(self, db_path: str):
-        """初始化SQLite缓存"""
+        """Initialize SQLite cache"""
         self.db_path = db_path
         self.connection_pool = {}
         self.lock = threading.RLock()
         self._init_database()
 
     def _get_connection(self) -> sqlite3.Connection:
-        """获取数据库连接"""
+        """Get database connection"""
         thread_id = threading.get_ident()
 
         if thread_id not in self.connection_pool:
@@ -151,7 +151,7 @@ class SQLiteCacheManager:
                 check_same_thread=False
             )
             conn.row_factory = sqlite3.Row
-            # 优化SQLite性能
+            # Optimize SQLite performance
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")
             conn.execute("PRAGMA cache_size=10000")
@@ -162,10 +162,10 @@ class SQLiteCacheManager:
         return self.connection_pool[thread_id]
 
     def _init_database(self) -> None:
-        """初始化数据库表"""
+        """Initialize database tables"""
         conn = self._get_connection()
 
-        # 创建K线数据表
+        # Create K-line data table
         conn.execute("""
             CREATE TABLE IF NOT EXISTS kline_cache (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -183,7 +183,7 @@ class SQLiteCacheManager:
             )
         """)
 
-        # 创建实时数据表
+        # Create real-time data table
         conn.execute("""
             CREATE TABLE IF NOT EXISTS realtime_cache (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -197,7 +197,7 @@ class SQLiteCacheManager:
             ) WITHOUT ROWID
         """)
 
-        # 创建品种信息表
+        # Create symbol information table
         conn.execute("""
             CREATE TABLE IF NOT EXISTS symbol_info (
                 symbol TEXT PRIMARY KEY,
@@ -210,7 +210,7 @@ class SQLiteCacheManager:
             ) WITHOUT ROWID
         """)
 
-        # 创建缓存统计表
+        # Create cache statistics table
         conn.execute("""
             CREATE TABLE IF NOT EXISTS cache_stats (
                 metric_name TEXT PRIMARY KEY,
@@ -219,19 +219,19 @@ class SQLiteCacheManager:
             ) WITHOUT ROWID
         """)
 
-        # 创建索引
+        # Create indexes
         conn.execute("CREATE INDEX IF NOT EXISTS idx_kline_symbol_timeframe ON kline_cache(symbol, timeframe)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_kline_timestamp ON kline_cache(timestamp)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_kline_expire ON kline_cache(expire_time)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_realtime_timestamp ON realtime_cache(timestamp)")
 
         conn.commit()
-        logger.info(f"SQLite缓存数据库初始化完成: {self.db_path}")
+        logger.info(f"SQLite cache database initialization complete: {self.db_path}")
 
     def store_kline_data(self, cache_key: str, symbol: str, timeframe: str,
                         data: Dict[str, Any], quality_score: float,
                         expire_seconds: int = 3600) -> bool:
-        """存储K线数据"""
+        """Store K-line data"""
         try:
             conn = self._get_connection()
 
@@ -253,15 +253,15 @@ class SQLiteCacheManager:
 
                 conn.commit()
 
-            logger.debug(f"SQLite存储K线数据: {cache_key}")
+            logger.debug(f"SQLite stored K-line data: {cache_key}")
             return True
 
         except Exception as e:
-            logger.error(f"SQLite存储K线数据失败: {e}")
+            logger.error(f"SQLite failed to store K-line data: {e}")
             return False
 
     def get_kline_data(self, cache_key: str) -> Optional[CacheEntry]:
-        """获取K线数据"""
+        """Retrieve K-line data"""
         try:
             conn = self._get_connection()
 
@@ -274,7 +274,7 @@ class SQLiteCacheManager:
                 row = cursor.fetchone()
 
                 if row:
-                    # 更新访问计数
+                    # Update access count
                     conn.execute("""
                         UPDATE kline_cache
                         SET access_count = access_count + 1, updated_at = ?
@@ -282,7 +282,7 @@ class SQLiteCacheManager:
                     """, (int(time.time()), cache_key))
                     conn.commit()
 
-                    # 构建缓存条目
+                    # Build cache entry
                     data = json.loads(row['data_json'])
                     entry = CacheEntry(
                         key=row['cache_key'],
@@ -294,17 +294,17 @@ class SQLiteCacheManager:
                         size_bytes=row['size_bytes']
                     )
 
-                    logger.debug(f"SQLite获取K线数据: {cache_key}")
+                    logger.debug(f"SQLite retrieved K-line data: {cache_key}")
                     return entry
 
                 return None
 
         except Exception as e:
-            logger.error(f"SQLite获取K线数据失败: {e}")
+            logger.error(f"SQLite failed to retrieve K-line data: {e}")
             return None
 
     def cleanup_expired_data(self) -> int:
-        """清理过期数据"""
+        """Cleanup expired data"""
         try:
             conn = self._get_connection()
             current_time = int(time.time())
@@ -318,21 +318,21 @@ class SQLiteCacheManager:
                 conn.commit()
 
             if deleted_count > 0:
-                logger.info(f"SQLite清理过期数据: {deleted_count}条")
+                logger.info(f"SQLite cleaned up {deleted_count} expired entries")
 
             return deleted_count
 
         except Exception as e:
-            logger.error(f"SQLite清理过期数据失败: {e}")
+            logger.error(f"SQLite failed to cleanup expired data: {e}")
             return 0
 
     def get_statistics(self) -> Dict[str, Any]:
-        """获取SQLite缓存统计"""
+        """Get SQLite cache statistics"""
         try:
             conn = self._get_connection()
 
             with self.lock:
-                # 统计K线缓存
+                # Stats for K-line cache
                 cursor = conn.execute("""
                     SELECT
                         COUNT(*) as total_entries,
@@ -344,7 +344,7 @@ class SQLiteCacheManager:
 
                 kline_stats = cursor.fetchone()
 
-                # 统计实时数据
+                # Stats for real-time data
                 cursor = conn.execute("SELECT COUNT(*) as count FROM realtime_cache")
                 realtime_count = cursor.fetchone()['count']
 
@@ -357,11 +357,11 @@ class SQLiteCacheManager:
                 }
 
         except Exception as e:
-            logger.error(f"获取SQLite统计失败: {e}")
+            logger.error(f"Failed to get SQLite statistics: {e}")
             return {}
 
     def clear_all_data(self) -> bool:
-        """清空所有缓存数据"""
+        """Clear all cache data"""
         try:
             conn = self._get_connection()
 
@@ -371,85 +371,85 @@ class SQLiteCacheManager:
                 conn.execute("DELETE FROM cache_stats")
                 conn.commit()
 
-            logger.info("SQLite缓存已清空")
+            logger.info("SQLite cache cleared")
             return True
 
         except Exception as e:
-            logger.error(f"清空SQLite缓存失败: {e}")
+            logger.error(f"Failed to clear SQLite cache: {e}")
             return False
 
 
 class DataCacheManager:
-    """数据缓存管理器 - 双层缓存架构"""
+    """Data Cache Manager - Dual-layer cache architecture"""
 
     def __init__(self, db_path: str = "tradingview_cache.db", max_memory_size: int = 1000):
-        """初始化缓存管理器"""
+        """Initialize cache manager"""
         self.db_path = db_path
         self.max_memory_size = max_memory_size
 
-        # 初始化双层缓存
+        # Initialize dual-layer cache
         self.memory_cache = LRUCache(max_memory_size)
         self.sqlite_cache = SQLiteCacheManager(db_path)
 
-        # 缓存统计
+        # Cache statistics
         self.total_requests = 0
         self.memory_hits = 0
         self.sqlite_hits = 0
         self.cache_misses = 0
         self.eviction_count = 0
 
-        # 状态管理
+        # State management
         self.status = CacheStatus.ACTIVE
         self.last_cleanup_time = int(time.time())
 
-        # 启动后台清理任务
+        # Start background cleanup task
         self._start_cleanup_task()
 
-        logger.info(f"数据缓存管理器初始化完成: {db_path}")
+        logger.info(f"Data Cache Manager initialized: {db_path}")
 
     def _generate_cache_key(self, symbol: str, timeframe: str, **kwargs) -> str:
-        """生成缓存键"""
-        # 标准化参数
+        """Generate cache key"""
+        # Standardize parameters
         params = {
             'symbol': symbol.upper(),
             'timeframe': timeframe,
             **kwargs
         }
 
-        # 生成稳定的哈希值
+        # Generate stable hash value
         param_str = json.dumps(params, sort_keys=True)
         return hashlib.md5(param_str.encode('utf-8')).hexdigest()
 
     async def get_historical_data(self, symbol: str, timeframe: str,
                                 count: int = 500, **kwargs) -> Optional[Dict[str, Any]]:
-        """获取历史数据"""
+        """Retrieve historical data"""
         cache_key = self._generate_cache_key(symbol, timeframe, count=count, **kwargs)
         self.total_requests += 1
 
-        # L1: 内存缓存
+        # L1: Memory Cache
         entry = self.memory_cache.get(cache_key)
         if entry and entry.expire_time > int(time.time()):
             self.memory_hits += 1
-            logger.debug(f"内存缓存命中: {cache_key}")
+            logger.debug(f"Memory cache hit: {cache_key}")
             return entry.data
 
-        # L2: SQLite缓存
+        # L2: SQLite Cache
         entry = self.sqlite_cache.get_kline_data(cache_key)
         if entry and entry.expire_time > int(time.time()):
             self.sqlite_hits += 1
-            # 提升到内存缓存
+            # Promote to memory cache
             await self.memory_cache.put(cache_key, entry)
-            logger.debug(f"SQLite缓存命中: {cache_key}")
+            logger.debug(f"SQLite cache hit: {cache_key}")
             return entry.data
 
-        # 缓存未命中
+        # Cache miss
         self.cache_misses += 1
-        logger.debug(f"缓存未命中: {cache_key}")
+        logger.debug(f"Cache miss: {cache_key}")
         return None
 
     async def store_historical_data(self, symbol: str, timeframe: str,
                                   data: Dict[str, Any], expire_seconds: int = 3600) -> bool:
-        """存储历史数据"""
+        """Store historical data"""
         cache_key = self._generate_cache_key(
             symbol, timeframe,
             count=len(data.get('klines', []))
@@ -458,7 +458,7 @@ class DataCacheManager:
         quality_score = data.get('quality_score', 1.0)
         current_time = int(time.time())
 
-        # 创建缓存条目
+        # Create cache entry
         data_json = json.dumps(data, ensure_ascii=False)
         size_bytes = len(data_json.encode('utf-8'))
 
@@ -472,26 +472,26 @@ class DataCacheManager:
             size_bytes=size_bytes
         )
 
-        # 存储到双层缓存
+        # Store in dual-layer cache
         success = True
 
-        # 存储到内存缓存
+        # Store in memory cache
         await self.memory_cache.put(cache_key, entry)
 
-        # 存储到SQLite缓存
+        # Store in SQLite cache
         sqlite_success = self.sqlite_cache.store_kline_data(
             cache_key, symbol, timeframe, data, quality_score, expire_seconds
         )
 
         if not sqlite_success:
-            logger.warning(f"SQLite存储失败，仅保存在内存: {cache_key}")
+            logger.warning(f"SQLite storage failed, only saved in memory: {cache_key}")
             success = False
 
-        logger.debug(f"缓存存储完成: {cache_key}")
+        logger.debug(f"Cache storage complete: {cache_key}")
         return success
 
     async def get_cached_symbols(self) -> List[str]:
-        """获取已缓存的品种列表"""
+        """Get list of symbols already in cache"""
         try:
             conn = self.sqlite_cache._get_connection()
 
@@ -505,11 +505,11 @@ class DataCacheManager:
             return symbols
 
         except Exception as e:
-            logger.error(f"获取缓存品种列表失败: {e}")
+            logger.error(f"Failed to get cached symbol list: {e}")
             return []
 
     def get_hit_rate(self) -> float:
-        """获取总体缓存命中率"""
+        """Get overall cache hit rate"""
         if self.total_requests == 0:
             return 0.0
 
@@ -517,11 +517,11 @@ class DataCacheManager:
         return total_hits / self.total_requests
 
     def get_status(self) -> CacheStatus:
-        """获取缓存状态"""
+        """Get cache status"""
         return self.status
 
     async def get_statistics(self) -> CacheStatistics:
-        """获取缓存统计信息"""
+        """Get cache statistics information"""
         memory_stats = {
             'memory_entries': self.memory_cache.get_size(),
             'memory_hit_rate': self.memory_cache.get_hit_rate()
@@ -529,7 +529,7 @@ class DataCacheManager:
 
         sqlite_stats = self.sqlite_cache.get_statistics()
 
-        # 计算总体统计
+        # Calculate overall stats
         total_entries = memory_stats['memory_entries'] + sqlite_stats.get('sqlite_active_entries', 0)
         total_size_mb = sqlite_stats.get('sqlite_total_size_bytes', 0) / (1024 * 1024)
         hit_rate = self.get_hit_rate()
@@ -547,63 +547,63 @@ class DataCacheManager:
         )
 
     async def clear_all_cache(self) -> bool:
-        """清空所有缓存"""
+        """Clear all cache"""
         try:
-            # 清空内存缓存
+            # Clear memory cache
             self.memory_cache.clear()
 
-            # 清空SQLite缓存
+            # Clear SQLite cache
             sqlite_success = self.sqlite_cache.clear_all_data()
 
-            # 重置统计
+            # Reset statistics
             self.total_requests = 0
             self.memory_hits = 0
             self.sqlite_hits = 0
             self.cache_misses = 0
             self.eviction_count = 0
 
-            logger.info("所有缓存已清空")
+            logger.info("All caches cleared")
             return sqlite_success
 
         except Exception as e:
-            logger.error(f"清空缓存失败: {e}")
+            logger.error(f"Failed to clear cache: {e}")
             return False
 
     def _start_cleanup_task(self):
-        """启动后台清理任务"""
+        """Start background cleanup task"""
         def cleanup_worker():
             while self.status == CacheStatus.ACTIVE:
                 try:
-                    # 清理过期的SQLite数据
+                    # Cleanup expired SQLite data
                     deleted_count = self.sqlite_cache.cleanup_expired_data()
                     if deleted_count > 0:
                         self.eviction_count += deleted_count
 
                     self.last_cleanup_time = int(time.time())
 
-                    # 每5分钟清理一次
+                    # Cleanup every 5 minutes
                     time.sleep(300)
 
                 except Exception as e:
-                    logger.error(f"后台清理任务失败: {e}")
-                    time.sleep(60)  # 出错后等待1分钟再试
+                    logger.error(f"Background cleanup task failed: {e}")
+                    time.sleep(60)  # Wait 1 minute after error
 
         cleanup_thread = threading.Thread(target=cleanup_worker, daemon=True)
         cleanup_thread.start()
-        logger.info("后台清理任务已启动")
+        logger.info("Background cleanup task started")
 
 
-# ==================== 使用示例 ====================
+# ==================== Usage Example ====================
 
 async def example_usage():
-    """使用示例"""
-    # 初始化缓存管理器
+    """Usage example"""
+    # Initialize cache manager
     cache_manager = DataCacheManager(
         db_path="example_cache.db",
         max_memory_size=500
     )
 
-    # 存储数据
+    # Store data
     sample_data = {
         'symbol': 'BINANCE:BTCUSDT',
         'timeframe': '15',
@@ -624,19 +624,19 @@ async def example_usage():
         'BINANCE:BTCUSDT', '15', sample_data
     )
 
-    # 获取数据
+    # Retrieve data
     cached_data = await cache_manager.get_historical_data(
         'BINANCE:BTCUSDT', '15', count=500
     )
 
     if cached_data:
-        print(f"缓存命中: {cached_data['symbol']}")
+        print(f"Cache hit: {cached_data['symbol']}")
     else:
-        print("缓存未命中")
+        print("Cache miss")
 
-    # 获取统计信息
+    # Get statistics
     stats = await cache_manager.get_statistics()
-    print(f"缓存统计: {asdict(stats)}")
+    print(f"Cache statistics: {asdict(stats)}")
 
 
 if __name__ == "__main__":

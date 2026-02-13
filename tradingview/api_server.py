@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 
 """
-TradingView模块外部API服务器
-提供RESTful API、WebSocket API和数据管理接口
+TradingView Module External API Server
+Provides RESTful API, WebSocket API, and data management interfaces.
 """
 
 import asyncio
@@ -29,21 +29,21 @@ from tradingview.utils import get_logger
 logger = get_logger(__name__)
 
 
-# ==================== 数据模型定义 ====================
+# ==================== Data Model Definitions ====================
 
 class DataRequest(BaseModel):
-    """数据请求模型"""
-    symbol: str = Field(..., description="交易品种")
-    timeframe: str = Field(..., description="时间框架")
-    count: int = Field(default=500, description="数据数量")
-    start_time: Optional[int] = Field(None, description="开始时间戳")
-    end_time: Optional[int] = Field(None, description="结束时间戳")
-    quality_check: bool = Field(default=True, description="是否进行质量检查")
-    use_cache: bool = Field(default=True, description="是否使用缓存")
+    """Data request model"""
+    symbol: str = Field(..., description="Trading symbol")
+    timeframe: str = Field(..., description="Timeframe")
+    count: int = Field(default=500, description="Data point count")
+    start_time: Optional[int] = Field(None, description="Start timestamp")
+    end_time: Optional[int] = Field(None, description="End timestamp")
+    quality_check: bool = Field(default=True, description="Whether to perform quality check")
+    use_cache: bool = Field(default=True, description="Whether to use cache")
 
 
 class KlineData(BaseModel):
-    """K线数据模型"""
+    """K-line data model"""
     timestamp: int
     datetime: str
     open: float
@@ -54,7 +54,7 @@ class KlineData(BaseModel):
 
 
 class MarketDataResponse(BaseModel):
-    """市场数据响应模型"""
+    """Market data response model"""
     status: str
     message: str
     data: Dict[str, Any]
@@ -63,7 +63,7 @@ class MarketDataResponse(BaseModel):
 
 
 class HealthStatus(BaseModel):
-    """健康状态模型"""
+    """Health status model"""
     status: str
     uptime: float
     connection_state: str
@@ -73,27 +73,27 @@ class HealthStatus(BaseModel):
 
 
 class SubscriptionRequest(BaseModel):
-    """订阅请求模型"""
+    """Subscription request model"""
     symbols: List[str]
     timeframes: List[str]
     data_types: List[str] = ["kline", "quote"]
 
 
-# ==================== API服务器类 ====================
+# ==================== API Server Class ====================
 
 class TradingViewAPIServer:
-    """TradingView API服务器"""
+    """TradingView API Server"""
 
     def __init__(self, config: Dict[str, Any] = None):
-        """初始化API服务器"""
+        """Initialize API server"""
         self.config = config or {}
         self.app = FastAPI(
             title="TradingView Data API",
-            description="专业级TradingView数据源API服务",
+            description="Professional-grade TradingView data source API service",
             version="2.0.0"
         )
 
-        # 添加CORS中间件
+        # Add CORS middleware
         self.app.add_middleware(
             CORSMiddleware,
             allow_origins=["*"],
@@ -102,74 +102,74 @@ class TradingViewAPIServer:
             allow_headers=["*"],
         )
 
-        # 初始化组件
+        # Initialize components
         self.client = None
         self.cache_manager = None
         self.quality_engine = None
         self.websocket_connections = set()
         self.subscription_manager = {}
 
-        # 启动时间
+        # Start time
         self.start_time = time.time()
 
-        # 注册路由
+        # Register routes
         self._register_routes()
 
     async def initialize(self):
-        """初始化服务组件"""
+        """Initialize service components"""
         try:
-            # 初始化增强客户端
+            # Initialize enhanced client
             self.client = EnhancedTradingViewClient({
                 'auto_reconnect': True,
                 'health_monitoring': True,
                 'performance_optimization': True
             })
 
-            # 初始化缓存管理器
+            # Initialize cache manager
             self.cache_manager = DataCacheManager(
                 db_path=self.config.get('cache_db_path', 'tradingview_cache.db'),
                 max_memory_size=self.config.get('max_memory_cache', 1000)
             )
 
-            # 初始化质量引擎
+            # Initialize quality engine
             self.quality_engine = DataQualityEngine()
 
-            # 连接客户端
+            # Connect client
             await self.client.connect()
 
-            logger.info("TradingView API服务器初始化成功")
+            logger.info("TradingView API server initialized successfully")
 
         except Exception as e:
-            logger.error(f"API服务器初始化失败: {e}")
+            logger.error(f"API server initialization failed: {e}")
             raise
 
     def _register_routes(self):
-        """注册API路由"""
+        """Register API routes"""
 
         # ==================== RESTful API ====================
 
         @self.app.get("/api/v1/health", response_model=HealthStatus)
         async def get_health_status():
-            """获取健康状态"""
+            """Get health status"""
             try:
                 uptime = time.time() - self.start_time
 
-                # 获取连接状态
+                # Get connection state
                 connection_state = "unknown"
                 if self.client and hasattr(self.client, 'monitor'):
                     connection_state = self.client.monitor.state.value
 
-                # 获取数据质量评分
+                # Get data quality score
                 quality_score = 0.0
                 if self.quality_engine:
                     quality_score = self.quality_engine.get_overall_quality_score()
 
-                # 获取缓存状态
+                # Get cache status
                 cache_status = "unknown"
                 if self.cache_manager:
                     cache_status = self.cache_manager.get_status().value
 
-                # 获取详细指标
+                # Get detailed metrics
                 metrics = {
                     "total_symbols": len(self.subscription_manager),
                     "active_connections": len(self.websocket_connections),
@@ -187,16 +187,16 @@ class TradingViewAPIServer:
                 )
 
             except Exception as e:
-                logger.error(f"获取健康状态失败: {e}")
+                logger.error(f"Failed to get health status: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
         @self.app.post("/api/v1/data/historical", response_model=MarketDataResponse)
         async def get_historical_data(request: DataRequest):
-            """获取历史数据"""
+            """Get historical data"""
             try:
-                logger.info(f"收到历史数据请求: {request.symbol} {request.timeframe}")
+                logger.info(f"Received historical data request: {request.symbol} {request.timeframe}")
 
-                # 检查缓存
+                # Check cache
                 cached_data = None
                 if request.use_cache and self.cache_manager:
                     cached_data = await self.cache_manager.get_historical_data(
@@ -206,7 +206,7 @@ class TradingViewAPIServer:
                     )
 
                 if cached_data and cached_data['quality_score'] >= 0.9:
-                    logger.info(f"使用缓存数据: {request.symbol}")
+                    logger.info(f"Using cached data: {request.symbol}")
                     return MarketDataResponse(
                         status="success",
                         message="Data from cache",
@@ -219,13 +219,13 @@ class TradingViewAPIServer:
                         timestamp=int(time.time())
                     )
 
-                # 从TradingView获取数据
+                # Retrieve data from TradingView
                 if not self.client:
-                    raise HTTPException(status_code=503, detail="TradingView客户端未连接")
+                    raise HTTPException(status_code=503, detail="TradingView client not connected")
 
                 chart_session = self.client.Session.Chart()
 
-                # 构建请求参数
+                # Build request parameters
                 params = {
                     'symbol': request.symbol,
                     'timeframe': request.timeframe,
@@ -237,19 +237,19 @@ class TradingViewAPIServer:
                 if request.end_time:
                     params['to_timestamp'] = request.end_time
 
-                # 获取数据
+                # Get data
                 raw_data = await chart_session.get_historical_data(**params)
 
-                # 数据质量检查
+                # Data quality check
                 quality_score = 1.0
                 if request.quality_check and self.quality_engine:
                     quality_result = await self.quality_engine.validate_kline_data(raw_data)
                     quality_score = quality_result.quality_score
 
                     if quality_score < 0.8:
-                        logger.warning(f"数据质量较低: {quality_score:.2f}")
+                        logger.warning(f"Low data quality: {quality_score:.2f}")
 
-                # 格式化数据
+                # Format data
                 formatted_data = {
                     'symbol': request.symbol,
                     'timeframe': request.timeframe,
@@ -257,7 +257,7 @@ class TradingViewAPIServer:
                     'quality_score': quality_score
                 }
 
-                # 更新缓存
+                # Update cache
                 if self.cache_manager and quality_score >= 0.8:
                     await self.cache_manager.store_historical_data(
                         request.symbol,
@@ -279,14 +279,14 @@ class TradingViewAPIServer:
                 )
 
             except Exception as e:
-                logger.error(f"获取历史数据失败: {e}")
+                logger.error(f"Failed to get historical data: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
         @self.app.get("/api/v1/symbols", response_model=Dict[str, Any])
         async def get_supported_symbols():
-            """获取支持的交易品种"""
+            """Get supported trading symbols"""
             try:
-                # 从缓存获取品种列表
+                # Get symbol list from cache
                 symbols = []
                 if self.cache_manager:
                     symbols = await self.cache_manager.get_cached_symbols()
@@ -306,15 +306,15 @@ class TradingViewAPIServer:
                 }
 
             except Exception as e:
-                logger.error(f"获取品种列表失败: {e}")
+                logger.error(f"Failed to get symbol list: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
         @self.app.get("/api/v1/cache/stats", response_model=Dict[str, Any])
         async def get_cache_statistics():
-            """获取缓存统计信息"""
+            """Get cache statistics info"""
             try:
                 if not self.cache_manager:
-                    raise HTTPException(status_code=503, detail="缓存管理器未初始化")
+                    raise HTTPException(status_code=503, detail="Cache manager not initialized")
 
                 stats = await self.cache_manager.get_statistics()
 
@@ -324,66 +324,66 @@ class TradingViewAPIServer:
                 }
 
             except Exception as e:
-                logger.error(f"获取缓存统计失败: {e}")
+                logger.error(f"Failed to get cache statistics: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
         # ==================== WebSocket API ====================
 
         @self.app.websocket("/ws/realtime")
         async def websocket_realtime_data(websocket: WebSocket):
-            """实时数据WebSocket端点"""
+            """Real-time data WebSocket endpoint"""
             await websocket.accept()
             self.websocket_connections.add(websocket)
 
             try:
-                logger.info("新的WebSocket连接建立")
+                logger.info("New WebSocket connection established")
 
                 while True:
-                    # 接收客户端消息
+                    # Receive message from client
                     data = await websocket.receive_text()
                     message = json.loads(data)
 
                     message_type = message.get('type')
 
                     if message_type == 'subscribe':
-                        # 处理订阅请求
+                        # Handle subscription request
                         await self._handle_subscribe(websocket, message)
                     elif message_type == 'unsubscribe':
-                        # 处理取消订阅
+                        # Handle unsubscription
                         await self._handle_unsubscribe(websocket, message)
                     elif message_type == 'ping':
-                        # 心跳响应
+                        # Heartbeat response
                         await websocket.send_text(json.dumps({
                             'type': 'pong',
                             'timestamp': int(time.time())
                         }))
 
             except Exception as e:
-                logger.error(f"WebSocket连接错误: {e}")
+                logger.error(f"WebSocket connection error: {e}")
             finally:
                 self.websocket_connections.remove(websocket)
-                logger.info("WebSocket连接关闭")
+                logger.info("WebSocket connection closed")
 
         @self.app.delete("/api/v1/cache/clear")
         async def clear_cache():
-            """清空缓存"""
+            """Clear all cache"""
             try:
                 if not self.cache_manager:
-                    raise HTTPException(status_code=503, detail="缓存管理器未初始化")
+                    raise HTTPException(status_code=503, detail="Cache manager not initialized")
 
                 await self.cache_manager.clear_all_cache()
 
                 return {
                     "status": "success",
-                    "message": "缓存已清空"
+                    "message": "Cache cleared"
                 }
 
             except Exception as e:
-                logger.error(f"清空缓存失败: {e}")
+                logger.error(f"Failed to clear cache: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
     async def _handle_subscribe(self, websocket: WebSocket, message: Dict[str, Any]):
-        """处理订阅请求"""
+        """Handle subscription request"""
         try:
             symbols = message.get('symbols', [])
             timeframes = message.get('timeframes', ['1'])
@@ -397,7 +397,7 @@ class TradingViewAPIServer:
 
                     self.subscription_manager[subscription_key].add(websocket)
 
-            # 发送确认消息
+            # Send confirmation message
             await websocket.send_text(json.dumps({
                 'type': 'subscribed',
                 'symbols': symbols,
@@ -405,13 +405,13 @@ class TradingViewAPIServer:
                 'timestamp': int(time.time())
             }))
 
-            logger.info(f"WebSocket订阅成功: {symbols}")
+            logger.info(f"WebSocket subscription successful: {symbols}")
 
         except Exception as e:
-            logger.error(f"处理订阅请求失败: {e}")
+            logger.error(f"Failed to handle subscription request: {e}")
 
     async def _handle_unsubscribe(self, websocket: WebSocket, message: Dict[str, Any]):
-        """处理取消订阅请求"""
+        """Handle unsubscription request"""
         try:
             symbols = message.get('symbols', [])
             timeframes = message.get('timeframes', ['1'])
@@ -423,11 +423,11 @@ class TradingViewAPIServer:
                     if subscription_key in self.subscription_manager:
                         self.subscription_manager[subscription_key].discard(websocket)
 
-                        # 如果没有订阅者了，删除这个key
+                        # If no more subscribers, remove the key
                         if not self.subscription_manager[subscription_key]:
                             del self.subscription_manager[subscription_key]
 
-            # 发送确认消息
+            # Send confirmation message
             await websocket.send_text(json.dumps({
                 'type': 'unsubscribed',
                 'symbols': symbols,
@@ -435,13 +435,13 @@ class TradingViewAPIServer:
                 'timestamp': int(time.time())
             }))
 
-            logger.info(f"WebSocket取消订阅成功: {symbols}")
+            logger.info(f"WebSocket unsubscription successful: {symbols}")
 
         except Exception as e:
-            logger.error(f"处理取消订阅请求失败: {e}")
+            logger.error(f"Failed to handle unsubscription request: {e}")
 
     async def broadcast_realtime_data(self, symbol: str, timeframe: str, data: Dict[str, Any]):
-        """广播实时数据"""
+        """Broadcast real-time data"""
         subscription_key = f"{symbol}:{timeframe}"
 
         if subscription_key in self.subscription_manager:
@@ -453,27 +453,27 @@ class TradingViewAPIServer:
                 'timestamp': int(time.time())
             })
 
-            # 向所有订阅者发送数据
+            # Send data to all subscribers
             disconnected_websockets = set()
             for websocket in self.subscription_manager[subscription_key]:
                 try:
                     await websocket.send_text(message)
                 except Exception as e:
-                    logger.warning(f"向WebSocket发送数据失败: {e}")
+                    logger.warning(f"Failed to send data to WebSocket: {e}")
                     disconnected_websockets.add(websocket)
 
-            # 清理断开的连接
+            # Cleanup disconnected websockets
             for ws in disconnected_websockets:
                 self.subscription_manager[subscription_key].discard(ws)
 
     async def start_server(self, host: str = "0.0.0.0", port: int = 8000):
-        """启动API服务器"""
-        logger.info(f"启动TradingView API服务器: {host}:{port}")
+        """Start API server"""
+        logger.info(f"Starting TradingView API server: {host}:{port}")
 
-        # 初始化组件
+        # Initialize components
         await self.initialize()
 
-        # 启动服务器
+        # Start server
         config = uvicorn.Config(
             self.app,
             host=host,
@@ -485,10 +485,10 @@ class TradingViewAPIServer:
         await server.serve()
 
 
-# ==================== 启动脚本 ====================
+# ==================== Startup Script ====================
 
 async def main():
-    """主函数"""
+    """Main function"""
     config = {
         'cache_db_path': 'data/tradingview_cache.db',
         'max_memory_cache': 5000,

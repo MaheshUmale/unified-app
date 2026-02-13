@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 
 """
-TradingView与trading_core集成适配器
-实现数据格式转换、实时数据适配和系统集成
+TradingView and trading_core Integration Adapter
+Implements data format conversion, real-time data adaptation, and system integration.
 """
 
 import asyncio
@@ -21,7 +21,7 @@ logger = get_logger(__name__)
 
 
 class DataSourceStatus(Enum):
-    """数据源状态"""
+    """Data source status"""
     INITIALIZING = auto()
     CONNECTED = auto()
     DISCONNECTED = auto()
@@ -30,17 +30,17 @@ class DataSourceStatus(Enum):
 
 
 class DataQuality(Enum):
-    """数据质量等级"""
-    EXCELLENT = auto()  # 优秀
-    GOOD = auto()       # 良好
-    FAIR = auto()       # 一般
-    POOR = auto()       # 较差
-    CRITICAL = auto()   # 危险
+    """Data quality level"""
+    EXCELLENT = auto()  # Excellent
+    GOOD = auto()       # Good
+    FAIR = auto()       # Fair
+    POOR = auto()       # Poor
+    CRITICAL = auto()   # Critical
 
 
 @dataclass
 class MarketDataPoint:
-    """标准化市场数据点"""
+    """Standardized market data point"""
     symbol: str
     timeframe: str
     timestamp: float
@@ -50,12 +50,12 @@ class MarketDataPoint:
     close: float
     volume: float = 0.0
 
-    # 数据质量信息
+    # Data quality info
     quality_score: float = 1.0
     source: str = "tradingview"
     latency_ms: float = 0.0
 
-    # 元数据
+    # Metadata
     is_complete: bool = True
     is_realtime: bool = False
     sequence_id: Optional[int] = None
@@ -63,30 +63,30 @@ class MarketDataPoint:
 
 @dataclass
 class DataSourceMetrics:
-    """数据源指标"""
+    """Data source metrics"""
     symbol: str
     connection_status: DataSourceStatus = DataSourceStatus.DISCONNECTED
     last_update_time: float = 0.0
 
-    # 性能指标
+    # Performance metrics
     total_requests: int = 0
     successful_requests: int = 0
     failed_requests: int = 0
     average_latency_ms: float = 0.0
 
-    # 数据质量指标
+    # Data quality metrics
     data_quality: DataQuality = DataQuality.EXCELLENT
     missing_data_count: int = 0
     invalid_data_count: int = 0
 
-    # 连接指标
+    # Connection metrics
     connection_uptime: float = 0.0
     reconnection_count: int = 0
     last_error: Optional[str] = None
 
 
 class TradingViewDataConverter:
-    """TradingView数据转换器"""
+    """TradingView data converter"""
 
     def __init__(self):
         self.conversion_stats = {
@@ -98,26 +98,26 @@ class TradingViewDataConverter:
     def convert_kline_to_market_data(self, tv_kline: Dict[str, Any],
                                    symbol: str, timeframe: str = "15m") -> Optional[MarketDataPoint]:
         """
-        将TradingView K线数据转换为MarketDataPoint
+        Convert TradingView K-line data to MarketDataPoint.
 
         Args:
-            tv_kline: TradingView K线数据
-            symbol: 交易品种
-            timeframe: 时间框架
+            tv_kline: TradingView K-line data
+            symbol: Trading symbol
+            timeframe: Timeframe
 
         Returns:
-            MarketDataPoint: 标准化市场数据点
+            MarketDataPoint: Standardized market data point
         """
         try:
             self.conversion_stats['total_conversions'] += 1
 
-            # 验证必需字段
+            # Validate required fields
             required_fields = ['time', 'open', 'high', 'low', 'close']
             if not all(field in tv_kline for field in required_fields):
-                logger.warning(f"TradingView数据缺少必需字段: {tv_kline}")
+                logger.warning(f"TradingView data missing required fields: {tv_kline}")
                 return None
 
-            # 数据类型转换和验证
+            # Type conversion and validation
             timestamp = float(tv_kline['time'])
             open_price = float(tv_kline['open'])
             high_price = float(tv_kline['high'])
@@ -125,16 +125,16 @@ class TradingViewDataConverter:
             close_price = float(tv_kline['close'])
             volume = float(tv_kline.get('volume', 0))
 
-            # 基础数据验证
+            # Basic validation
             if not self._validate_ohlc_data(open_price, high_price, low_price, close_price):
-                logger.warning(f"TradingView数据OHLC验证失败: {tv_kline}")
+                logger.warning(f"TradingView OHLC validation failed: {tv_kline}")
                 self.conversion_stats['failed_conversions'] += 1
                 return None
 
-            # 计算数据质量分数
+            # Calculate quality score
             quality_score = self._calculate_quality_score(tv_kline)
 
-            # 检查是否为实时数据 (时间戳在5分钟内)
+            # Check if real-time (within 5 minutes)
             current_time = time.time()
             is_realtime = (current_time - timestamp) < 300
 
@@ -157,30 +157,30 @@ class TradingViewDataConverter:
             return market_data
 
         except (ValueError, TypeError, KeyError) as e:
-            logger.error(f"TradingView数据转换失败: {e}, 原始数据: {tv_kline}")
+            logger.error(f"TradingView data conversion failed: {e}, raw: {tv_kline}")
             self.conversion_stats['failed_conversions'] += 1
             return None
         except Exception as e:
-            logger.error(f"TradingView数据转换异常: {e}")
+            logger.error(f"TradingView data conversion exception: {e}")
             self.conversion_stats['failed_conversions'] += 1
             return None
 
     def convert_to_chanpy_format(self, market_data_list: List[MarketDataPoint]) -> Dict[str, List]:
         """
-        将MarketDataPoint列表转换为chanpy格式
+        Convert list of MarketDataPoint to chanpy format.
 
         Args:
-            market_data_list: MarketDataPoint列表
+            market_data_list: List of MarketDataPoint
 
         Returns:
-            Dict: chanpy格式数据
+            Dict: Data in chanpy format
         """
         try:
-            # 按时间框架分组
+            # Group by timeframe
             timeframe_data = defaultdict(list)
 
             for data_point in market_data_list:
-                # 转换为chanpy KLine_Unit格式
+                # Convert to chanpy KLine_Unit format
                 kline_dict = {
                     'time': data_point.timestamp,
                     'open': data_point.open,
@@ -190,29 +190,29 @@ class TradingViewDataConverter:
                     'volume': data_point.volume
                 }
 
-                # 根据时间框架分类
+                # Categorize by timeframe
                 timeframe_key = self._map_timeframe_to_chanpy(data_point.timeframe)
                 timeframe_data[timeframe_key].append(kline_dict)
 
-            # 按时间戳排序
+            # Sort by timestamp
             for timeframe in timeframe_data:
                 timeframe_data[timeframe].sort(key=lambda x: x['time'])
 
             return dict(timeframe_data)
 
         except Exception as e:
-            logger.error(f"chanpy格式转换失败: {e}")
+            logger.error(f"chanpy format conversion failed: {e}")
             return {}
 
     def convert_to_trading_core_format(self, market_data: MarketDataPoint) -> Dict[str, Any]:
         """
-        转换为trading_core标准格式
+        Convert to trading_core standard format.
 
         Args:
             market_data: MarketDataPoint
 
         Returns:
-            Dict: trading_core格式数据
+            Dict: Data in trading_core format
         """
         try:
             return {
@@ -237,28 +237,28 @@ class TradingViewDataConverter:
             }
 
         except Exception as e:
-            logger.error(f"trading_core格式转换失败: {e}")
+            logger.error(f"trading_core format conversion failed: {e}")
             return {}
 
     def _validate_ohlc_data(self, open_price: float, high_price: float,
                           low_price: float, close_price: float) -> bool:
-        """验证OHLC数据逻辑关系"""
+        """Validate logical OHLC relationship"""
         try:
-            # 检查价格为正数
+            # Check positive prices
             if any(price <= 0 for price in [open_price, high_price, low_price, close_price]):
                 return False
 
-            # 检查高低价关系
+            # Check high/low relationship
             if high_price < max(open_price, close_price):
                 return False
             if low_price > min(open_price, close_price):
                 return False
 
-            # 检查价格变动是否过于极端
+            # Check for extreme price movements
             price_range = high_price - low_price
             avg_price = (high_price + low_price) / 2
-            if avg_price > 0 and (price_range / avg_price) > 0.5:  # 50%的价格变动
-                logger.warning("价格变动过于极端")
+            if avg_price > 0 and (price_range / avg_price) > 0.5:  # 50% price movement
+                logger.warning("Extreme price movement detected")
                 return False
 
             return True
@@ -267,34 +267,34 @@ class TradingViewDataConverter:
             return False
 
     def _calculate_quality_score(self, kline_data: Dict) -> float:
-        """计算数据质量分数"""
+        """Calculate data quality score"""
         try:
             score = 1.0
 
-            # 检查数据完整性
+            # Check completeness
             required_fields = ['time', 'open', 'high', 'low', 'close']
             missing_fields = sum(1 for field in required_fields if field not in kline_data)
             score *= (1 - missing_fields * 0.2)
 
-            # 检查成交量数据
+            # Check volume
             if 'volume' not in kline_data or kline_data['volume'] <= 0:
-                score *= 0.9  # 缺少成交量数据扣10分
+                score *= 0.9  # Deduct 10% for missing/zero volume
 
-            # 检查时间戳新鲜度
+            # Check freshness
             current_time = time.time()
             time_diff = current_time - float(kline_data.get('time', 0))
-            if time_diff > 3600:  # 超过1小时
+            if time_diff > 3600:  # > 1 hour
                 score *= 0.8
-            elif time_diff > 300:  # 超过5分钟
+            elif time_diff > 300:  # > 5 minutes
                 score *= 0.95
 
             return max(0.0, min(1.0, score))
 
         except Exception:
-            return 0.5  # 默认中等质量
+            return 0.5  # Default medium quality
 
     def _map_timeframe_to_chanpy(self, timeframe: str) -> str:
-        """映射时间框架到chanpy格式"""
+        """Map timeframe to chanpy format"""
         mapping = {
             '1m': 'K_1M',
             '5m': 'K_5M',
@@ -308,7 +308,7 @@ class TradingViewDataConverter:
         return mapping.get(timeframe, 'K_15M')
 
     def get_conversion_stats(self) -> Dict[str, Any]:
-        """获取转换统计信息"""
+        """Get conversion statistics information"""
         total = self.conversion_stats['total_conversions']
         if total == 0:
             return {'success_rate': 0.0, **self.conversion_stats}
@@ -321,7 +321,7 @@ class TradingViewDataConverter:
 
 
 class RealtimeDataAdapter:
-    """实时数据适配器"""
+    """Real-time data adapter"""
 
     def __init__(self, buffer_size: int = 1000):
         self.buffer_size = buffer_size
@@ -330,7 +330,7 @@ class RealtimeDataAdapter:
         self.metrics: Dict[str, DataSourceMetrics] = {}
         self.converter = TradingViewDataConverter()
 
-        # 实时数据统计
+        # Real-time stats
         self.realtime_stats = {
             'messages_received': 0,
             'messages_processed': 0,
@@ -340,27 +340,27 @@ class RealtimeDataAdapter:
 
     async def process_realtime_update(self, symbol: str, tv_data: Dict[str, Any]) -> bool:
         """
-        处理实时数据更新
+        Process real-time data update.
 
         Args:
-            symbol: 交易品种
-            tv_data: TradingView原始数据
+            symbol: Trading symbol
+            tv_data: Raw TradingView data
 
         Returns:
-            bool: 处理是否成功
+            bool: Success or failure
         """
         try:
             start_time = time.perf_counter()
             self.realtime_stats['messages_received'] += 1
 
-            # 初始化或更新指标
+            # Initialize or update metrics
             if symbol not in self.metrics:
                 self.metrics[symbol] = DataSourceMetrics(symbol=symbol)
 
             metrics = self.metrics[symbol]
             metrics.total_requests += 1
 
-            # 转换数据格式
+            # Convert data format
             market_data = self.converter.convert_kline_to_market_data(tv_data, symbol)
 
             if not market_data:
@@ -369,40 +369,40 @@ class RealtimeDataAdapter:
                 self.realtime_stats['messages_dropped'] += 1
                 return False
 
-            # 设置延迟信息
+            # Set latency info
             processing_time = (time.perf_counter() - start_time) * 1000
             market_data.latency_ms = processing_time
 
-            # 更新指标
+            # Update metrics
             metrics.successful_requests += 1
             metrics.last_update_time = time.time()
             metrics.connection_status = DataSourceStatus.CONNECTED
 
-            # 计算平均延迟
+            # Calculate average latency
             if metrics.successful_requests > 0:
                 metrics.average_latency_ms = (
                     (metrics.average_latency_ms * (metrics.successful_requests - 1) + processing_time)
                     / metrics.successful_requests
                 )
 
-            # 更新数据质量评级
+            # Update data quality rating
             self._update_data_quality(metrics, market_data.quality_score)
 
-            # 添加到缓冲区
+            # Add to buffer
             self.data_buffers[symbol].append(market_data)
 
-            # 通知订阅者
+            # Notify subscribers
             await self._notify_subscribers(symbol, market_data)
 
-            # 更新统计
+            # Update stats
             self.realtime_stats['messages_processed'] += 1
             self._update_processing_time_stats(processing_time)
 
-            logger.debug(f"处理实时数据成功: {symbol}, 延迟: {processing_time:.2f}ms")
+            logger.debug(f"Real-time update processed: {symbol}, latency: {processing_time:.2f}ms")
             return True
 
         except Exception as e:
-            logger.error(f"处理实时数据失败 {symbol}: {e}")
+            logger.error(f"Failed to process real-time update for {symbol}: {e}")
             if symbol in self.metrics:
                 self.metrics[symbol].failed_requests += 1
                 self.metrics[symbol].last_error = str(e)
@@ -412,75 +412,75 @@ class RealtimeDataAdapter:
 
     def subscribe_to_symbol(self, symbol: str, callback: Callable[[MarketDataPoint], None]) -> bool:
         """
-        订阅品种数据更新
+        Subscribe to symbol updates.
 
         Args:
-            symbol: 交易品种
-            callback: 数据回调函数
+            symbol: Trading symbol
+            callback: Data callback function
 
         Returns:
-            bool: 订阅是否成功
+            bool: Success or failure
         """
         try:
             self.subscribers[symbol].append(callback)
-            logger.info(f"订阅品种数据成功: {symbol}, 当前订阅者: {len(self.subscribers[symbol])}")
+            logger.info(f"Subscribed to {symbol}, active subscribers: {len(self.subscribers[symbol])}")
             return True
 
         except Exception as e:
-            logger.error(f"订阅品种数据失败 {symbol}: {e}")
+            logger.error(f"Failed to subscribe to {symbol}: {e}")
             return False
 
     def unsubscribe_from_symbol(self, symbol: str, callback: Callable[[MarketDataPoint], None]) -> bool:
         """
-        取消订阅品种数据
+        Unsubscribe from symbol updates.
 
         Args:
-            symbol: 交易品种
-            callback: 数据回调函数
+            symbol: Trading symbol
+            callback: Callback function to remove
 
         Returns:
-            bool: 取消订阅是否成功
+            bool: Success or failure
         """
         try:
             if symbol in self.subscribers and callback in self.subscribers[symbol]:
                 self.subscribers[symbol].remove(callback)
-                logger.info(f"取消订阅成功: {symbol}")
+                logger.info(f"Unsubscribed from {symbol}")
                 return True
             return False
 
         except Exception as e:
-            logger.error(f"取消订阅失败 {symbol}: {e}")
+            logger.error(f"Failed to unsubscribe from {symbol}: {e}")
             return False
 
     async def _notify_subscribers(self, symbol: str, market_data: MarketDataPoint) -> None:
-        """通知订阅者"""
+        """Notify subscribers of update"""
         try:
             callbacks = self.subscribers.get(symbol, [])
 
             if callbacks:
-                # 并发通知所有订阅者
+                # Notify all subscribers concurrently
                 tasks = []
                 for callback in callbacks:
                     try:
                         if asyncio.iscoroutinefunction(callback):
                             tasks.append(asyncio.create_task(callback(market_data)))
                         else:
-                            # 同步回调在线程池中执行
+                            # Synchronous callback in executor
                             tasks.append(asyncio.create_task(
                                 asyncio.get_event_loop().run_in_executor(None, callback, market_data)
                             ))
                     except Exception as e:
-                        logger.error(f"创建回调任务失败: {e}")
+                        logger.error(f"Failed to create callback task: {e}")
 
-                # 等待所有回调完成
+                # Wait for all callbacks
                 if tasks:
                     await asyncio.gather(*tasks, return_exceptions=True)
 
         except Exception as e:
-            logger.error(f"通知订阅者失败: {e}")
+            logger.error(f"Subscriber notification failed: {e}")
 
     def _update_data_quality(self, metrics: DataSourceMetrics, quality_score: float) -> None:
-        """更新数据质量评级"""
+        """Update data quality rating"""
         try:
             if quality_score >= 0.95:
                 metrics.data_quality = DataQuality.EXCELLENT
@@ -494,10 +494,10 @@ class RealtimeDataAdapter:
                 metrics.data_quality = DataQuality.CRITICAL
 
         except Exception as e:
-            logger.error(f"更新数据质量评级失败: {e}")
+            logger.error(f"Failed to update data quality rating: {e}")
 
     def _update_processing_time_stats(self, processing_time: float) -> None:
-        """更新处理时间统计"""
+        """Update processing time statistics"""
         try:
             processed_count = self.realtime_stats['messages_processed']
             if processed_count > 0:
@@ -506,10 +506,10 @@ class RealtimeDataAdapter:
                 self.realtime_stats['average_processing_time_ms'] = new_avg
 
         except Exception as e:
-            logger.error(f"更新处理时间统计失败: {e}")
+            logger.error(f"Failed to update processing time stats: {e}")
 
     def get_latest_data(self, symbol: str) -> Optional[MarketDataPoint]:
-        """获取最新数据"""
+        """Get most recent data point"""
         try:
             buffer = self.data_buffers.get(symbol)
             if buffer and len(buffer) > 0:
@@ -517,32 +517,32 @@ class RealtimeDataAdapter:
             return None
 
         except Exception as e:
-            logger.error(f"获取最新数据失败 {symbol}: {e}")
+            logger.error(f"Failed to get latest data for {symbol}: {e}")
             return None
 
     def get_historical_buffer(self, symbol: str, count: int = 100) -> List[MarketDataPoint]:
-        """获取历史缓冲数据"""
+        """Get history from buffer"""
         try:
             buffer = self.data_buffers.get(symbol, deque())
             return list(buffer)[-count:] if buffer else []
 
         except Exception as e:
-            logger.error(f"获取历史缓冲数据失败 {symbol}: {e}")
+            logger.error(f"Failed to get history from buffer for {symbol}: {e}")
             return []
 
     def get_symbol_metrics(self, symbol: str) -> Optional[DataSourceMetrics]:
-        """获取品种指标"""
+        """Get metrics for a specific symbol"""
         return self.metrics.get(symbol)
 
     def get_all_metrics(self) -> Dict[str, DataSourceMetrics]:
-        """获取所有指标"""
+        """Get all symbol metrics"""
         return self.metrics.copy()
 
     def get_realtime_stats(self) -> Dict[str, Any]:
-        """获取实时数据统计"""
+        """Get overall real-time stats"""
         stats = self.realtime_stats.copy()
 
-        # 计算成功率
+        # Calculate success rates
         total_received = stats['messages_received']
         if total_received > 0:
             stats['success_rate'] = stats['messages_processed'] / total_received
@@ -555,18 +555,18 @@ class RealtimeDataAdapter:
 
 
 class TradingCoreIntegrationManager:
-    """trading_core集成管理器"""
+    """Manager for trading_core integration"""
 
     def __init__(self):
         self.converter = TradingViewDataConverter()
         self.realtime_adapter = RealtimeDataAdapter()
         self.integration_status = DataSourceStatus.INITIALIZING
 
-        # 数据管道
+        # Data pipeline
         self.data_pipeline: List[Callable] = []
         self.error_handlers: List[Callable] = []
 
-        # 集成统计
+        # Integration stats
         self.integration_stats = {
             'data_throughput': 0,
             'processing_errors': 0,
@@ -575,42 +575,42 @@ class TradingCoreIntegrationManager:
         }
 
     async def initialize_integration(self) -> bool:
-        """初始化集成"""
+        """Initialize the integration layer"""
         try:
             self.integration_status = DataSourceStatus.INITIALIZING
 
-            # 初始化数据转换器
-            logger.info("初始化数据转换器...")
+            # Initialize converter
+            logger.info("Initializing data converter...")
 
-            # 初始化实时适配器
-            logger.info("初始化实时数据适配器...")
+            # Initialize real-time adapter
+            logger.info("Initializing real-time data adapter...")
 
             self.integration_status = DataSourceStatus.CONNECTED
-            logger.info("✅ trading_core集成初始化成功")
+            logger.info("✅ trading_core integration initialized successfully")
             return True
 
         except Exception as e:
-            logger.error(f"❌ trading_core集成初始化失败: {e}")
+            logger.error(f"❌ trading_core integration failed: {e}")
             self.integration_status = DataSourceStatus.ERROR
             return False
 
     def add_data_pipeline_stage(self, processor: Callable[[MarketDataPoint], MarketDataPoint]) -> None:
-        """添加数据管道阶段"""
+        """Add a stage to the data pipeline"""
         self.data_pipeline.append(processor)
-        logger.info(f"添加数据管道阶段: {processor.__name__}")
+        logger.info(f"Added pipeline stage: {processor.__name__}")
 
     def add_error_handler(self, handler: Callable[[Exception, str], None]) -> None:
-        """添加错误处理器"""
+        """Add an error handler"""
         self.error_handlers.append(handler)
-        logger.info(f"添加错误处理器: {handler.__name__}")
+        logger.info(f"Added error handler: {handler.__name__}")
 
     async def process_data_through_pipeline(self, market_data: MarketDataPoint) -> Optional[MarketDataPoint]:
-        """通过数据管道处理数据"""
+        """Process data through the pipeline"""
         try:
             start_time = time.perf_counter()
             processed_data = market_data
 
-            # 依次通过所有管道阶段
+            # Pass data through all stages
             for stage in self.data_pipeline:
                 try:
                     if asyncio.iscoroutinefunction(stage):
@@ -619,27 +619,27 @@ class TradingCoreIntegrationManager:
                         processed_data = stage(processed_data)
 
                     if processed_data is None:
-                        logger.warning("数据在管道阶段被过滤")
+                        logger.warning("Data filtered out in pipeline")
                         return None
 
                 except Exception as e:
-                    logger.error(f"数据管道阶段失败: {stage.__name__}: {e}")
+                    logger.error(f"Pipeline stage failed: {stage.__name__}: {e}")
                     await self._handle_pipeline_error(e, stage.__name__)
                     return None
 
-            # 更新管道延迟统计
+            # Update latency stats
             pipeline_time = (time.perf_counter() - start_time) * 1000
             self._update_pipeline_stats(pipeline_time)
 
             return processed_data
 
         except Exception as e:
-            logger.error(f"数据管道处理失败: {e}")
+            logger.error(f"Pipeline processing failed: {e}")
             await self._handle_pipeline_error(e, "pipeline")
             return None
 
     async def _handle_pipeline_error(self, error: Exception, stage_name: str) -> None:
-        """处理管道错误"""
+        """Handle error within the pipeline"""
         try:
             self.integration_stats['processing_errors'] += 1
 
@@ -650,17 +650,17 @@ class TradingCoreIntegrationManager:
                     else:
                         handler(error, stage_name)
                 except Exception as e:
-                    logger.error(f"错误处理器失败: {e}")
+                    logger.error(f"Error handler failed: {e}")
 
         except Exception as e:
-            logger.error(f"处理管道错误失败: {e}")
+            logger.error(f"Pipeline error handling failed: {e}")
 
     def _update_pipeline_stats(self, processing_time: float) -> None:
-        """更新管道统计"""
+        """Update pipeline statistics"""
         try:
             self.integration_stats['data_throughput'] += 1
 
-            # 更新平均处理延迟
+            # Update average processing latency
             current_latency = self.integration_stats['pipeline_latency_ms']
             throughput = self.integration_stats['data_throughput']
 
@@ -669,10 +669,10 @@ class TradingCoreIntegrationManager:
                 self.integration_stats['pipeline_latency_ms'] = new_latency
 
         except Exception as e:
-            logger.error(f"更新管道统计失败: {e}")
+            logger.error(f"Failed to update pipeline statistics: {e}")
 
     def get_integration_status(self) -> Dict[str, Any]:
-        """获取集成状态"""
+        """Get integration layer status"""
         return {
             'status': self.integration_status.name,
             'converter_stats': self.converter.get_conversion_stats(),
@@ -683,7 +683,7 @@ class TradingCoreIntegrationManager:
         }
 
     def get_symbol_summary(self) -> Dict[str, Any]:
-        """获取品种摘要"""
+        """Get summary of symbols"""
         all_metrics = self.realtime_adapter.get_all_metrics()
 
         summary = {
@@ -695,7 +695,6 @@ class TradingCoreIntegrationManager:
             'total_throughput': 0
         }
 
-        # 统计质量分布和平均延迟
         total_latency = 0
         total_requests = 0
 
@@ -713,17 +712,17 @@ class TradingCoreIntegrationManager:
         return summary
 
 
-# 便捷函数
+# Helper function
 def create_tradingview_integration() -> TradingCoreIntegrationManager:
-    """创建TradingView集成管理器"""
+    """Create a new integration manager"""
     return TradingCoreIntegrationManager()
 
 
 async def test_data_conversion():
-    """测试数据转换功能"""
+    """Test data conversion functionality"""
     converter = TradingViewDataConverter()
 
-    # 模拟TradingView数据
+    # Mock TradingView data
     tv_data = {
         'time': time.time(),
         'open': 50000.0,
@@ -733,23 +732,23 @@ async def test_data_conversion():
         'volume': 1000.0
     }
 
-    # 转换数据
+    # Convert data
     market_data = converter.convert_kline_to_market_data(tv_data, "BTC/USDT")
 
     if market_data:
-        print(f"✅ 数据转换成功: {market_data.symbol} {market_data.close}")
+        print(f"✅ Conversion successful: {market_data.symbol} {market_data.close}")
 
-        # 转换为trading_core格式
+        # Convert to trading_core format
         tc_format = converter.convert_to_trading_core_format(market_data)
-        print(f"trading_core格式: {tc_format}")
+        print(f"trading_core format: {tc_format}")
 
-        # 转换为chanpy格式
+        # Convert to chanpy format
         chanpy_format = converter.convert_to_chanpy_format([market_data])
-        print(f"chanpy格式: {chanpy_format}")
+        print(f"chanpy format: {chanpy_format}")
     else:
-        print("❌ 数据转换失败")
+        print("❌ Conversion failed")
 
 
 if __name__ == "__main__":
-    # 运行测试
+    # Run test
     asyncio.run(test_data_conversion())

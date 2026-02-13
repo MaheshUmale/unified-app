@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-TradingView 历史K线数据服务 - 专业级数据获取引擎
+TradingView Historical K-Line Data Service - Professional Data Acquisition Engine
 """
 
 import asyncio
@@ -15,23 +15,23 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
 import statistics
 
-# 导入tradingview核心模块
+# Import TradingView core modules
 from tradingview.client import Client
 from tradingview.enhanced_client import EnhancedTradingViewClient
 
-# 日志配置
+# Log configuration
 from tradingview.utils import get_logger
 logger = get_logger(__name__)
 
-# 核心数据结构定义
+# Core data structure definitions
 class KlineQualityLevel(Enum):
-    """K线数据质量等级"""
+    """K-line data quality level"""
     DEVELOPMENT = "development"      # ≥90%
     PRODUCTION = "production"        # ≥95%
     FINANCIAL = "financial"          # ≥98%
 
 class DataFetchStatus(Enum):
-    """数据获取状态"""
+    """Data fetch status"""
     PENDING = "pending"
     FETCHING = "fetching"
     COMPLETED = "completed"
@@ -40,7 +40,7 @@ class DataFetchStatus(Enum):
 
 @dataclass
 class KlineDataRequest:
-    """K线数据请求"""
+    """K-line data request"""
     symbol: str
     timeframe: str
     count: int = 500
@@ -54,7 +54,7 @@ class KlineDataRequest:
 
 @dataclass
 class KlineData:
-    """标准化K线数据"""
+    """Standardized K-line data"""
     timestamp: int
     datetime: str
     open: float
@@ -67,23 +67,23 @@ class KlineData:
         return asdict(self)
 
     def validate(self) -> Tuple[bool, List[str]]:
-        """验证K线数据"""
+        """Validate K-line data"""
         errors = []
         if self.high < max(self.open, self.close):
-            errors.append(f"最高价({self.high})小于开盘价({self.open})或收盘价({self.close})")
+            errors.append(f"High ({self.high}) is less than Open ({self.open}) or Close ({self.close})")
         if self.low > min(self.open, self.close):
-            errors.append(f"最低价({self.low})大于开盘价({self.open})或收盘价({self.close})")
+            errors.append(f"Low ({self.low}) is greater than Open ({self.open}) or Close ({self.close})")
         if any(v < 0 for v in [self.open, self.high, self.low, self.close]):
-            errors.append("存在负数价格")
+            errors.append("Negative price detected")
         if self.volume < 0:
-            errors.append("成交量为负数")
+            errors.append("Negative volume detected")
         if self.timestamp <= 0:
-            errors.append("时间戳无效")
+            errors.append("Invalid timestamp")
         return len(errors) == 0, errors
 
 @dataclass
 class KlineDataResponse:
-    """K线数据响应"""
+    """K-line data response"""
     request_id: str
     symbol: str
     timeframe: str
@@ -111,7 +111,7 @@ class KlineDataResponse:
 
 @dataclass
 class QualityMetrics:
-    """数据质量指标"""
+    """Data quality metrics"""
     completeness_rate: float = 0.0
     accuracy_rate: float = 0.0
     consistency_rate: float = 0.0
@@ -123,7 +123,7 @@ class QualityMetrics:
     timestamp: datetime = field(default_factory=datetime.now)
 
 class KlineDataValidator:
-    """K线数据质量验证器"""
+    """K-line data quality validator"""
 
     def __init__(self, quality_level: KlineQualityLevel = KlineQualityLevel.PRODUCTION):
         self.quality_level = quality_level
@@ -134,16 +134,16 @@ class KlineDataValidator:
         }
 
     def validate_klines(self, klines: List[KlineData]) -> QualityMetrics:
-        """验证K线数据质量"""
+        """Validate K-line data quality"""
         metrics = QualityMetrics()
         metrics.total_records = len(klines)
 
         if not klines:
             metrics.overall_quality = 0.0
-            metrics.issues.append("没有数据")
+            metrics.issues.append("No data")
             return metrics
 
-        # 验证每条K线
+        # Validate each K-line
         valid_count = 0
         for kline in klines:
             is_valid, errors = kline.validate()
@@ -167,30 +167,30 @@ class KlineDataValidator:
         return metrics
 
     def _check_accuracy(self, klines: List[KlineData]) -> List[str]:
-        """检查准确性"""
+        """Check for accuracy issues"""
         issues = []
         for i, kline in enumerate(klines):
             if kline.high / kline.low > 10:
-                issues.append(f"索引{i}: 价格波动异常")
+                issues.append(f"Index {i}: Price fluctuation anomaly")
             if i > 0 and kline.volume > klines[i-1].volume * 100:
-                issues.append(f"索引{i}: 成交量异常")
+                issues.append(f"Index {i}: Volume anomaly")
         return issues
 
     def _check_consistency(self, klines: List[KlineData]) -> List[str]:
-        """检查一致性"""
+        """Check for consistency issues"""
         issues = []
         timestamps = [k.timestamp for k in klines]
         if timestamps != sorted(timestamps):
-            issues.append("时间序列不是升序")
+            issues.append("Time series is not in ascending order")
         return issues
 
     def meets_quality_threshold(self, metrics: QualityMetrics) -> bool:
-        """检查是否满足质量阈值"""
+        """Check if metrics meet the quality threshold"""
         threshold = self.quality_thresholds[self.quality_level]
         return metrics.overall_quality >= threshold
 
 class HistoricalKlineService:
-    """历史K线数据服务"""
+    """Historical K-line data service"""
 
     def __init__(self, use_enhanced_client: bool = True, cache_dir: Optional[str] = None, db_path: Optional[str] = None):
         self.use_enhanced_client = use_enhanced_client
@@ -217,10 +217,10 @@ class HistoricalKlineService:
         self.request_semaphore = asyncio.Semaphore(self.max_concurrent_requests)
         self.is_initialized = False
 
-        logger.info(f"历史K线数据服务初始化 (增强客户端: {use_enhanced_client})")
+        logger.info(f"Historical K-line data service initialized (Enhanced Client: {use_enhanced_client})")
 
     def _init_database(self):
-        """初始化数据库"""
+        """Initialize local database"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
@@ -249,10 +249,10 @@ class HistoricalKlineService:
 
         conn.commit()
         conn.close()
-        logger.info(f"数据库初始化完成: {self.db_path}")
+        logger.info(f"Database initialization complete: {self.db_path}")
 
     async def initialize(self):
-        """初始化服务"""
+        """Initialize the service"""
         if self.is_initialized:
             return
 
@@ -264,13 +264,13 @@ class HistoricalKlineService:
 
             await self.client.connect()
             self.is_initialized = True
-            logger.info("历史K线数据服务初始化成功")
+            logger.info("Historical K-line data service initialized successfully")
         except Exception as e:
-            logger.error(f"服务初始化失败: {e}")
+            logger.error(f"Service initialization failed: {e}")
             raise
 
     async def fetch_klines(self, request: KlineDataRequest) -> KlineDataResponse:
-        """获取K线数据"""
+        """Fetch K-line data"""
         start_time = time.time()
         self.stats["total_requests"] += 1
 
@@ -282,11 +282,11 @@ class HistoricalKlineService:
         )
 
         try:
-            # 检查缓存
+            # Check cache
             if request.cache_enabled:
                 cached_klines = await self._get_from_cache(request)
                 if cached_klines and len(cached_klines) >= request.count:
-                    logger.info(f"缓存命中: {request.symbol}")
+                    logger.info(f"Cache hit: {request.symbol}")
                     self.stats["cache_hits"] += 1
                     response.klines = cached_klines[:request.count]
                     response.status = DataFetchStatus.COMPLETED
@@ -301,31 +301,31 @@ class HistoricalKlineService:
 
             self.stats["cache_misses"] += 1
 
-            # 从TradingView获取
+            # Fetch from TradingView
             response.status = DataFetchStatus.FETCHING
             raw_klines = await self._fetch_from_tradingview(request)
 
             if not raw_klines:
                 response.status = DataFetchStatus.FAILED
-                response.error_message = "未获取到数据"
+                response.error_message = "No data received"
                 self.stats["failed_requests"] += 1
                 return response
 
-            # 转换格式
+            # Convert format
             response.klines = self._convert_to_standard_format(raw_klines)
 
-            # 质量验证
+            # Quality validation
             metrics = self.validator.validate_klines(response.klines)
             response.quality_score = metrics.overall_quality
             response.metadata["quality_metrics"] = asdict(metrics)
 
             if not self.validator.meets_quality_threshold(metrics):
                 response.status = DataFetchStatus.PARTIAL
-                response.error_message = f"数据质量未达标"
+                response.error_message = f"Data quality below threshold"
             else:
                 response.status = DataFetchStatus.COMPLETED
 
-            # 保存缓存
+            # Save to cache
             if request.cache_enabled and response.klines:
                 await self._save_to_cache(request, response.klines, metrics.overall_quality)
 
@@ -333,38 +333,38 @@ class HistoricalKlineService:
             self.stats["successful_requests"] += 1
             self.stats["response_times"].append(response.response_time_ms)
 
-            logger.info(f"获取成功: {request.symbol} {len(response.klines)}条")
+            logger.info(f"Fetch success: {request.symbol} {len(response.klines)} lines")
 
         except Exception as e:
             response.status = DataFetchStatus.FAILED
             response.error_message = str(e)
             self.stats["failed_requests"] += 1
-            logger.error(f"获取失败: {e}")
+            logger.error(f"Fetch failed: {e}")
 
         return response
 
     async def _fetch_from_tradingview(self, request: KlineDataRequest) -> List[Any]:
-        """从TradingView获取数据"""
+        """Fetch data from TradingView"""
         async with self.request_semaphore:
             try:
                 chart_session = self.client.Session.Chart()
 
-                # 使用ChartSession的get_historical_data方法
+                # Use ChartSession get_historical_data
                 klines = await chart_session.get_historical_data(
                     symbol=request.symbol,
                     timeframe=request.timeframe,
                     count=request.count
                 )
 
-                logger.info(f"从TradingView获取到 {len(klines) if klines else 0} 条K线数据")
+                logger.info(f"Retrieved {len(klines) if klines else 0} K-lines from TradingView")
                 return klines
 
             except Exception as e:
-                logger.error(f"TradingView获取失败: {e}")
+                logger.error(f"TradingView fetch failed: {e}")
                 raise
 
     def _convert_to_standard_format(self, raw_klines: List[Any]) -> List[KlineData]:
-        """转换为标准格式"""
+        """Convert raw klines to standard format"""
         standard_klines = []
         for raw in raw_klines:
             try:
@@ -392,12 +392,12 @@ class HistoricalKlineService:
                     continue
                 standard_klines.append(kline)
             except Exception as e:
-                logger.error(f"转换失败: {e}")
+                logger.error(f"Format conversion failed: {e}")
                 continue
         return standard_klines
 
     async def _get_from_cache(self, request: KlineDataRequest) -> Optional[List[KlineData]]:
-        """从缓存获取"""
+        """Retrieve data from local cache"""
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
@@ -416,11 +416,11 @@ class HistoricalKlineService:
 
             return [KlineData(row[0], row[1], row[2], row[3], row[4], row[5], row[6]) for row in rows]
         except Exception as e:
-            logger.error(f"缓存读取失败: {e}")
+            logger.error(f"Cache read failed: {e}")
             return None
 
     async def _save_to_cache(self, request: KlineDataRequest, klines: List[KlineData], quality_score: float):
-        """保存到缓存"""
+        """Save data to local cache"""
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
@@ -434,10 +434,10 @@ class HistoricalKlineService:
             conn.commit()
             conn.close()
         except Exception as e:
-            logger.error(f"缓存保存失败: {e}")
+            logger.error(f"Cache save failed: {e}")
 
     async def batch_fetch_klines(self, requests: List[KlineDataRequest]) -> List[KlineDataResponse]:
-        """批量获取"""
+        """Perform batch K-line fetching"""
         tasks = [self.fetch_klines(req) for req in requests]
         responses = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -456,7 +456,7 @@ class HistoricalKlineService:
         return results
 
     def get_stats(self) -> Dict[str, Any]:
-        """获取统计"""
+        """Get service statistics"""
         stats = self.stats.copy()
         if stats["response_times"]:
             stats["avg_response_time_ms"] = statistics.mean(stats["response_times"])
@@ -470,7 +470,7 @@ class HistoricalKlineService:
         return stats
 
     async def close(self):
-        """关闭服务"""
+        """Shutdown the service"""
         if self.client:
             await self.client.end()
-        logger.info("服务已关闭")
+        logger.info("Service shutdown")

@@ -2,28 +2,28 @@
 # -*- coding: utf-8 -*-
 
 """
-TradingView K线数据 HTTP API 服务
+TradingView K-line Data HTTP API Service
 
-提供RESTful API接口获取TradingView历史K线数据
+Provides a RESTful API interface to retrieve TradingView historical K-line data.
 
-启动服务:
+Startup:
     python -m tradingview.kline_api_server
 
-    或指定端口:
+    Or specify a port:
     python -m tradingview.kline_api_server --port 8080
 
-API端点:
+API Endpoints:
     GET /klines?symbol=OANDA:XAUUSD&timeframe=15&count=100
     GET /health
     GET /stats
 
-示例请求:
+Example Requests:
     curl "http://localhost:8000/klines?symbol=OANDA:XAUUSD&timeframe=15&count=100"
     curl "http://localhost:8000/klines?symbol=BINANCE:BTCUSDT&timeframe=15m&count=50"
 
-作者: Claude Code Assistant
-创建时间: 2024-12
-版本: 1.0.0
+Author: Claude Code Assistant
+Created: 2024-12
+Version: 1.0.0
 """
 
 import sys
@@ -32,7 +32,7 @@ from typing import Optional
 from datetime import datetime
 from contextlib import asynccontextmanager
 
-# 添加项目根目录到路径
+# Add project root to sys.path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
@@ -42,7 +42,7 @@ try:
     from fastapi.middleware.cors import CORSMiddleware
     import uvicorn
 except ImportError:
-    print("❌ 缺少依赖包，请安装: pip install fastapi uvicorn")
+    print("❌ Missing dependencies, please install: pip install fastapi uvicorn")
     sys.exit(1)
 
 from tradingview.historical_kline_service import (
@@ -56,69 +56,69 @@ from tradingview.utils import get_logger
 logger = get_logger(__name__)
 
 # =============================================================================
-# 全局服务实例
+# Global Service Instance
 # =============================================================================
 
 kline_service: Optional[HistoricalKlineService] = None
 
 # =============================================================================
-# 生命周期管理
+# Lifecycle Management
 # =============================================================================
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """应用生命周期管理"""
+    """Application lifecycle management"""
     global kline_service
 
-    # 启动
-    logger.info("🚀 启动K线数据API服务...")
+    # Startup logic
+    logger.info("🚀 Starting K-line data API service...")
     try:
         kline_service = HistoricalKlineService(use_enhanced_client=True)
         await kline_service.initialize()
-        logger.info("✅ K线数据服务初始化成功")
+        logger.info("✅ K-line data service initialized successfully")
     except Exception as e:
-        logger.error(f"❌ 服务初始化失败: {e}")
+        logger.error(f"❌ Service initialization failed: {e}")
         raise
 
     yield
 
-    # 关闭
-    logger.info("🛑 关闭K线数据API服务...")
+    # Shutdown logic
+    logger.info("🛑 Closing K-line data API service...")
     if kline_service:
         await kline_service.close()
-        logger.info("✅ K线数据服务已关闭")
+        logger.info("✅ K-line data service shutdown complete")
 
 # =============================================================================
-# FastAPI应用配置
+# FastAPI Application Configuration
 # =============================================================================
 
 app = FastAPI(
-    title="TradingView K线数据API",
-    description="提供TradingView历史K线数据的RESTful API接口",
+    title="TradingView K-line Data API",
+    description="RESTful API providing access to TradingView historical K-line data",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan
 )
 
-# CORS配置 - 允许跨域访问
+# CORS configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 生产环境应该限制具体域名
+    allow_origins=["*"],  # Restrict origins in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # =============================================================================
-# API端点
+# API Endpoints
 # =============================================================================
 
 @app.get("/")
 async def root():
-    """根路径"""
+    """Service root info"""
     return {
-        "service": "TradingView K线数据API",
+        "service": "TradingView K-line Data API",
         "version": "1.0.0",
         "status": "running",
         "endpoints": {
@@ -131,62 +131,58 @@ async def root():
 
 @app.get("/klines")
 async def get_klines(
-    symbol: str = Query(..., description="交易品种，例如: OANDA:XAUUSD, BINANCE:BTCUSDT"),
-    timeframe: str = Query("15", description="时间框架，例如: 1, 5, 15, 30, 60, 1D (也支持15m格式)"),
-    count: int = Query(100, ge=1, le=5000, description="K线数量 (1-5000)"),
-    quality: str = Query("production", description="质量等级: development, production, financial"),
-    use_cache: bool = Query(True, description="是否使用缓存"),
-    format: str = Query("json", description="返回格式: json, simple")
+    symbol: str = Query(..., description="Trading symbol, e.g., OANDA:XAUUSD, BINANCE:BTCUSDT"),
+    timeframe: str = Query("15", description="Timeframe, e.g., 1, 5, 15, 30, 60, 1D (also supports 15m format)"),
+    count: int = Query(100, ge=1, le=5000, description="K-line count (1-5000)"),
+    quality: str = Query("production", description="Quality level: development, production, financial"),
+    use_cache: bool = Query(True, description="Whether to use cache"),
+    format: str = Query("json", description="Response format: json, simple")
 ):
     """
-    获取K线数据
+    Retrieve K-line data
 
-    参数:
-        - symbol: 交易品种 (必需)
-            - 格式: 交易所:品种，例如: OANDA:XAUUSD, BINANCE:BTCUSDT
-            - 如果没有交易所前缀，默认为BINANCE
+    Parameters:
+        - symbol: Trading symbol (Required)
+            - Format: EXCHANGE:SYMBOL, e.g., OANDA:XAUUSD, BINANCE:BTCUSDT
+            - Default prefix is BINANCE if not specified
 
-        - timeframe: 时间框架 (默认: 15)
-            - 支持格式: 1, 5, 15, 30, 60, 240, 1D, 1W, 1M
-            - 也支持: 1m, 5m, 15m, 1h, 4h, 1d (会自动转换)
+        - timeframe: Timeframe (Default: 15)
+            - Supported: 1, 5, 15, 30, 60, 240, 1D, 1W, 1M
+            - Also supports: 1m, 5m, 15m, 1h, 4h, 1d (auto-converted)
 
-        - count: 获取数量 (默认: 100, 范围: 1-5000)
+        - count: Retrieval count (Default: 100, Range: 1-5000)
 
-        - quality: 质量等级 (默认: production)
+        - quality: Quality level (Default: production)
             - development: ≥90%
             - production: ≥95%
             - financial: ≥98%
 
-        - use_cache: 是否使用缓存 (默认: true)
+        - use_cache: Whether to use cache (Default: true)
 
-        - format: 返回格式
-            - json: 完整JSON格式（包含元数据）
-            - simple: 简化格式（仅K线数据）
+        - format: Response format
+            - json: Full JSON (with metadata)
+            - simple: Simple format (only K-line array)
 
-    返回:
-        JSON格式的K线数据
-
-    示例:
-        /klines?symbol=OANDA:XAUUSD&timeframe=15&count=100
-        /klines?symbol=BINANCE:BTCUSDT&timeframe=1h&count=50&format=simple
+    Returns:
+        JSON K-line data
     """
     try:
-        # 标准化时间框架格式 (15m -> 15, 1h -> 60, 4h -> 240, 1d -> 1D)
+        # Standardize timeframe (15m -> 15, 1h -> 60, etc.)
         timeframe_normalized = normalize_timeframe(timeframe)
 
-        # 标准化品种格式
+        # Standardize symbol
         symbol_normalized = normalize_symbol(symbol)
 
-        # 解析质量等级
+        # Parse quality level
         try:
             quality_level = KlineQualityLevel[quality.upper()]
         except KeyError:
             raise HTTPException(
                 status_code=400,
-                detail=f"无效的质量等级: {quality}. 可选值: development, production, financial"
+                detail=f"Invalid quality level: {quality}. Use development, production, or financial"
             )
 
-        # 创建请求
+        # Create request
         request = KlineDataRequest(
             symbol=symbol_normalized,
             timeframe=timeframe_normalized,
@@ -195,21 +191,20 @@ async def get_klines(
             cache_enabled=use_cache
         )
 
-        logger.info(f"📊 收到K线请求: {symbol_normalized} {timeframe_normalized} x{count}")
+        logger.info(f"📊 K-line request: {symbol_normalized} {timeframe_normalized} x{count}")
 
-        # 获取K线数据
+        # Fetch data
         response = await kline_service.fetch_klines(request)
 
-        # 根据状态返回不同的HTTP状态码
+        # Handle failure status
         if response.status == DataFetchStatus.FAILED:
             raise HTTPException(
                 status_code=500,
-                detail=f"数据获取失败: {response.error_message}"
+                detail=f"Data retrieval failed: {response.error_message}"
             )
 
-        # 格式化返回结果
+        # Format results
         if format == "simple":
-            # 简化格式 - 仅返回K线数据数组
             return {
                 "success": True,
                 "symbol": response.symbol,
@@ -229,11 +224,10 @@ async def get_klines(
                 ]
             }
         else:
-            # 完整格式 - 包含所有元数据
             result = response.to_dict()
             result["success"] = True
 
-            # 添加警告信息
+            # Add warning if partial
             if response.status == DataFetchStatus.PARTIAL:
                 result["warning"] = response.error_message
 
@@ -242,55 +236,50 @@ async def get_klines(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ 处理K线请求失败: {e}")
+        logger.error(f"❌ K-line request failed: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"服务器内部错误: {str(e)}"
+            detail=f"Internal Server Error: {str(e)}"
         )
 
 @app.get("/batch_klines")
 async def get_batch_klines(
-    symbols: str = Query(..., description="品种列表，逗号分隔，例如: BINANCE:BTCUSDT,BINANCE:ETHUSDT"),
-    timeframe: str = Query("15", description="时间框架"),
-    count: int = Query(100, ge=1, le=5000, description="每个品种的K线数量"),
-    quality: str = Query("production", description="质量等级"),
-    use_cache: bool = Query(True, description="是否使用缓存")
+    symbols: str = Query(..., description="Comma-separated symbol list, e.g., BINANCE:BTCUSDT,BINANCE:ETHUSDT"),
+    timeframe: str = Query("15", description="Timeframe"),
+    count: int = Query(100, ge=1, le=5000, description="K-line count per symbol"),
+    quality: str = Query("production", description="Quality level"),
+    use_cache: bool = Query(True, description="Whether to use cache")
 ):
     """
-    批量获取多个品种的K线数据
+    Retrieve K-line data for multiple symbols.
 
-    参数:
-        - symbols: 品种列表（逗号分隔）
-            例如: BINANCE:BTCUSDT,BINANCE:ETHUSDT,OANDA:XAUUSD
+    Parameters:
+        - symbols: Comma-separated list
+            e.g., BINANCE:BTCUSDT,BINANCE:ETHUSDT,OANDA:XAUUSD
 
-        - 其他参数同 /klines 接口
-
-    返回:
-        多个品种的K线数据数组
-
-    示例:
-        /batch_klines?symbols=BINANCE:BTCUSDT,BINANCE:ETHUSDT&timeframe=15&count=50
+    Returns:
+        Array of K-line data for each symbol
     """
     try:
-        # 解析品种列表
+        # Parse symbol list
         symbol_list = [s.strip() for s in symbols.split(",") if s.strip()]
 
         if not symbol_list:
-            raise HTTPException(status_code=400, detail="品种列表不能为空")
+            raise HTTPException(status_code=400, detail="Symbol list cannot be empty")
 
         if len(symbol_list) > 50:
-            raise HTTPException(status_code=400, detail="一次最多批量获取50个品种")
+            raise HTTPException(status_code=400, detail="Max 50 symbols per batch request")
 
-        # 标准化时间框架
+        # Standardize timeframe
         timeframe_normalized = normalize_timeframe(timeframe)
 
-        # 解析质量等级
+        # Parse quality level
         try:
             quality_level = KlineQualityLevel[quality.upper()]
         except KeyError:
-            raise HTTPException(status_code=400, detail=f"无效的质量等级: {quality}")
+            raise HTTPException(status_code=400, detail=f"Invalid quality level: {quality}")
 
-        # 创建批量请求
+        # Create batch requests
         requests = [
             KlineDataRequest(
                 symbol=normalize_symbol(symbol),
@@ -302,12 +291,12 @@ async def get_batch_klines(
             for symbol in symbol_list
         ]
 
-        logger.info(f"📊 收到批量K线请求: {len(symbol_list)}个品种")
+        logger.info(f"📊 Batch K-line request: {len(symbol_list)} symbols")
 
-        # 批量获取
+        # Batch fetch
         responses = await kline_service.batch_fetch_klines(requests)
 
-        # 格式化结果
+        # Format results
         results = []
         for response in responses:
             results.append({
@@ -340,12 +329,12 @@ async def get_batch_klines(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ 批量请求失败: {e}")
+        logger.error(f"❌ Batch request failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/health")
 async def health_check():
-    """健康检查"""
+    """Health check endpoint"""
     if kline_service and kline_service.is_initialized:
         return {
             "status": "healthy",
@@ -366,9 +355,9 @@ async def health_check():
 
 @app.get("/stats")
 async def get_stats():
-    """获取服务统计信息"""
+    """Retrieve service statistics"""
     if not kline_service:
-        raise HTTPException(status_code=503, detail="服务未初始化")
+        raise HTTPException(status_code=503, detail="Service not initialized")
 
     stats = kline_service.get_stats()
 
@@ -379,14 +368,14 @@ async def get_stats():
     }
 
 # =============================================================================
-# 辅助函数
+# Helper Functions
 # =============================================================================
 
 def normalize_timeframe(timeframe: str) -> str:
     """
-    标准化时间框架格式
+    Normalize timeframe format.
 
-    转换规则:
+    Conversion Rules:
         1m, 1min -> 1
         5m, 5min -> 5
         15m, 15min -> 15
@@ -400,82 +389,80 @@ def normalize_timeframe(timeframe: str) -> str:
     """
     timeframe = timeframe.lower().strip()
 
-    # 分钟格式
+    # Minute format
     if timeframe.endswith('m') or timeframe.endswith('min'):
         value = timeframe.replace('m', '').replace('min', '').strip()
         return value
 
-    # 小时格式
+    # Hour format
     if timeframe.endswith('h') or timeframe.endswith('hour'):
         value = timeframe.replace('h', '').replace('hour', '').strip()
         try:
             hours = int(value)
-            return str(hours * 60)  # 转换为分钟
+            return str(hours * 60)  # Convert to minutes
         except ValueError:
             pass
 
-    # 日线格式
+    # Daily format
     if timeframe.endswith('d') or timeframe.endswith('day'):
         return "1D"
 
-    # 周线格式
+    # Weekly format
     if timeframe.endswith('w') or timeframe.endswith('week'):
         return "1W"
 
-    # 月线格式
+    # Monthly format
     if timeframe.upper().endswith('M') or timeframe.endswith('month'):
         return "1M"
 
-    # 已经是标准格式
+    # Already standardized or unknown
     return timeframe
 
 def normalize_symbol(symbol: str) -> str:
     """
-    标准化品种格式
+    Normalize symbol format.
 
-    规则:
-        - 如果已有交易所前缀，保持不变
-        - 如果没有前缀，默认添加BINANCE:
+    Rules:
+        - If exchange prefix exists, keep as is
+        - If no prefix, default to BINANCE:
     """
     symbol = symbol.upper().strip()
 
     if ':' not in symbol:
-        # 没有交易所前缀，默认BINANCE
         return f"BINANCE:{symbol}"
 
     return symbol
 
 # =============================================================================
-# 命令行启动
+# CLI Startup
 # =============================================================================
 
 def main():
-    """命令行启动"""
+    """CLI Startup entry point"""
     import argparse
 
-    parser = argparse.ArgumentParser(description="TradingView K线数据HTTP API服务")
-    parser.add_argument("--host", default="0.0.0.0", help="监听地址 (默认: 0.0.0.0)")
-    parser.add_argument("--port", type=int, default=8000, help="监听端口 (默认: 8000)")
-    parser.add_argument("--reload", action="store_true", help="启用热重载（开发模式）")
-    parser.add_argument("--workers", type=int, default=1, help="工作进程数 (默认: 1)")
+    parser = argparse.ArgumentParser(description="TradingView K-line Data HTTP API Service")
+    parser.add_argument("--host", default="0.0.0.0", help="Listen host (Default: 0.0.0.0)")
+    parser.add_argument("--port", type=int, default=8000, help="Listen port (Default: 8000)")
+    parser.add_argument("--reload", action="store_true", help="Enable hot reload (dev mode)")
+    parser.add_argument("--workers", type=int, default=1, help="Worker process count (Default: 1)")
 
     args = parser.parse_args()
 
     print("=" * 80)
-    print("🚀 TradingView K线数据HTTP API服务")
+    print("🚀 TradingView K-line Data HTTP API Service")
     print("=" * 80)
-    print(f"\n📡 服务地址: http://{args.host}:{args.port}")
-    print(f"📚 API文档: http://{args.host}:{args.port}/docs")
-    print(f"📊 ReDoc文档: http://{args.host}:{args.port}/redoc")
-    print(f"\n示例请求:")
+    print(f"\n📡 Service URL: http://{args.host}:{args.port}")
+    print(f"📚 API Docs: http://{args.host}:{args.port}/docs")
+    print(f"📊 ReDoc: http://{args.host}:{args.port}/redoc")
+    print(f"\nExample Request:")
     print(f"  curl \"http://{args.host}:{args.port}/klines?symbol=OANDA:XAUUSD&timeframe=15&count=100\"")
     print(f"  curl \"http://{args.host}:{args.port}/klines?symbol=BTCUSDT&timeframe=15m&count=50\"")
     print(f"  curl \"http://{args.host}:{args.port}/health\"")
     print(f"  curl \"http://{args.host}:{args.port}/stats\"")
     print("\n" + "=" * 80)
-    print("按 Ctrl+C 停止服务\n")
+    print("Press Ctrl+C to stop service\n")
 
-    # 启动服务
     uvicorn.run(
         "tradingview.kline_api_server:app",
         host=args.host,

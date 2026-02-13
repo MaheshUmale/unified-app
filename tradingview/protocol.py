@@ -1,5 +1,5 @@
 """
-协议处理模块
+Protocol Handling Module
 """
 import json
 import base64
@@ -9,32 +9,32 @@ import binascii
 
 def parse_ws_packet(data):
     """
-    解析WebSocket数据包
+    Parse WebSocket data packets.
 
     Args:
-        data: WebSocket原始数据
+        data: Raw WebSocket data
 
     Returns:
-        list: 解析后的数据包列表
+        list: List of parsed data packets
     """
     if not data:
         return []
 
-    # 确保data是字符串
+    # Ensure data is a string
     if not isinstance(data, str):
         try:
             data = str(data)
         except Exception:
             return []
 
-    # 移除~h~标记
+    # Remove ~h~ markers
     clean_data = data.replace('~h~', '')
 
-    # 分割数据包
+    # Split data packets
     packets = []
     parts = []
 
-    # 查找所有匹配的包长度标记
+    # Find all packet length markers
     length_markers = []
     pos = 0
 
@@ -43,34 +43,34 @@ def parse_ws_packet(data):
         if pos == -1:
             break
         length_markers.append(pos)
-        pos += 3  # 跳过 ~m~
+        pos += 3  # Skip ~m~
 
-    # 如果没有长度标记，尝试直接解析整个数据
+    # If no length markers, try parsing the entire data directly
     if not length_markers:
         try:
-            # 可能是一个有效的JSON字符串
+            # Could be a valid JSON string
             packet = json.loads(clean_data)
             return [packet]
         except json.JSONDecodeError:
-            # 如果是数字，可能是ping包
+            # If it's a digit, it might be a ping packet
             if clean_data.isdigit():
                 return [int(clean_data)]
-            # 不是有效的JSON或数字
+            # Not valid JSON or digit
             return []
 
-    # 处理每个标记
+    # Process each marker
     for i in range(len(length_markers)):
         start = length_markers[i]
-        # 查找包长度
+        # Find packet length
         length_end = clean_data.find('~m~', start + 3)
         if length_end == -1:
             continue
 
         try:
-            # 获取长度值
+            # Get length value
             length = int(clean_data[start + 3:length_end])
 
-            # 获取包内容
+            # Get packet content
             content_start = length_end + 3
             content_end = content_start + length
 
@@ -80,39 +80,39 @@ def parse_ws_packet(data):
         except (ValueError, IndexError):
             continue
 
-    # 解析每个部分
+    # Parse each part
     for part in parts:
         if not part:
             continue
 
-        # 处理ping包
+        # Handle ping packets
         if part.isdigit():
             try:
                 packets.append(int(part))
                 continue
             except ValueError:
-                # 如果无法转换为整数，跳过
+                # Skip if conversion fails
                 continue
 
         try:
-            # 解析JSON
+            # Parse JSON
             packet = json.loads(part)
             packets.append(packet)
         except json.JSONDecodeError:
-            # 无法解析为JSON，尝试作为普通字符串处理
+            # Not valid JSON, try as plain string
             packets.append(part)
 
     return packets
 
 def format_ws_packet(packet):
     """
-    格式化WebSocket数据包
+    Format WebSocket data packet.
 
     Args:
-        packet: 要发送的数据包
+        packet: Packet to be sent
 
     Returns:
-        str: 格式化后的数据，如果格式化失败则返回None
+        str: Formatted data, or None if formatting fails
     """
     try:
         if isinstance(packet, dict):
@@ -122,58 +122,58 @@ def format_ws_packet(packet):
 
         return f'~m~{len(msg)}~m~{msg}'
     except Exception:
-        # 格式化失败，返回None
+        # Formatting failed, return None
         return None
 
 async def parse_compressed(data):
     """
-    解析压缩数据
+    Parse compressed data.
 
     Args:
-        data: 压缩数据
+        data: Compressed data
 
     Returns:
-        dict: 解析后的数据，如果解析失败则返回空字典
+        dict: Parsed data, or empty dict if parsing fails
     """
     if not data:
         return {}
 
     try:
-        # 解码base64
+        # Decode base64
         decoded = base64.b64decode(data)
 
-        # 创建内存文件对象
+        # Create in-memory file object
         zip_data = io.BytesIO(decoded)
 
-        # 打开zip文件
+        # Open zip file
         try:
             with zipfile.ZipFile(zip_data) as zf:
-                # 获取文件列表
+                # Get file list
                 file_list = zf.namelist()
 
                 if not file_list:
-                    # 没有文件
+                    # No files present
                     return {}
 
-                # 读取第一个文件
+                # Read the first file
                 try:
                     with zf.open(file_list[0]) as f:
                         content = f.read().decode('utf-8')
 
-                    # 解析JSON
+                    # Parse JSON
                     return json.loads(content)
                 except (UnicodeDecodeError, zipfile.BadZipFile):
-                    # 解码或读取文件错误
+                    # Decoding or reading error
                     return {}
         except zipfile.BadZipFile:
-            # 不是有效的ZIP文件
+            # Not a valid ZIP file
             return {}
     except (ValueError, binascii.Error, TypeError):
-        # base64解码错误
+        # base64 decoding error
         return {}
     except json.JSONDecodeError:
-        # JSON解析错误
+        # JSON parsing error
         return {}
     except Exception:
-        # 其他未知错误
+        # Other unknown error
         return {}

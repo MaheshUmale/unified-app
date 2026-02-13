@@ -1,117 +1,116 @@
-# TradingView 账号配置管理系统
+# TradingView Account Configuration Management System
 
-## 📋 功能概述
+## 📋 Feature Overview
 
-TradingView账号配置管理系统提供了完整的认证信息管理方案，支持：
+The TradingView account configuration management system provides a complete solution for managing authentication information, supporting:
 
-- **环境变量优先级读取** - 优先从环境变量获取认证信息
-- **多账号配置管理** - 支持配置多个TradingView账号
-- **安全加密存储** - 支持配置文件加密保护敏感信息
-- **命令行管理工具** - 提供完整的CLI工具管理账号配置
-- **自动集成** - 自动集成到现有TradingView客户端
+- **Environment Variable Priority** - Authentication info is retrieved from environment variables first.
+- **Multi-Account Management** - Support for configuring multiple TradingView accounts.
+- **Secure Encrypted Storage** - Support for encrypting configuration files to protect sensitive info.
+- **CLI Management Tool** - Provides a full CLI tool for managing account configurations.
+- **Automatic Integration** - Automatically integrates into existing TradingView clients.
 
-## 🚀 快速入门
+## 🚀 Quick Start
 
-### 1. 环境变量方式 (推荐)
+### 1. Environment Variable Method (Recommended)
 
 ```bash
-# 设置环境变量
+# Set environment variables
 export TV_SESSION="your_session_token_here"
 export TV_SIGNATURE="your_signature_here"
-export TV_SERVER="data"  # 可选，默认为data
+export TV_SERVER="data"  # Optional, defaults to "data"
 
-# 直接使用，无需额外配置
+# Use directly without extra configuration
 python your_script.py
 ```
 
-### 2. 配置文件方式
+### 2. Configuration File Method
 
 ```bash
-# 使用CLI工具添加账号
-cd /Users/zerone/code/trading/chan.py/tradingview
+# Use CLI tool to add an account
 python auth_cli.py add --from-env --set-default
 
-# 或手动添加账号
+# Or manually add an account
 python auth_cli.py add
 ```
 
-### 3. 代码中使用
+### 3. Usage in Code
 
 ```python
-# 自动从配置获取认证信息
+# Automatically retrieve auth info from configuration
 from tradingview import Client
-client = Client()  # 自动使用配置的认证信息
+client = Client()  # Automatically uses configured auth info
 await client.connect()
 
-# 指定特定账号
+# Specify a specific account
 client = Client({'account_name': 'my_account'})
 await client.connect()
 
-# 增强客户端同样支持
+# Enhanced client also supports this
 from tradingview.enhanced_client import EnhancedTradingViewClient
 client = EnhancedTradingViewClient()
 await client.connect()
 ```
 
-## 📁 文件结构
+## 📁 File Structure
 
 ```
 tradingview/
-├── auth_config.py          # 认证配置管理核心模块
-├── auth_cli.py             # 命令行管理工具
-├── README_AUTH.md          # 本说明文档
-└── client.py               # 已集成认证管理器
+├── auth_config.py          # Core module for auth config management
+├── auth_cli.py             # CLI management tool
+├── README_AUTH.md          # This documentation
+└── client.py               # Authentication manager integrated
 
 config/
-└── tradingview_auth.yaml   # 默认配置文件模板
+└── tradingview_auth.yaml   # Default configuration file template
 ```
 
-## 🔧 CLI工具使用
+## 🔧 CLI Tool Usage
 
-### 基础命令
+### Basic Commands
 
 ```bash
-# 查看所有账号配置
+# View all account configurations
 python auth_cli.py list
 
-# 从环境变量添加账号并设为默认
+# Add account from environment variables and set as default
 python auth_cli.py add --from-env --set-default
 
-# 手动添加账号
+# Manually add account
 python auth_cli.py add
 
-# 测试账号连接
-python auth_cli.py test [账号名称]
+# Test account connection
+python auth_cli.py test [account_name]
 
-# 设置默认账号
+# Set default account
 python auth_cli.py default my_account
 
-# 删除账号
+# Remove account
 python auth_cli.py remove my_account --force
 ```
 
-### 高级功能
+### Advanced Features
 
 ```bash
-# 启用配置文件加密
+# Enable configuration file encryption
 python auth_cli.py encrypt --password
 
-# 禁用配置文件加密
+# Disable configuration file encryption
 python auth_cli.py decrypt --force
 
-# 导出配置
+# Export configuration
 python auth_cli.py export --output my_accounts.json
 
-# 导入配置
+# Import configuration
 python auth_cli.py import my_accounts.json
 
-# 更新账号信息
-python auth_cli.py update my_account --server prodata --description "专业账号"
+# Update account information
+python auth_cli.py update my_account --server prodata --description "Professional Account"
 ```
 
-## ⚙️ 配置文件格式
+## ⚙️ Configuration File Format
 
-### YAML格式 (推荐)
+### YAML Format (Recommended)
 
 ```yaml
 # config/tradingview_auth.yaml
@@ -124,201 +123,201 @@ accounts:
     session_token: "your_session_token"
     signature: "your_signature"
     server: "data"
-    description: "主要交易账号"
+    description: "Primary trading account"
     is_active: true
     created_at: "2024-01-01T00:00:00"
     last_used: null
 ```
 
-### 加密存储
+### Encrypted Storage
 
-启用加密后，配置文件格式：
+Format when encryption is enabled:
 
 ```yaml
 encrypted: true
-content: "gAAAAABh5x..."  # 加密后的配置内容
+content: "gAAAAABh5x..."  # Encrypted configuration content
 version: "1.0"
 created_at: "2024-01-01T00:00:00"
 ```
 
-## 🔐 认证信息获取
+## 🔐 Obtaining Authentication Info
 
-### 1. 登录TradingView
+### 1. Log in to TradingView
 
-访问 [TradingView官网](https://tradingview.com) 并登录账号
+Visit [TradingView Official Site](https://tradingview.com) and log in to your account.
 
-### 2. 获取Session和Signature
+### 2. Get Session and Signature
 
-1. 打开浏览器开发者工具 (F12)
-2. 切换到 **Network** 标签页
-3. 过滤显示 **WS** (WebSocket) 请求
-4. 刷新页面或打开图表
-5. 找到WebSocket连接请求
-6. 在请求详情中查找：
-   - `session`: 复制为 `TV_SESSION`
-   - `signature`: 复制为 `TV_SIGNATURE`
+1. Open Browser Developer Tools (F12).
+2. Switch to the **Network** tab.
+3. Filter for **WS** (WebSocket) requests.
+4. Refresh the page or open a chart.
+5. Find the WebSocket connection request.
+6. Look for these in request details:
+   - `session`: Copy as `TV_SESSION`.
+   - `signature`: Copy as `TV_SIGNATURE`.
 
-### 3. 验证配置
+### 3. Verify Configuration
 
 ```bash
-# 测试配置是否正确
+# Test if configuration is correct
 python auth_cli.py test
 ```
 
-## 🎯 使用优先级
+## 🎯 Use Priority
 
-认证信息获取优先级（从高到低）：
+Authentication info retrieval priority (highest to lowest):
 
-1. **环境变量** - `TV_SESSION`, `TV_SIGNATURE`, `TV_SERVER`
-2. **指定账号** - 通过 `account_name` 参数指定
-3. **默认账号** - 配置文件中的 `default_account`
-4. **第一个激活账号** - 配置文件中第一个 `is_active: true` 的账号
+1. **Environment Variables** - `TV_SESSION`, `TV_SIGNATURE`, `TV_SERVER`.
+2. **Specified Account** - Specified via the `account_name` parameter.
+3. **Default Account** - `default_account` in the config file.
+4. **First Active Account** - The first account with `is_active: true` in the config file.
 
-## 🛡️ 安全建议
+## 🛡️ Security Recommendations
 
-### 生产环境
+### Production Environment
 
 ```bash
-# 1. 启用配置文件加密
+# 1. Enable configuration file encryption
 python auth_cli.py encrypt --password
 
-# 2. 设置文件权限
+# 2. Set file permissions
 chmod 600 config/tradingview_auth.yaml
 
-# 3. 使用环境变量（更安全）
+# 3. Use environment variables (more secure)
 export TV_SESSION="..."
 export TV_SIGNATURE="..."
 ```
 
-### 开发环境
+### Development Environment
 
 ```bash
-# 使用配置文件，方便管理多个账号
+# Use configuration file for easy management of multiple accounts
 python auth_cli.py add --from-env --set-default
 ```
 
-## 📊 配置示例
+## 📊 Configuration Examples
 
-### 多账号配置示例
+### Multi-Account Example
 
 ```yaml
 accounts:
-  # 主要账号
+  # Primary account
   - name: "main_trading"
     session_token: "main_session_token"
     signature: "main_signature"
     server: "data"
-    description: "主要交易账号"
+    description: "Main trading account"
     is_active: true
 
-  # 备用账号
+  # Backup account
   - name: "backup_account"
     session_token: "backup_session_token"
     signature: "backup_signature"
     server: "data"
-    description: "备用账号"
+    description: "Backup account"
     is_active: true
 
-  # 专业数据账号
+  # Pro data account
   - name: "pro_data"
     session_token: "pro_session_token"
     signature: "pro_signature"
     server: "prodata"
-    description: "专业版数据账号"
-    is_active: false  # 需要时激活
+    description: "Pro data account"
+    is_active: false  # Activate when needed
 ```
 
-### 代码中切换账号
+### Switching Accounts in Code
 
 ```python
-# 使用默认账号
+# Use default account
 client = Client()
 
-# 使用指定账号
+# Use specified account
 client = Client({'account_name': 'backup_account'})
 
-# 使用专业数据账号
+# Use pro data account
 client = Client({'account_name': 'pro_data'})
 ```
 
-## 🔍 故障排除
+## 🔍 Troubleshooting
 
-### 常见问题
+### Common Problems
 
-1. **认证失败**
+1. **Authentication Failure**
    ```bash
-   python auth_cli.py test  # 测试连接
+   python auth_cli.py test  # Test connection
    ```
 
-2. **配置文件权限问题**
+2. **Configuration File Permission Issues**
    ```bash
    chmod 600 config/tradingview_auth.yaml
    ```
 
-3. **加密配置无法读取**
+3. **Cannot Read Encrypted Config**
    ```bash
-   python auth_cli.py decrypt --force  # 禁用加密
+   python auth_cli.py decrypt --force  # Disable encryption
    ```
 
-4. **环境变量未生效**
+4. **Environment Variables Not Taking Effect**
    ```bash
-   echo $TV_SESSION  # 检查环境变量
-   source ~/.bashrc  # 重新加载环境变量
+   echo $TV_SESSION  # Check environment variable
+   source ~/.bashrc  # Reload environment variables
    ```
 
-### 调试模式
+### Debug Mode
 
 ```python
-# 启用调试日志
+# Enable debug logs
 import logging
 logging.basicConfig(level=logging.DEBUG)
 
 from tradingview.auth_config import get_auth_manager
 auth_manager = get_auth_manager()
 account = auth_manager.get_account()
-print(f"使用账号: {account.name if account else 'None'}")
+print(f"Using account: {account.name if account else 'None'}")
 ```
 
-## 🔄 迁移指南
+## 🔄 Migration Guide
 
-### 从环境变量迁移到配置文件
+### Migrating from Environment Variables to Config File
 
 ```bash
-# 1. 从当前环境变量创建配置
+# 1. Create config from current environment variables
 python auth_cli.py add --from-env --set-default
 
-# 2. 验证配置
+# 2. Verify config
 python auth_cli.py list
 
-# 3. 测试连接
+# 3. Test connection
 python auth_cli.py test
 ```
 
-### 配置文件格式升级
+### Configuration Format Upgrade
 
-配置管理器自动处理版本兼容性，无需手动升级。
+The configuration manager automatically handles version compatibility; no manual upgrade is required.
 
-## 📚 API参考
+## 📚 API Reference
 
-### 主要类和函数
+### Main Classes and Functions
 
 ```python
 from tradingview.auth_config import (
-    TradingViewAuthManager,     # 认证管理器
-    TradingViewAccount,         # 账号配置类
-    get_auth_manager,          # 获取全局管理器实例
-    get_tradingview_auth       # 便捷认证信息获取函数
+    TradingViewAuthManager,     # Auth manager
+    TradingViewAccount,         # Account config class
+    get_auth_manager,          # Get global manager instance
+    get_tradingview_auth       # Helper function for auth info
 )
 
-# 获取认证信息
+# Get authentication info
 auth_info = get_tradingview_auth('my_account')
-# 返回: {'token': '...', 'signature': '...', 'server': 'data'}
+# Returns: {'token': '...', 'signature': '...', 'server': 'data'}
 
-# 使用管理器
+# Using the manager
 auth_manager = get_auth_manager()
 account = auth_manager.get_account('my_account')
 ```
 
 ---
 
-**注意**: 请妥善保管您的TradingView认证信息，不要分享给他人或提交到公共代码仓库。
+**Note**: Please keep your TradingView authentication information secure; do not share it with others or commit it to public code repositories.

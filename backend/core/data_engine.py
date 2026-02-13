@@ -151,15 +151,16 @@ def subscribe_instrument(instrument_key: str, sid: str, interval: str = "1"):
         room_subscribers[key].add(sid)
         logger.info(f"Room {instrument_key} ({interval}m) now has {len(room_subscribers[key])} subscribers")
 
-    # Use all available live stream providers for transparency and failover
+    # Use the primary live stream provider (highest priority)
     from core.provider_registry import live_stream_registry
-    for provider in live_stream_registry.get_all():
+    provider = live_stream_registry.get_primary()
+    if provider:
         try:
             provider.set_callback(on_message)
             provider.start()
             provider.subscribe([instrument_key], interval=interval)
         except Exception as e:
-            logger.error(f"Error subscribing with provider: {e}")
+            logger.error(f"Error subscribing with primary provider: {e}")
 
 def is_sid_using_instrument(sid: str, instrument_key: str) -> bool:
     """Check if a specific client is still using this instrument in any interval."""
@@ -180,11 +181,12 @@ def unsubscribe_instrument(instrument_key: str, sid: str, interval: str = "1"):
         if len(room_subscribers[key]) == 0:
             logger.info(f"Unsubscribing from {instrument_key} ({interval}m) as no more subscribers")
             from core.provider_registry import live_stream_registry
-            for provider in live_stream_registry.get_all():
+            provider = live_stream_registry.get_primary()
+            if provider:
                 try:
                     provider.unsubscribe(instrument_key, interval=interval)
                 except Exception as e:
-                    logger.error(f"Error unsubscribing with provider: {e}")
+                    logger.error(f"Error unsubscribing with primary provider: {e}")
             del room_subscribers[key]
 
 def handle_disconnect(sid: str):
@@ -199,10 +201,11 @@ def handle_disconnect(sid: str):
 
 def start_websocket_thread(token: str, keys: List[str]):
     from core.provider_registry import live_stream_registry
-    for provider in live_stream_registry.get_all():
+    provider = live_stream_registry.get_primary()
+    if provider:
         try:
             provider.set_callback(on_message)
             provider.start()
             provider.subscribe(keys or INITIAL_INSTRUMENTS)
         except Exception as e:
-            logger.error(f"Error starting provider: {e}")
+            logger.error(f"Error starting primary provider: {e}")

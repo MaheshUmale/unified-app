@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 
 """
-增强版数据质量监控系统
-实现多维度数据质量评估、实时监控和智能容错机制
+Enhanced Data Quality Monitoring System
+Implements multi-dimensional data quality assessment, real-time monitoring, and smart fault tolerance mechanisms.
 """
 
 import asyncio
@@ -24,7 +24,7 @@ logger = get_logger(__name__)
 
 
 class QualityLevel(Enum):
-    """数据质量等级"""
+    """Data quality levels"""
     EXCELLENT = "excellent"    # >= 0.95
     GOOD = "good"             # >= 0.85
     ACCEPTABLE = "acceptable"  # >= 0.75
@@ -33,7 +33,7 @@ class QualityLevel(Enum):
 
 
 class DataIssueType(Enum):
-    """数据问题类型"""
+    """Data issue types"""
     MISSING_DATA = "missing_data"
     INVALID_VALUE = "invalid_value"
     LOGICAL_ERROR = "logical_error"
@@ -45,7 +45,7 @@ class DataIssueType(Enum):
 
 
 class AlertLevel(Enum):
-    """告警级别"""
+    """Alert levels"""
     INFO = "info"
     WARNING = "warning"
     ERROR = "error"
@@ -54,34 +54,34 @@ class AlertLevel(Enum):
 
 @dataclass
 class DataQualityMetrics:
-    """数据质量指标"""
-    completeness_score: float = 0.0      # 完整性得分
-    accuracy_score: float = 0.0          # 准确性得分
-    consistency_score: float = 0.0       # 一致性得分
-    timeliness_score: float = 0.0        # 及时性得分
-    validity_score: float = 0.0          # 有效性得分
-    uniqueness_score: float = 0.0        # 唯一性得分
-    overall_score: float = 0.0           # 综合得分
+    """Data quality metrics"""
+    completeness_score: float = 0.0      # Completeness score
+    accuracy_score: float = 0.0          # Accuracy score
+    consistency_score: float = 0.0       # Consistency score
+    timeliness_score: float = 0.0        # Timeliness score
+    validity_score: float = 0.0          # Validity score
+    uniqueness_score: float = 0.0        # Uniqueness score
+    overall_score: float = 0.0           # Overall score
     quality_level: QualityLevel = QualityLevel.UNACCEPTABLE
 
-    # 详细统计
+    # Detailed statistics
     total_records: int = 0
     valid_records: int = 0
     invalid_records: int = 0
     missing_records: int = 0
     duplicate_records: int = 0
 
-    # 问题统计
+    # Issue statistics
     issues: Dict[DataIssueType, int] = field(default_factory=dict)
 
-    # 时间统计
+    # Time statistics
     evaluation_time: float = 0.0
     data_timestamp: int = 0
 
 
 @dataclass
 class DataQualityAlert:
-    """数据质量告警"""
+    """Data quality alert"""
     alert_id: str
     level: AlertLevel
     issue_type: DataIssueType
@@ -95,7 +95,7 @@ class DataQualityAlert:
 
 @dataclass
 class KlineValidationResult:
-    """K线数据验证结果"""
+    """K-line data validation result"""
     is_valid: bool
     quality_score: float
     issues: List[DataIssueType]
@@ -105,24 +105,24 @@ class KlineValidationResult:
 
 
 class DataQualityValidator:
-    """数据质量验证器"""
+    """Data quality validator"""
 
     def __init__(self, config: Dict[str, Any] = None):
-        """初始化验证器"""
+        """Initialize validator"""
         self.config = config or {}
 
-        # 质量阈值配置
+        # Quality threshold configuration
         self.thresholds = {
             'min_completeness': self.config.get('min_completeness', 0.95),
             'min_accuracy': self.config.get('min_accuracy', 0.90),
             'max_price_deviation': self.config.get('max_price_deviation', 0.20),  # 20%
-            'max_volume_deviation': self.config.get('max_volume_deviation', 5.0),  # 5倍
-            'max_timestamp_gap': self.config.get('max_timestamp_gap', 300),      # 5分钟
+            'max_volume_deviation': self.config.get('max_volume_deviation', 5.0),  # 5x
+            'max_timestamp_gap': self.config.get('max_timestamp_gap', 300),      # 5 minutes
             'min_price': self.config.get('min_price', 0.0001),
             'max_price': self.config.get('max_price', 1000000.0)
         }
 
-        # 质量权重配置
+        # Quality weight configuration
         self.weights = {
             'completeness': self.config.get('completeness_weight', 0.25),
             'accuracy': self.config.get('accuracy_weight', 0.25),
@@ -133,14 +133,14 @@ class DataQualityValidator:
         }
 
     async def validate_kline_data(self, data: Dict[str, Any]) -> KlineValidationResult:
-        """验证K线数据质量"""
+        """Validate K-line data quality"""
         start_time = time.time()
 
         klines = data.get('klines', [])
         symbol = data.get('symbol', 'UNKNOWN')
         timeframe = data.get('timeframe', 'UNKNOWN')
 
-        # 初始化指标
+        # Initialize metrics
         metrics = DataQualityMetrics()
         metrics.total_records = len(klines)
         metrics.data_timestamp = int(time.time())
@@ -159,28 +159,28 @@ class DataQualityValidator:
                 quality_score=0.0,
                 issues=issues,
                 metrics=metrics,
-                suggestions=["数据为空，请检查数据源"]
+                suggestions=["Data is empty, please check the source"]
             )
 
-        # 1. 完整性检查
+        # 1. Completeness check
         completeness_score = await self._check_completeness(klines, metrics, issues)
 
-        # 2. 准确性检查
+        # 2. Accuracy check
         accuracy_score = await self._check_accuracy(klines, metrics, issues)
 
-        # 3. 一致性检查
+        # 3. Consistency check
         consistency_score = await self._check_consistency(klines, metrics, issues)
 
-        # 4. 及时性检查
+        # 4. Timeliness check
         timeliness_score = await self._check_timeliness(klines, metrics, issues)
 
-        # 5. 有效性检查
+        # 5. Validity check
         validity_score = await self._check_validity(klines, metrics, issues)
 
-        # 6. 唯一性检查
+        # 6. Uniqueness check
         uniqueness_score = await self._check_uniqueness(klines, metrics, issues)
 
-        # 计算综合得分
+        # Calculate overall score
         overall_score = (
             completeness_score * self.weights['completeness'] +
             accuracy_score * self.weights['accuracy'] +
@@ -190,7 +190,7 @@ class DataQualityValidator:
             uniqueness_score * self.weights['uniqueness']
         )
 
-        # 更新指标
+        # Update metrics
         metrics.completeness_score = completeness_score
         metrics.accuracy_score = accuracy_score
         metrics.consistency_score = consistency_score
@@ -201,10 +201,10 @@ class DataQualityValidator:
         metrics.quality_level = self._determine_quality_level(overall_score)
         metrics.evaluation_time = time.time() - start_time
 
-        # 生成修复建议
+        # Generate suggestions
         suggestions = self._generate_suggestions(issues, metrics)
 
-        # 尝试数据修复
+        # Attempt data correction
         if issues and overall_score > 0.6:
             corrected_data = await self._attempt_data_correction(data, issues)
 
@@ -219,7 +219,7 @@ class DataQualityValidator:
 
     async def _check_completeness(self, klines: List[Dict], metrics: DataQualityMetrics,
                                  issues: List[DataIssueType]) -> float:
-        """检查数据完整性"""
+        """Check data completeness"""
         if not klines:
             issues.append(DataIssueType.MISSING_DATA)
             return 0.0
@@ -249,7 +249,7 @@ class DataQualityValidator:
 
     async def _check_accuracy(self, klines: List[Dict], metrics: DataQualityMetrics,
                              issues: List[DataIssueType]) -> float:
-        """检查数据准确性"""
+        """Check data accuracy"""
         if not klines:
             return 0.0
 
@@ -264,13 +264,13 @@ class DataQualityValidator:
                 close_price = float(kline.get('close', 0))
                 volume = float(kline.get('volume', 0))
 
-                # 价格关系逻辑检查
+                # Logical price relationship check
                 if not (low_price <= min(open_price, close_price) <= max(open_price, close_price) <= high_price):
                     invalid_count += 1
                     issues.append(DataIssueType.LOGICAL_ERROR)
                     continue
 
-                # 价格范围检查
+                # Price range check
                 if (open_price < self.thresholds['min_price'] or open_price > self.thresholds['max_price'] or
                     high_price < self.thresholds['min_price'] or high_price > self.thresholds['max_price'] or
                     low_price < self.thresholds['min_price'] or low_price > self.thresholds['max_price'] or
@@ -279,7 +279,7 @@ class DataQualityValidator:
                     issues.append(DataIssueType.INVALID_VALUE)
                     continue
 
-                # 成交量检查
+                # Volume check
                 if volume < 0:
                     invalid_count += 1
                     issues.append(DataIssueType.INVALID_VALUE)
@@ -311,14 +311,14 @@ class DataQualityValidator:
 
     async def _check_consistency(self, klines: List[Dict], metrics: DataQualityMetrics,
                                 issues: List[DataIssueType]) -> float:
-        """检查数据一致性"""
+        """Check data consistency"""
         if len(klines) < 2:
             return 1.0
 
         consistent_count = 0
         total_checks = len(klines) - 1
 
-        # 检查价格异常波动
+        # Check for abnormal price fluctuations
         for i in range(1, len(klines)):
             prev_kline = klines[i-1]
             curr_kline = klines[i]
@@ -329,14 +329,14 @@ class DataQualityValidator:
                 curr_high = float(curr_kline.get('high', 0))
                 curr_low = float(curr_kline.get('low', 0))
 
-                # 检查价格跳跃
+                # Check for price jumps
                 if prev_close > 0:
                     price_change = abs(curr_open - prev_close) / prev_close
                     if price_change > self.thresholds['max_price_deviation']:
                         issues.append(DataIssueType.PRICE_ANOMALY)
                         continue
 
-                # 检查K线内部一致性
+                # Check internal consistency of a K-line
                 if curr_high > 0 and curr_low > 0:
                     price_range = (curr_high - curr_low) / curr_high
                     if price_range > self.thresholds['max_price_deviation']:
@@ -358,7 +358,7 @@ class DataQualityValidator:
 
     async def _check_timeliness(self, klines: List[Dict], metrics: DataQualityMetrics,
                                issues: List[DataIssueType]) -> float:
-        """检查数据及时性"""
+        """Check data timeliness"""
         if not klines:
             return 0.0
 
@@ -369,17 +369,17 @@ class DataQualityValidator:
             try:
                 timestamp = int(kline.get('timestamp', 0))
 
-                # 检查时间戳有效性
+                # Check timestamp validity
                 if timestamp <= 0:
                     issues.append(DataIssueType.TIMESTAMP_ERROR)
                     continue
 
-                # 检查时间戳是否过于陈旧（超过7天）
+                # Check if timestamp is too old (over 7 days)
                 if current_time - timestamp > 7 * 24 * 3600:
                     issues.append(DataIssueType.TIMESTAMP_ERROR)
                     continue
 
-                # 检查时间戳是否来自未来（超过1小时）
+                # Check if timestamp is from the future (over 1 hour)
                 if timestamp - current_time > 3600:
                     issues.append(DataIssueType.TIMESTAMP_ERROR)
                     continue
@@ -399,7 +399,7 @@ class DataQualityValidator:
 
     async def _check_validity(self, klines: List[Dict], metrics: DataQualityMetrics,
                              issues: List[DataIssueType]) -> float:
-        """检查数据有效性"""
+        """Check data validity"""
         if not klines:
             return 0.0
 
@@ -407,7 +407,7 @@ class DataQualityValidator:
 
         for kline in klines:
             try:
-                # 检查必需字段是否存在且有效
+                # Check if required fields exist and are valid
                 required_fields = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
                 field_valid = True
 
@@ -421,7 +421,7 @@ class DataQualityValidator:
                         field_valid = False
                         break
 
-                    # 数值类型检查
+                    # Numeric type check
                     if field != 'timestamp':
                         try:
                             float(value)
@@ -447,7 +447,7 @@ class DataQualityValidator:
 
     async def _check_uniqueness(self, klines: List[Dict], metrics: DataQualityMetrics,
                                issues: List[DataIssueType]) -> float:
-        """检查数据唯一性（无重复）"""
+        """Check data uniqueness (no duplicates)"""
         if not klines:
             return 1.0
 
@@ -467,7 +467,7 @@ class DataQualityValidator:
                     unique_count += 1
 
             except (ValueError, TypeError):
-                # 无效时间戳，跳过
+                # Invalid timestamp, skip
                 pass
 
         metrics.duplicate_records = duplicate_count
@@ -481,7 +481,7 @@ class DataQualityValidator:
         return unique_count / total_valid if total_valid > 0 else 1.0
 
     def _determine_quality_level(self, score: float) -> QualityLevel:
-        """确定质量等级"""
+        """Determine quality level based on score"""
         if score >= 0.95:
             return QualityLevel.EXCELLENT
         elif score >= 0.85:
@@ -495,39 +495,39 @@ class DataQualityValidator:
 
     def _generate_suggestions(self, issues: List[DataIssueType],
                              metrics: DataQualityMetrics) -> List[str]:
-        """生成改进建议"""
+        """Generate improvement suggestions"""
         suggestions = []
 
         if DataIssueType.MISSING_DATA in issues:
-            suggestions.append("存在缺失数据，建议检查数据源或使用数据插值方法")
+            suggestions.append("Missing data detected; consider checking the source or using interpolation")
 
         if DataIssueType.INVALID_VALUE in issues:
-            suggestions.append("存在无效数值，建议进行数据清洗和格式标准化")
+            suggestions.append("Invalid values detected; data cleaning and normalization suggested")
 
         if DataIssueType.LOGICAL_ERROR in issues:
-            suggestions.append("存在逻辑错误（如high < low），建议检查数据源质量")
+            suggestions.append("Logical errors detected (e.g., high < low); consider source quality review")
 
         if DataIssueType.TIMESTAMP_ERROR in issues:
-            suggestions.append("存在时间戳错误，建议同步时间或检查时区设置")
+            suggestions.append("Timestamp errors detected; check clock sync or timezone settings")
 
         if DataIssueType.PRICE_ANOMALY in issues:
-            suggestions.append("存在价格异常波动，建议启用异常检测和过滤机制")
+            suggestions.append("Abnormal price fluctuations detected; anomaly detection suggested")
 
         if DataIssueType.VOLUME_ANOMALY in issues:
-            suggestions.append("存在成交量异常，建议检查数据源或应用平滑算法")
+            suggestions.append("Abnormal volume detected; check source or apply smoothing")
 
         if DataIssueType.DUPLICATE_DATA in issues:
-            suggestions.append("存在重复数据，建议启用去重机制")
+            suggestions.append("Duplicate data detected; deduplication suggested")
 
         if metrics.overall_score < 0.8:
-            suggestions.append("整体数据质量偏低，建议考虑更换数据源或增强数据清洗")
+            suggestions.append("Overall data quality is low; consider alternative source or enhanced cleaning")
 
         return suggestions
 
     async def _attempt_data_correction(self, data: Dict[str, Any],
                                       issues: List[DataIssueType]) -> Optional[Dict[str, Any]]:
-        """尝试数据修复"""
-        # 简单的数据修复逻辑
+        """Attempt to correct data issues"""
+        # Simple data correction logic
         corrected_data = data.copy()
         klines = corrected_data.get('klines', [])
 
@@ -540,13 +540,13 @@ class DataQualityValidator:
             corrected_kline = kline.copy()
 
             try:
-                # 修复价格逻辑错误
+                # Fix price logic errors
                 open_price = float(corrected_kline.get('open', 0))
                 high_price = float(corrected_kline.get('high', 0))
                 low_price = float(corrected_kline.get('low', 0))
                 close_price = float(corrected_kline.get('close', 0))
 
-                # 确保high是最高价，low是最低价
+                # Ensure high is max and low is min
                 actual_high = max(open_price, high_price, low_price, close_price)
                 actual_low = min(open_price, high_price, low_price, close_price)
 
@@ -556,7 +556,7 @@ class DataQualityValidator:
                 corrected_klines.append(corrected_kline)
 
             except (ValueError, TypeError):
-                # 无法修复的数据，跳过
+                # Cannot correct, skip
                 continue
 
         corrected_data['klines'] = corrected_klines
@@ -564,42 +564,42 @@ class DataQualityValidator:
 
 
 class DataQualityMonitor:
-    """数据质量监控器"""
+    """Data quality monitor"""
 
     def __init__(self, config: Dict[str, Any] = None):
-        """初始化监控器"""
+        """Initialize monitor"""
         self.config = config or {}
         self.validator = DataQualityValidator(config)
 
-        # 监控状态
+        # Monitor state
         self.active_monitors = set()
         self.quality_history = defaultdict(lambda: deque(maxlen=1000))
         self.alerts = deque(maxlen=10000)
         self.alert_handlers = []
 
-        # 统计信息
+        # Statistics
         self.total_evaluations = 0
         self.total_issues = defaultdict(int)
         self.avg_quality_score = 0.0
 
-        # 阈值配置
+        # Threshold configurations
         self.alert_thresholds = {
             'critical_quality_score': self.config.get('critical_quality_score', 0.6),
             'warning_quality_score': self.config.get('warning_quality_score', 0.8),
             'max_consecutive_failures': self.config.get('max_consecutive_failures', 3)
         }
 
-        logger.info("数据质量监控器初始化完成")
+        logger.info("Data Quality Monitor initialized")
 
     async def evaluate_data_quality(self, symbol: str, timeframe: str,
                                    data: Dict[str, Any]) -> KlineValidationResult:
-        """评估数据质量"""
+        """Evaluate data quality"""
         validation_result = await self.validator.validate_kline_data(data)
 
-        # 更新统计
+        # Update statistics
         self.total_evaluations += 1
 
-        # 记录质量历史
+        # Record history
         monitor_key = f"{symbol}:{timeframe}"
         self.quality_history[monitor_key].append({
             'timestamp': int(time.time()),
@@ -608,27 +608,27 @@ class DataQualityMonitor:
             'issues': [issue.value for issue in validation_result.issues]
         })
 
-        # 更新平均质量得分
+        # Update average quality score
         total_score = self.avg_quality_score * (self.total_evaluations - 1) + validation_result.quality_score
         self.avg_quality_score = total_score / self.total_evaluations
 
-        # 统计问题类型
+        # Tally issues
         for issue in validation_result.issues:
             self.total_issues[issue] += 1
 
-        # 生成告警
+        # Generate alerts
         await self._check_and_generate_alerts(symbol, timeframe, validation_result)
 
-        logger.debug(f"数据质量评估完成: {symbol}:{timeframe} 得分={validation_result.quality_score:.3f}")
+        logger.debug(f"Data quality evaluation complete: {symbol}:{timeframe} Score={validation_result.quality_score:.3f}")
 
         return validation_result
 
     async def _check_and_generate_alerts(self, symbol: str, timeframe: str,
                                         result: KlineValidationResult) -> None:
-        """检查并生成告警"""
+        """Check for issues and generate alerts"""
         quality_score = result.quality_score
 
-        # 生成质量告警
+        # Generate quality alerts
         if quality_score < self.alert_thresholds['critical_quality_score']:
             alert = DataQualityAlert(
                 alert_id=f"quality_{symbol}_{timeframe}_{int(time.time())}",
@@ -636,7 +636,7 @@ class DataQualityMonitor:
                 issue_type=DataIssueType.INVALID_VALUE,
                 symbol=symbol,
                 timeframe=timeframe,
-                message=f"数据质量严重下降: {quality_score:.3f}",
+                message=f"Critical data quality drop: {quality_score:.3f}",
                 details={
                     'quality_score': quality_score,
                     'quality_level': result.metrics.quality_level.value,
@@ -655,7 +655,7 @@ class DataQualityMonitor:
                 issue_type=DataIssueType.INVALID_VALUE,
                 symbol=symbol,
                 timeframe=timeframe,
-                message=f"数据质量下降: {quality_score:.3f}",
+                message=f"Data quality warning: {quality_score:.3f}",
                 details={
                     'quality_score': quality_score,
                     'quality_level': result.metrics.quality_level.value,
@@ -667,27 +667,27 @@ class DataQualityMonitor:
             await self._emit_alert(alert)
 
     async def _emit_alert(self, alert: DataQualityAlert) -> None:
-        """发送告警"""
+        """Emit quality alert"""
         self.alerts.append(alert)
 
-        # 调用告警处理器
+        # Call handlers
         for handler in self.alert_handlers:
             try:
                 await handler(alert)
             except Exception as e:
-                logger.error(f"告警处理器执行失败: {e}")
+                logger.error(f"Alert handler failed: {e}")
 
-        logger.warning(f"数据质量告警: {alert.level.value} - {alert.message}")
+        logger.warning(f"Data Quality Alert: {alert.level.value} - {alert.message}")
 
     def register_alert_handler(self, handler: callable) -> None:
-        """注册告警处理器"""
+        """Register alert handler"""
         self.alert_handlers.append(handler)
-        logger.info(f"注册告警处理器: {handler.__name__}")
+        logger.info(f"Alert handler registered: {handler.__name__}")
 
     def get_quality_statistics(self) -> Dict[str, Any]:
-        """获取质量统计信息"""
+        """Get overall quality statistics"""
         recent_alerts = [alert for alert in self.alerts
-                        if alert.timestamp > int(time.time()) - 3600]  # 最近1小时
+                        if alert.timestamp > int(time.time()) - 3600]  # Last 1 hour
 
         return {
             'total_evaluations': self.total_evaluations,
@@ -703,7 +703,7 @@ class DataQualityMonitor:
 
     def get_symbol_quality_history(self, symbol: str, timeframe: str,
                                   hours: int = 24) -> List[Dict[str, Any]]:
-        """获取品种质量历史"""
+        """Get quality history for a specific symbol"""
         monitor_key = f"{symbol}:{timeframe}"
 
         if monitor_key not in self.quality_history:
@@ -717,7 +717,7 @@ class DataQualityMonitor:
         ]
 
     def get_recent_alerts(self, hours: int = 24) -> List[DataQualityAlert]:
-        """获取最近告警"""
+        """Get recent quality alerts"""
         cutoff_time = int(time.time()) - (hours * 3600)
 
         return [
@@ -726,53 +726,53 @@ class DataQualityMonitor:
         ]
 
 
-# ==================== 容错机制 ====================
+# ==================== Fault Tolerance ====================
 
 class DataFaultTolerance:
-    """数据容错机制"""
+    """Data fault tolerance mechanism"""
 
     def __init__(self, config: Dict[str, Any] = None):
-        """初始化容错机制"""
+        """Initialize fault tolerance"""
         self.config = config or {}
         self.fallback_strategies = {}
         self.circuit_breakers = {}
 
     def register_fallback_strategy(self, issue_type: DataIssueType, strategy: callable) -> None:
-        """注册容错策略"""
+        """Register a fallback strategy"""
         self.fallback_strategies[issue_type] = strategy
-        logger.info(f"注册容错策略: {issue_type.value}")
+        logger.info(f"Fallback strategy registered: {issue_type.value}")
 
     async def handle_data_issue(self, issue_type: DataIssueType,
                                context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """处理数据问题"""
+        """Handle a specific data issue"""
         if issue_type in self.fallback_strategies:
             try:
                 strategy = self.fallback_strategies[issue_type]
                 return await strategy(context)
             except Exception as e:
-                logger.error(f"容错策略执行失败: {e}")
+                logger.error(f"Fallback strategy execution failed: {e}")
 
         return None
 
 
-# ==================== 使用示例 ====================
+# ==================== Usage Example ====================
 
 async def example_quality_monitoring():
-    """质量监控使用示例"""
+    """Example usage for quality monitoring"""
 
-    # 初始化监控器
+    # Initialize monitor
     monitor = DataQualityMonitor({
         'critical_quality_score': 0.6,
         'warning_quality_score': 0.8
     })
 
-    # 注册告警处理器
+    # Register alert handler
     async def alert_handler(alert: DataQualityAlert):
-        print(f"收到告警: {alert.level.value} - {alert.message}")
+        print(f"Received alert: {alert.level.value} - {alert.message}")
 
     monitor.register_alert_handler(alert_handler)
 
-    # 模拟数据质量评估
+    # Simulate data for evaluation
     sample_data = {
         'symbol': 'BINANCE:BTCUSDT',
         'timeframe': '15',
@@ -796,18 +796,18 @@ async def example_quality_monitoring():
         ]
     }
 
-    # 评估数据质量
+    # Evaluate data quality
     result = await monitor.evaluate_data_quality('BINANCE:BTCUSDT', '15', sample_data)
 
-    print(f"质量评估结果:")
-    print(f"- 总体得分: {result.quality_score:.3f}")
-    print(f"- 质量等级: {result.metrics.quality_level.value}")
-    print(f"- 发现问题: {len(result.issues)}个")
-    print(f"- 改进建议: {len(result.suggestions)}条")
+    print(f"Quality Evaluation Result:")
+    print(f"- Overall Score: {result.quality_score:.3f}")
+    print(f"- Quality Level: {result.metrics.quality_level.value}")
+    print(f"- Issues Found: {len(result.issues)}")
+    print(f"- Improvement Suggestions: {len(result.suggestions)}")
 
-    # 获取统计信息
+    # Get statistics
     stats = monitor.get_quality_statistics()
-    print(f"监控统计: {stats}")
+    print(f"Monitor Statistics: {stats}")
 
 
 if __name__ == "__main__":

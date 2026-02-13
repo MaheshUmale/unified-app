@@ -1,5 +1,5 @@
 """
-图表指标研究模块
+Chart Indicator Study Module
 """
 import json
 import asyncio
@@ -13,28 +13,28 @@ logger = get_logger(__name__)
 
 class ChartStudy:
     """
-    图表指标研究类
+    Class representing an indicator study on a chart.
     """
     def __init__(self, chart_session, indicator):
         """
-        初始化图表指标研究
+        Initialize a chart indicator study.
 
         Args:
-            chart_session: 图表会话
-            indicator: 指标对象
+            chart_session: Parent chart session
+            indicator: Indicator object
         """
         from ..classes import PineIndicator, BuiltInIndicator
 
         if not isinstance(indicator, (PineIndicator, BuiltInIndicator)):
-            raise TypeError("指标参数必须是PineIndicator或BuiltInIndicator的实例。"
-                           "请使用'TradingView.get_indicator()'函数。")
+            raise TypeError("Indicator must be an instance of PineIndicator or BuiltInIndicator. "
+                           "Use 'TradingView.get_indicator()'.")
 
         self.instance = indicator
         self._study_id = gen_session_id('st')
         self._study_listeners = chart_session._study_listeners
         self._chart_session = chart_session
 
-        # 初始化数据
+        # State
         self._periods = {}
         self._indexes = []
         self._graphic = {}
@@ -44,7 +44,7 @@ class ChartStudy:
             'performance': {},
         }
 
-        # 回调函数
+        # Callbacks
         self._callbacks = {
             'study_completed': [],
             'update': [],
@@ -52,10 +52,10 @@ class ChartStudy:
             'error': []
         }
 
-        # 设置监听器
+        # Register listener
         self._study_listeners[self._study_id] = self._handle_study_data
 
-        # 创建指标 - 异步创建任务
+        # Dispatch creation request
         self._create_study_task = asyncio.create_task(
             chart_session._client.send('create_study', [
                 chart_session._session_id,
@@ -69,13 +69,13 @@ class ChartStudy:
 
     def _get_inputs(self, options):
         """
-        获取指标输入参数
+        Generate input parameters for the indicator.
 
         Args:
-            options: 指标对象
+            options: Indicator object
 
         Returns:
-            dict: 输入参数
+            dict: Input parameters
         """
         from ..classes import PineIndicator
 
@@ -101,22 +101,22 @@ class ChartStudy:
 
     async def _handle_study_data(self, packet):
         """
-        处理指标数据
+        Process incoming study data packets.
 
         Args:
-            packet: 数据包
+            packet: Data packet
         """
-        # 指标完成
+        # Study lifecycle
         if packet['type'] == 'study_completed':
             self._handle_event('study_completed')
             return
 
-        # 时间刻度更新
+        # Data updates
         if packet['type'] in ['timescale_update', 'du']:
             changes = []
             data = packet['data'][1].get(self._study_id, {})
 
-            # 处理指标数据
+            # Process plot values
             if data and data.get('st') and data['st'][0]:
                 for p in data['st']:
                     period = {}
@@ -135,13 +135,13 @@ class ChartStudy:
 
                 changes.append('plots')
 
-            # 处理图形数据
+            # Process graphic data
             if data.get('ns') and data['ns'].get('d'):
                 try:
                     parsed = json.loads(data['ns'].get('d', '{}'))
 
                     if parsed.get('graphicsCmds'):
-                        # 处理图形命令
+                        # Handle erasure
                         if parsed['graphicsCmds'].get('erase'):
                             for instruction in parsed['graphicsCmds']['erase']:
                                 if instruction['action'] == 'all':
@@ -154,7 +154,7 @@ class ChartStudy:
                                     if instruction['type'] in self._graphic and instruction['id'] in self._graphic[instruction['type']]:
                                         del self._graphic[instruction['type']][instruction['id']]
 
-                        # 处理创建命令
+                        # Handle creation
                         if parsed['graphicsCmds'].get('create'):
                             for draw_type, groups in parsed['graphicsCmds']['create'].items():
                                 if draw_type not in self._graphic:
@@ -167,41 +167,41 @@ class ChartStudy:
 
                         changes.append('graphic')
 
-                    # 更新策略报告
+                    # Update strategy reports
                     if parsed.get('dataCompressed'):
                         try:
                             decompressed = await parse_compressed(parsed['dataCompressed'])
                             if decompressed and decompressed.get('report'):
                                 await self._update_strategy_report(decompressed['report'], changes)
                         except Exception as e:
-                            self._handle_error(f"解析压缩数据出错: {str(e)}")
+                            self._handle_error(f"Failed to parse compressed data: {str(e)}")
 
                     if parsed.get('data') and parsed['data'].get('report'):
                         await self._update_strategy_report(parsed['data']['report'], changes)
 
                 except json.JSONDecodeError:
-                    self._handle_error("解析JSON数据出错")
+                    self._handle_error("JSON decode error in study data")
 
-            # 更新索引
+            # Update indexes
             if data.get('ns') and data['ns'].get('indexes') and isinstance(data['ns']['indexes'], list):
                 self._indexes = data['ns']['indexes']
 
-            # 触发更新事件
+            # Dispatch update events
             if changes:
                 self._handle_event('update', changes)
 
-        # 指标错误
+        # Error handling
         elif packet['type'] == 'study_error':
-            error_msg = f"指标错误: {packet['data'][3]}" if len(packet['data']) > 3 else "未知指标错误"
+            error_msg = f"Study error: {packet['data'][3]}" if len(packet['data']) > 3 else "Unknown study error"
             self._handle_error(error_msg)
 
     async def _update_strategy_report(self, report, changes):
         """
-        更新策略报告数据
+        Merge strategy report data.
 
         Args:
-            report: 报告数据
-            changes: 变更列表
+            report: New report data
+            changes: Tracked changes
         """
         if report.get('currency'):
             self._strategy_report['currency'] = report['currency']
@@ -232,13 +232,13 @@ class ChartStudy:
 
     def _parse_trades(self, trades):
         """
-        解析交易数据
+        Normalize strategy trade data.
 
         Args:
-            trades: 交易数据
+            trades: Raw trade list
 
         Returns:
-            list: 解析后的交易列表
+            list: Normalized trade list
         """
         return [
             {
@@ -264,11 +264,11 @@ class ChartStudy:
 
     def _handle_event(self, event, *data):
         """
-        处理事件
+        Broadcast events to subscribers.
 
         Args:
-            event: 事件类型
-            data: 事件数据
+            event: Event type
+            data: Payloads
         """
         for callback in self._callbacks[event]:
             callback(*data)
@@ -278,14 +278,12 @@ class ChartStudy:
 
     def _handle_error(self, *msgs):
         """
-        处理错误
+        Handle and log errors.
 
         Args:
-            msgs: 错误信息
+            msgs: Error messages
         """
         if not self._callbacks['error']:
-            # 修复格式化错误
-            # 将msgs转换为字符串并合并
             error_msg = " ".join(str(msg) for msg in msgs)
             logger.error(f"ERROR: {error_msg}")
         else:
@@ -293,31 +291,21 @@ class ChartStudy:
 
     @property
     def periods(self):
-        """获取周期数据"""
+        """Get study period data as objects."""
         from types import SimpleNamespace
 
-        # 创建一个有属性访问的对象列表
         periods_list = []
         for period_data in sorted(self._periods.values(), key=lambda p: p.get('$time', 0), reverse=True):
-            # 创建SimpleNamespace对象，将字典键值对转为属性
             period = SimpleNamespace()
-
-            # 设置基本属性
             period.time = period_data.get('$time', 0)
 
-            # 为所有plot_N属性设置默认值为None
-            for i in range(10):  # 假设最多有10个plot属性
+            # Default initialized plots
+            for i in range(10):
                 setattr(period, f'plot_{i}', None)
 
-            # 添加所有其他属性
             for key, value in period_data.items():
                 if key != '$time':
-                    # 转换属性名
-                    attr_name = key
-                    if key.startswith('plot_'):
-                        attr_name = key  # 保持plot_N格式
-
-                    setattr(period, attr_name, value)
+                    setattr(period, key, value)
 
             periods_list.append(period)
 
@@ -325,10 +313,8 @@ class ChartStudy:
 
     @property
     def graphic(self):
-        """获取图形数据"""
-        # 创建翻译表
+        """Retrieve parsed graphic data."""
         translator = {}
-
         chart_indexes = getattr(self._chart_session, 'indexes', {})
         sorted_indexes = sorted(chart_indexes.keys(), key=lambda k: chart_indexes[k], reverse=True)
 
@@ -340,21 +326,20 @@ class ChartStudy:
 
     @property
     def strategy_report(self):
-        """获取策略报告"""
+        """Retrieve latest strategy results."""
         return self._strategy_report
 
     async def set_indicator(self, indicator):
         """
-        设置指标
+        Update the study with a new indicator configuration.
 
         Args:
-            indicator: 新的指标对象
+            indicator: New indicator instance
         """
         from ..classes import PineIndicator, BuiltInIndicator
 
         if not isinstance(indicator, (PineIndicator, BuiltInIndicator)):
-            raise TypeError("指标参数必须是PineIndicator或BuiltInIndicator的实例。"
-                           "请使用'TradingView.get_indicator()'函数。")
+            raise TypeError("Indicator must be an instance of PineIndicator or BuiltInIndicator.")
 
         self.instance = indicator
 
@@ -366,34 +351,19 @@ class ChartStudy:
         ])
 
     def on_ready(self, callback):
-        """
-        添加就绪回调
-
-        Args:
-            callback: 回调函数
-        """
+        """Register callback for completion."""
         self._callbacks['study_completed'].append(callback)
 
     def on_update(self, callback):
-        """
-        添加更新回调
-
-        Args:
-            callback: 回调函数
-        """
+        """Register callback for data updates."""
         self._callbacks['update'].append(callback)
 
     def on_error(self, callback):
-        """
-        添加错误回调
-
-        Args:
-            callback: 回调函数
-        """
+        """Register callback for errors."""
         self._callbacks['error'].append(callback)
 
     async def remove(self):
-        """移除指标研究"""
+        """Cleanup and remove this study."""
         await self._chart_session._client.send('remove_study', [
             self._chart_session._session_id,
             self._study_id,

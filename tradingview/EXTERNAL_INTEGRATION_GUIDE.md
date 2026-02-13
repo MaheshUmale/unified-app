@@ -1,42 +1,42 @@
-# TradingView模块外部集成指南
+# TradingView Module External Integration Guide
 
-本文档详细介绍如何在不同场景下集成和使用TradingView数据源模块。
+This document details how to integrate and use the TradingView data source module in different scenarios.
 
-## 📋 目录
+## 📋 Table of Contents
 
-- [快速开始](#快速开始)
-- [架构概览](#架构概览)
-- [集成方式](#集成方式)
-- [API接口](#api接口)
-- [数据缓存](#数据缓存)
-- [质量监控](#质量监控)
-- [最佳实践](#最佳实践)
-- [故障排除](#故障排除)
+- [Quick Start](#quick-start)
+- [Architecture Overview](#architecture-overview)
+- [Integration Methods](#integration-methods)
+- [API Interfaces](#api-interfaces)
+- [Data Caching](#data-caching)
+- [Quality Monitoring](#quality-monitoring)
+- [Best Practices](#best-practices)
+- [Troubleshooting](#troubleshooting)
 
-## 🚀 快速开始
+## 🚀 Quick Start
 
-### 环境要求
+### Environmental Requirements
 
 ```bash
-# Python版本要求
+# Python Version Requirement
 Python >= 3.9
 
-# 核心依赖
+# Core Dependencies
 pip install asyncio websockets fastapi uvicorn aiohttp
 pip install sqlite3 pandas numpy
 
-# 可选依赖（用于高级功能）
+# Optional Dependencies (for advanced features)
 pip install prometheus_client grafana-api redis
 ```
 
-### 30秒快速体验
+### 30-Second Quick Experience
 
 ```python
 import asyncio
 from tradingview.api_server import TradingViewAPIServer
 
 async def quick_start():
-    # 启动API服务器
+    # Start API server
     server = TradingViewAPIServer({
         'cache_db_path': 'quick_demo.db',
         'max_memory_cache': 1000
@@ -44,58 +44,58 @@ async def quick_start():
 
     await server.start_server(host="127.0.0.1", port=8000)
 
-# 运行服务器
+# Run server
 asyncio.run(quick_start())
 ```
 
-访问 http://127.0.0.1:8000/api/v1/health 检查服务状态。
+Visit http://127.0.0.1:8000/api/v1/health to check service status.
 
-## 🏗️ 架构概览
+## 🏗️ Architecture Overview
 
-TradingView模块采用**三层架构**设计：
+The TradingView module adopts a **three-layer architecture** design:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        外部集成层                                │
+│                      External Integration Layer                  │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐            │
 │  │ RESTful API │  │ WebSocket   │  │ Python SDK  │            │
-│  │   (HTTP)    │  │ (实时数据)   │  │  (直接集成)  │            │
+│  │   (HTTP)    │  │ (Real-time) │  │ (Direct)    │            │
 │  └─────────────┘  └─────────────┘  └─────────────┘            │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                      数据处理层                                  │
+│                      Data Processing Layer                       │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐            │
-│  │ 缓存管理器   │  │ 质量监控器   │  │ 故障恢复器   │            │
-│  │(双层缓存)   │  │(多维评估)   │  │(智能容错)   │            │
+│  │ Cache Mgr   │  │ Quality Mon │  │ Recovery    │            │
+│  │(Dual-layer) │  │(Multi-dim)  │  │(Fault Tol)  │            │
 │  └─────────────┘  └─────────────┘  └─────────────┘            │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                     TradingView核心层                            │
+│                     TradingView Core Layer                       │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐            │
-│  │ 增强客户端   │  │ 会话管理器   │  │ 协议处理器   │            │
-│  │(智能重连)   │  │(多会话)     │  │(消息解析)   │            │
+│  │ Enhanced Cl │  │ Session Mgr │  │ Protocol Pr │            │
+│  │(Auto-recon) │  │(Multi-sess) │  │(Msg Parsing)│            │
 │  └─────────────┘  └─────────────┘  └─────────────┘            │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### 核心组件说明
+### Core Component Description
 
-| 组件 | 职责 | 特性 |
+| Component | Responsibility | Features |
 |------|------|------|
-| **API Server** | 提供RESTful和WebSocket接口 | 异步处理、CORS支持、自动文档 |
-| **Cache Manager** | 双层缓存管理 | LRU内存缓存 + SQLite持久化 |
-| **Quality Monitor** | 数据质量监控 | 六维质量评估、智能告警 |
-| **Enhanced Client** | TradingView连接管理 | 自动重连、健康监控、性能优化 |
+| **API Server** | Provides RESTful and WebSocket interfaces | Async processing, CORS support, auto-docs |
+| **Cache Manager** | Dual-layer cache management | LRU Memory cache + SQLite persistence |
+| **Quality Monitor** | Data quality monitoring | Six-dimensional assessment, smart alerts |
+| **Enhanced Client** | TradingView connection management | Auto-reconnect, health monitoring, performance optimization |
 
-## 🔌 集成方式
+## 🔌 Integration Methods
 
-### 方式1: RESTful API集成 (推荐)
+### Method 1: RESTful API Integration (Recommended)
 
-适用于**跨语言**、**微服务**、**Web应用**等场景。
+Applicable to **cross-language**, **microservices**, **Web applications**, and other scenarios.
 
 ```python
 import aiohttp
@@ -120,36 +120,36 @@ class TradingViewClient:
                 if response.status == 200:
                     return await response.json()
                 else:
-                    raise Exception(f"API请求失败: {response.status}")
+                    raise Exception(f"API Request Failed: {response.status}")
 
-# 使用示例
+# Example usage
 async def example():
     client = TradingViewClient()
 
-    # 获取BTC 15分钟K线数据
+    # Get BTC 15-minute K-line data
     data = await client.get_data('BINANCE:BTCUSDT', '15', 1000)
 
     if data['status'] == 'success':
         klines = data['data']['klines']
-        print(f"获取到 {len(klines)} 条K线数据")
-        print(f"数据质量得分: {data['metadata']['quality_score']:.3f}")
+        print(f"Obtained {len(klines)} K-line data points")
+        print(f"Data quality score: {data['metadata']['quality_score']:.3f}")
 
 asyncio.run(example())
 ```
 
-#### API端点说明
+#### API Endpoint Description
 
-| 端点 | 方法 | 说明 | 示例 |
+| Endpoint | Method | Description | Example |
 |------|------|------|------|
-| `/api/v1/health` | GET | 获取健康状态 | `curl http://localhost:8000/api/v1/health` |
-| `/api/v1/data/historical` | POST | 获取历史数据 | 见上面示例 |
-| `/api/v1/symbols` | GET | 获取支持的品种 | `curl http://localhost:8000/api/v1/symbols` |
-| `/api/v1/cache/stats` | GET | 获取缓存统计 | `curl http://localhost:8000/api/v1/cache/stats` |
-| `/api/v1/cache/clear` | DELETE | 清空缓存 | `curl -X DELETE http://localhost:8000/api/v1/cache/clear` |
+| `/api/v1/health` | GET | Get health status | `curl http://localhost:8000/api/v1/health` |
+| `/api/v1/data/historical` | POST | Get historical data | See example above |
+| `/api/v1/symbols` | GET | Get supported symbols | `curl http://localhost:8000/api/v1/symbols` |
+| `/api/v1/cache/stats` | GET | Get cache statistics | `curl http://localhost:8000/api/v1/cache/stats` |
+| `/api/v1/cache/clear` | DELETE | Clear cache | `curl -X DELETE http://localhost:8000/api/v1/cache/clear` |
 
-### 方式2: WebSocket实时数据集成
+### Method 2: WebSocket Real-time Data Integration
 
-适用于需要**实时推送**的场景。
+Applicable to scenarios requiring **real-time push**.
 
 ```python
 import asyncio
@@ -160,7 +160,7 @@ async def websocket_example():
     uri = "ws://localhost:8000/ws/realtime"
 
     async with websockets.connect(uri) as websocket:
-        # 订阅实时数据
+        # Subscribe to real-time data
         subscribe_msg = {
             'type': 'subscribe',
             'symbols': ['BINANCE:BTCUSDT', 'BINANCE:ETHUSDT'],
@@ -169,105 +169,105 @@ async def websocket_example():
 
         await websocket.send(json.dumps(subscribe_msg))
 
-        # 接收数据
+        # Receive data
         async for message in websocket:
             data = json.loads(message)
 
             if data['type'] == 'realtime_data':
                 symbol = data['symbol']
                 price = data['data']['price']
-                print(f"实时价格: {symbol} = ${price}")
+                print(f"Real-time Price: {symbol} = ${price}")
 
             elif data['type'] == 'subscribed':
-                print(f"订阅成功: {data['symbols']}")
+                print(f"Subscription Successful: {data['symbols']}")
 
 asyncio.run(websocket_example())
 ```
 
-### 方式3: Python SDK直接集成
+### Method 3: Python SDK Direct Integration
 
-适用于**Python项目**内部集成。
+Applicable for internal integration within **Python projects**.
 
 ```python
 from tradingview.integration_examples import TradingViewDataSource
 
 async def sdk_example():
-    # 初始化数据源
+    # Initialize data source
     data_source = TradingViewDataSource({
         'cache_db_path': 'my_trading_app.db',
         'max_cache_size': 2000
     })
 
     if await data_source.initialize():
-        # 获取历史数据
+        # Get historical data
         market_data = await data_source.get_historical_data(
             'BINANCE:BTCUSDT', '15', count=1000
         )
 
         if market_data:
-            print(f"获取到 {len(market_data.klines)} 条K线")
+            print(f"Obtained {len(market_data.klines)} K-lines")
 
-            # 订阅实时数据
+            # Subscribe to real-time data
             async def on_realtime_data(data):
-                print(f"实时数据: {data}")
+                print(f"Real-time Data: {data}")
 
             await data_source.subscribe_realtime_data(
                 ['BINANCE:BTCUSDT'], on_realtime_data
             )
 
-        # 获取健康状态
+        # Get health status
         health = await data_source.get_health_status()
-        print(f"数据源状态: {health['status']}")
+        print(f"Data Source Status: {health['status']}")
 
         await data_source.shutdown()
 
 asyncio.run(sdk_example())
 ```
 
-## 🗄️ 数据缓存
+## 🗄️ Data Caching
 
-### 双层缓存架构
+### Dual-layer Cache Architecture
 
-TradingView模块实现了**内存+SQLite**的双层缓存架构：
+ the TradingView module implements a **Memory + SQLite** dual-layer cache architecture:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                       双层缓存架构                               │
+│                      Dual-layer Cache Architecture               │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  🚀 L1: 内存缓存 (LRU)                                          │
+│  🚀 L1: Memory Cache (LRU)                                      │
 │  ┌─────────────────────────────────────────────────────────────┐ │
-│  │ • 容量: 1000-5000条记录                                     │ │
-│  │ • 延迟: < 1ms                                               │ │
-│  │ • 命中率: 80-90%                                            │ │
-│  │ • 策略: LRU淘汰                                             │ │
+│  │ • Capacity: 1000-5000 records                               │ │
+│  │ • Latency: < 1ms                                            │ │
+│  │ • Hit Rate: 80-90%                                          │ │
+│  │ • Strategy: LRU Eviction                                    │ │
 │  └─────────────────────────────────────────────────────────────┘ │
 │                              │                                  │
-│                              ▼ (未命中)                         │
-│  💾 L2: SQLite缓存 (持久化)                                     │
+│                              ▼ (Miss)                           │
+│  💾 L2: SQLite Cache (Persistent)                               │
 │  ┌─────────────────────────────────────────────────────────────┐ │
-│  │ • 容量: 无限制                                               │ │
-│  │ • 延迟: 5-10ms                                              │ │
-│  │ • 命中率: 15-20%                                            │ │
-│  │ • 特性: 跨会话持久化                                         │ │
+│  │ • Capacity: Unlimited                                       │ │
+│  │ • Latency: 5-10ms                                           │ │
+│  │ • Hit Rate: 15-20%                                          │ │
+│  │ • Features: Cross-session Persistence                       │ │
 │  └─────────────────────────────────────────────────────────────┘ │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### 缓存使用示例
+### Cache Usage Example
 
 ```python
 from tradingview.data_cache_manager import DataCacheManager
 
 async def cache_example():
-    # 初始化缓存管理器
+    # Initialize cache manager
     cache_manager = DataCacheManager(
         db_path="my_cache.db",
         max_memory_size=2000
     )
 
-    # 存储数据
+    # Store data
     sample_data = {
         'symbol': 'BINANCE:BTCUSDT',
         'timeframe': '15',
@@ -284,83 +284,83 @@ async def cache_example():
         'quality_score': 0.95
     }
 
-    # 存储到缓存
+    # Store to cache
     await cache_manager.store_historical_data(
         'BINANCE:BTCUSDT', '15', sample_data, expire_seconds=3600
     )
 
-    # 从缓存获取
+    # Get from cache
     cached_data = await cache_manager.get_historical_data(
         'BINANCE:BTCUSDT', '15', count=500
     )
 
     if cached_data:
-        print("缓存命中!")
-        print(f"质量得分: {cached_data['quality_score']}")
+        print("Cache Hit!")
+        print(f"Quality Score: {cached_data['quality_score']}")
 
-    # 获取缓存统计
+    # Get cache statistics
     stats = await cache_manager.get_statistics()
-    print(f"缓存命中率: {cache_manager.get_hit_rate():.2%}")
-    print(f"缓存条目数: {stats.total_entries}")
+    print(f"Cache Hit Rate: {cache_manager.get_hit_rate():.2%}")
+    print(f"Cache Entries: {stats.total_entries}")
 
 asyncio.run(cache_example())
 ```
 
-### 缓存优化配置
+### Cache Optimization Configuration
 
 ```python
-# 推荐的缓存配置
+# Recommended cache configuration
 cache_config = {
-    # 内存缓存大小（条目数）
+    # Memory cache size (number of entries)
     'max_memory_size': 2000,
 
-    # SQLite数据库路径
+    # SQLite database path
     'db_path': 'data/tradingview_cache.db',
 
-    # 默认过期时间（秒）
-    'default_expire_seconds': 3600,  # 1小时
+    # Default expiration time (seconds)
+    'default_expire_seconds': 3600,  # 1 hour
 
-    # 清理间隔（秒）
-    'cleanup_interval': 300,  # 5分钟
+    # Cleanup interval (seconds)
+    'cleanup_interval': 300,  # 5 minutes
 
-    # 质量阈值（低于此值不缓存）
+    # Quality threshold (don't cache if below this)
     'min_quality_for_cache': 0.8
 }
 ```
 
-## 🛡️ 质量监控
+## 🛡️ Quality Monitoring
 
-### 六维质量评估体系
+### Six-dimensional Quality Assessment System
 
-系统实现了**完整性、准确性、一致性、及时性、有效性、唯一性**六个维度的数据质量评估：
+The system implements data quality assessment across **Completeness, Accuracy, Consistency, Timeliness, Validity, and Uniqueness**:
 
 ```python
 from tradingview.enhanced_data_quality_monitor import DataQualityMonitor
 
 async def quality_monitor_example():
-    # 初始化质量监控器
+    # Initialize quality monitor
     monitor = DataQualityMonitor({
         'critical_quality_score': 0.6,
         'warning_quality_score': 0.8,
         'max_consecutive_failures': 3
     })
 
-    # 注册告警处理器
+    # Register alert handler
     async def alert_handler(alert):
-        print(f"质量告警: {alert.level.value} - {alert.message}")
+        print(f"Quality Alert: {alert.level.value} - {alert.message}")
 
         if alert.level.value == 'critical':
-            # 关键告警处理逻辑
-            print("触发应急响应机制")
+            # Critical alert handling logic
+            print("Triggering emergency response mechanism")
 
     monitor.register_alert_handler(alert_handler)
 
-    # 评估数据质量
+    # Assess data quality
     sample_data = {
         'symbol': 'BINANCE:BTCUSDT',
         'timeframe': '15',
         'klines': [
-            # ... K线数据
+            # ... K-line data
         ]
     }
 
@@ -368,36 +368,36 @@ async def quality_monitor_example():
         'BINANCE:BTCUSDT', '15', sample_data
     )
 
-    print(f"质量评估结果:")
-    print(f"  综合得分: {result.quality_score:.3f}")
-    print(f"  质量等级: {result.metrics.quality_level.value}")
-    print(f"  完整性: {result.metrics.completeness_score:.3f}")
-    print(f"  准确性: {result.metrics.accuracy_score:.3f}")
-    print(f"  一致性: {result.metrics.consistency_score:.3f}")
+    print(f"Quality Assessment Result:")
+    print(f"  Overall Score: {result.quality_score:.3f}")
+    print(f"  Quality Level: {result.metrics.quality_level.value}")
+    print(f"  Completeness: {result.metrics.completeness_score:.3f}")
+    print(f"  Accuracy: {result.metrics.accuracy_score:.3f}")
+    print(f"  Consistency: {result.metrics.consistency_score:.3f}")
 
-    # 获取改进建议
+    # Get improvement suggestions
     if result.suggestions:
-        print("改进建议:")
+        print("Improvement Suggestions:")
         for suggestion in result.suggestions:
             print(f"  - {suggestion}")
 
 asyncio.run(quality_monitor_example())
 ```
 
-### 质量监控配置
+### Quality Monitoring Configuration
 
 ```python
 quality_config = {
-    # 质量阈值
+    # Quality thresholds
     'thresholds': {
-        'min_completeness': 0.95,       # 最小完整性要求
-        'min_accuracy': 0.90,           # 最小准确性要求
-        'max_price_deviation': 0.20,    # 最大价格偏差 (20%)
-        'max_volume_deviation': 5.0,    # 最大成交量偏差 (5倍)
-        'max_timestamp_gap': 300,       # 最大时间戳间隔 (5分钟)
+        'min_completeness': 0.95,       # Min completeness requirement
+        'min_accuracy': 0.90,           # Min accuracy requirement
+        'max_price_deviation': 0.20,    # Max price deviation (20%)
+        'max_volume_deviation': 5.0,    # Max volume deviation (5x)
+        'max_timestamp_gap': 300,       # Max timestamp gap (5 minutes)
     },
 
-    # 质量权重
+    # Quality weights
     'weights': {
         'completeness': 0.25,
         'accuracy': 0.25,
@@ -407,7 +407,7 @@ quality_config = {
         'uniqueness': 0.05
     },
 
-    # 告警配置
+    # Alert configuration
     'alerts': {
         'critical_quality_score': 0.6,
         'warning_quality_score': 0.8,
@@ -416,12 +416,12 @@ quality_config = {
 }
 ```
 
-## 📊 集成场景示例
+## 📊 Integration Scenario Examples
 
-### 场景1: 集成到trading_core
+### Scenario 1: Integrating into trading_core
 
 ```python
-# 在trading_core中使用TradingView作为数据源
+# Use TradingView as a data source in trading_core
 from tradingview.integration_examples import TradingViewDataSource
 
 class TradingSystem:
@@ -441,7 +441,7 @@ class TradingSystem:
 
     async def start_realtime_monitoring(self, symbols):
         async def on_price_update(data):
-            # 处理实时价格更新
+            # Process real-time price updates
             await self.process_price_update(data)
 
         await self.data_source.subscribe_realtime_data(
@@ -449,23 +449,23 @@ class TradingSystem:
         )
 
     async def process_price_update(self, data):
-        # 实现你的交易逻辑
+        # Implement your trading logic
         symbol = data.get('symbol')
         price = data.get('price')
-        print(f"处理价格更新: {symbol} = ${price}")
+        print(f"Processing price update: {symbol} = ${price}")
 ```
 
-### 场景2: 集成到chanpy缠论分析
+### Scenario 2: Integrating into Chanpy Analysis
 
 ```python
 from tradingview.integration_examples import ChanpyDataFeeder
 
 async def chanpy_integration():
-    # 初始化数据馈送器
+    # Initialize data feeder
     feeder = ChanpyDataFeeder()
     await feeder.initialize()
 
-    # 为多个品种创建缠论分析
+    # Create Chan analysis for multiple symbols
     symbols = ['BINANCE:BTCUSDT', 'BINANCE:ETHUSDT', 'BINANCE:ADAUSDT']
     timeframes = ['15', '60', '240']
 
@@ -480,9 +480,9 @@ async def chanpy_integration():
 
             if instance_id:
                 instances[f"{symbol}_{tf}"] = instance_id
-                print(f"创建缠论分析: {symbol} {tf}分钟")
+                print(f"Created Chan analysis: {symbol} {tf} min")
 
-    # 定期更新分析结果
+    # Periodically update analysis results
     while True:
         for key, instance_id in instances.items():
             await feeder.update_chan_analysis(instance_id)
@@ -491,24 +491,24 @@ async def chanpy_integration():
             if result:
                 bsp_count = len(result.get('buy_sell_points', []))
                 zs_count = len(result.get('zs_list', []))
-                print(f"{key}: 买卖点={bsp_count}, 中枢={zs_count}")
+                print(f"{key}: B/S Points={bsp_count}, Center (ZS)={zs_count}")
 
-        await asyncio.sleep(60)  # 每分钟更新一次
+        await asyncio.sleep(60)  # Update every minute
 
 asyncio.run(chanpy_integration())
 ```
 
-### 场景3: Web应用集成
+### Scenario 3: Web Application Integration
 
 ```javascript
-// 前端JavaScript集成示例
+// Frontend JavaScript integration example
 class TradingViewAPIClient {
     constructor(baseUrl = 'http://localhost:8000') {
         this.baseUrl = baseUrl;
         this.websocket = null;
     }
 
-    // 获取历史数据
+    // Get historical data
     async getHistoricalData(symbol, timeframe, count = 500) {
         const response = await fetch(`${this.baseUrl}/api/v1/data/historical`, {
             method: 'POST',
@@ -527,12 +527,12 @@ class TradingViewAPIClient {
         return await response.json();
     }
 
-    // 连接WebSocket
+    // Connect to WebSocket
     connectWebSocket(onMessage) {
         this.websocket = new WebSocket(`ws://localhost:8000/ws/realtime`);
 
         this.websocket.onopen = () => {
-            console.log('WebSocket连接成功');
+            console.log('WebSocket connection successful');
         };
 
         this.websocket.onmessage = (event) => {
@@ -541,11 +541,11 @@ class TradingViewAPIClient {
         };
 
         this.websocket.onerror = (error) => {
-            console.error('WebSocket错误:', error);
+            console.error('WebSocket error:', error);
         };
     }
 
-    // 订阅实时数据
+    // Subscribe to real-time data
     subscribe(symbols, timeframes = ['1']) {
         if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
             this.websocket.send(JSON.stringify({
@@ -557,45 +557,45 @@ class TradingViewAPIClient {
     }
 }
 
-// 使用示例
+// Example usage
 const client = new TradingViewAPIClient();
 
-// 获取历史数据
+// Get historical data
 client.getHistoricalData('BINANCE:BTCUSDT', '15', 1000)
     .then(data => {
         if (data.status === 'success') {
-            console.log(`获取到 ${data.data.klines.length} 条K线`);
-            // 在这里处理K线数据，比如绘制图表
+            console.log(`Obtained ${data.data.klines.length} K-lines`);
+            // Process K-line data here, e.g., drawing charts
         }
     });
 
-// 连接实时数据
+// Connect to real-time data
 client.connectWebSocket((data) => {
     if (data.type === 'realtime_data') {
-        console.log(`实时数据: ${data.symbol} = $${data.data.price}`);
-        // 更新UI显示
+        console.log(`Real-time Data: ${data.symbol} = $${data.data.price}`);
+        // Update UI display
     }
 });
 
-// 订阅实时数据
+// Subscribe to real-time data
 client.subscribe(['BINANCE:BTCUSDT', 'BINANCE:ETHUSDT']);
 ```
 
-## ⚙️ 配置参数
+## ⚙️ Configuration Parameters
 
-### API服务器配置
+### API Server Configuration
 
 ```python
 api_server_config = {
-    # 服务器配置
+    # Server configuration
     'host': '0.0.0.0',
     'port': 8000,
 
-    # 缓存配置
+    # Cache configuration
     'cache_db_path': 'data/tradingview_cache.db',
     'max_memory_cache': 5000,
 
-    # TradingView客户端配置
+    # TradingView client configuration
     'tradingview_config': {
         'auto_reconnect': True,
         'health_monitoring': True,
@@ -605,14 +605,14 @@ api_server_config = {
         'connection_timeout': 10
     },
 
-    # 质量监控配置
+    # Quality monitoring configuration
     'quality_config': {
         'critical_quality_score': 0.6,
         'warning_quality_score': 0.8,
         'enable_auto_correction': True
     },
 
-    # 安全配置
+    # Security configuration
     'cors_origins': ['*'],
     'rate_limit': {
         'requests_per_minute': 1000,
@@ -621,44 +621,44 @@ api_server_config = {
 }
 ```
 
-### 数据源适配器配置
+### Data Source Adapter Configuration
 
 ```python
 data_source_config = {
-    # 缓存配置
+    # Cache configuration
     'cache_db_path': 'trading_data.db',
     'max_cache_size': 2000,
-    'cache_ttl': 3600,  # 1小时
+    'cache_ttl': 3600,  # 1 hour
 
-    # 质量配置
+    # Quality configuration
     'min_quality_score': 0.8,
     'enable_quality_alerts': True,
 
-    # 重试配置
+    # Retry configuration
     'max_retries': 3,
     'retry_delay': 1.0,
     'backoff_factor': 2.0,
 
-    # 性能配置
+    # Performance configuration
     'request_timeout': 10.0,
     'concurrent_requests': 10,
     'batch_size': 100
 }
 ```
 
-## 🛠️ 最佳实践
+## 🛠️ Best Practices
 
-### 1. 连接管理
+### 1. Connection Management
 
 ```python
-# ✅ 推荐做法
+# ✅ Recommended practice
 class ReliableDataSource:
     def __init__(self):
         self.client = None
         self.connection_pool = []
 
     async def initialize(self):
-        # 使用连接池
+        # Use connection pool
         for i in range(3):
             client = EnhancedTradingViewClient({
                 'auto_reconnect': True,
@@ -672,46 +672,46 @@ class ReliableDataSource:
             try:
                 return await client.get_data(symbol, timeframe)
             except Exception as e:
-                print(f"客户端失败，尝试下一个: {e}")
+                print(f"Client failed, trying next: {e}")
                 continue
 
-        raise Exception("所有连接都失败了")
+        raise Exception("All connections failed")
 ```
 
-### 2. 缓存策略
+### 2. Cache Strategy
 
 ```python
-# ✅ 智能缓存策略
+# ✅ Smart cache strategy
 async def smart_cache_strategy(cache_manager, symbol, timeframe, count):
-    # 1. 检查缓存
+    # 1. Check cache
     cached_data = await cache_manager.get_historical_data(symbol, timeframe, count)
 
     if cached_data:
-        # 2. 检查数据新鲜度
+        # 2. Check data freshness
         last_timestamp = max(k['timestamp'] for k in cached_data['klines'])
         age_minutes = (time.time() - last_timestamp) / 60
 
-        # 3. 根据时间框架决定是否需要更新
+        # 3. Decide if update is needed based on timeframe
         update_intervals = {'1': 2, '5': 10, '15': 30, '60': 120}
         max_age = update_intervals.get(timeframe, 60)
 
         if age_minutes < max_age:
-            return cached_data  # 使用缓存
+            return cached_data  # Use cache
 
-    # 4. 获取新数据
+    # 4. Get new data
     fresh_data = await get_fresh_data(symbol, timeframe, count)
 
-    # 5. 更新缓存
+    # 5. Update cache
     if fresh_data and fresh_data.get('quality_score', 0) >= 0.8:
         await cache_manager.store_historical_data(symbol, timeframe, fresh_data)
 
     return fresh_data
 ```
 
-### 3. 错误处理
+### 3. Error Handling
 
 ```python
-# ✅ 完善的错误处理
+# ✅ Robust error handling
 async def robust_data_fetching(data_source, symbol, timeframe, max_retries=3):
     for attempt in range(max_retries):
         try:
@@ -720,27 +720,27 @@ async def robust_data_fetching(data_source, symbol, timeframe, max_retries=3):
             if data and len(data.klines) > 0:
                 return data
             else:
-                raise ValueError("数据为空")
+                raise ValueError("Data is empty")
 
         except asyncio.TimeoutError:
-            print(f"请求超时，重试 {attempt + 1}/{max_retries}")
-            await asyncio.sleep(2 ** attempt)  # 指数退避
+            print(f"Request timed out, retrying {attempt + 1}/{max_retries}")
+            await asyncio.sleep(2 ** attempt)  # Exponential backoff
 
         except Exception as e:
             if attempt == max_retries - 1:
-                print(f"最终失败: {e}")
+                print(f"Final failure: {e}")
                 return None
             else:
-                print(f"尝试 {attempt + 1} 失败: {e}，重试中...")
+                print(f"Attempt {attempt + 1} failed: {e}, retrying...")
                 await asyncio.sleep(1)
 
     return None
 ```
 
-### 4. 监控告警
+### 4. Monitoring and Alerting
 
 ```python
-# ✅ 完善的监控告警
+# ✅ Complete monitoring and alerting
 class AlertManager:
     def __init__(self):
         self.alert_channels = []
@@ -760,15 +760,15 @@ class AlertManager:
             try:
                 await channel.send(alert_data)
             except Exception as e:
-                print(f"告警发送失败: {e}")
+                print(f"Alert sending failed: {e}")
 
-# 邮件告警通道
+# Email alert channel
 class EmailAlertChannel:
     async def send(self, alert_data):
-        # 实现邮件发送逻辑
+        # Implement email sending logic
         pass
 
-# Webhook告警通道
+# Webhook alert channel
 class WebhookAlertChannel:
     def __init__(self, webhook_url):
         self.webhook_url = webhook_url
@@ -778,60 +778,60 @@ class WebhookAlertChannel:
             await session.post(self.webhook_url, json=alert_data)
 ```
 
-## 🔧 故障排除
+## 🔧 Troubleshooting
 
-### 常见问题及解决方案
+### Common Problems and Solutions
 
-#### 1. 连接问题
+#### 1. Connection Issues
 
-**问题**: 无法连接到TradingView
+**Problem**: Unable to connect to TradingView
 ```
-错误: Connection failed: Cannot connect to host
+Error: Connection failed: Cannot connect to host
 ```
 
-**解决方案**:
+**Solution**:
 ```python
-# 检查网络连接
+# Check network connection
 import aiohttp
 
 async def test_connection():
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get('https://www.tradingview.com') as response:
-                print(f"网络连接正常: {response.status}")
+                print(f"Network connection normal: {response.status}")
     except Exception as e:
-        print(f"网络连接问题: {e}")
+        print(f"Network connection issue: {e}")
 
-# 检查代理设置
+# Check proxy settings
 client_config = {
-    'proxy': 'http://proxy.example.com:8080',  # 如果需要代理
-    'timeout': 30,  # 增加超时时间
+    'proxy': 'http://proxy.example.com:8080',  # If proxy is needed
+    'timeout': 30,  # Increase timeout
     'retry_attempts': 5
 }
 ```
 
-#### 2. 数据质量问题
+#### 2. Data Quality Issues
 
-**问题**: 数据质量得分过低
+**Problem**: Data quality score is too low
 ```
-质量得分: 0.45 (低于阈值 0.8)
+Quality Score: 0.45 (Below threshold 0.8)
 ```
 
-**解决方案**:
+**Solution**:
 ```python
-# 调整质量阈值
+# Adjust quality thresholds
 quality_config = {
-    'critical_quality_score': 0.4,  # 降低阈值
+    'critical_quality_score': 0.4,  # Lower threshold
     'warning_quality_score': 0.6,
-    'enable_auto_correction': True   # 启用自动修复
+    'enable_auto_correction': True   # Enable auto-repair
 }
 
-# 或者使用数据清洗
+# Or use data cleaning
 async def clean_data(raw_data):
     cleaned_klines = []
 
     for kline in raw_data['klines']:
-        # 修复价格逻辑错误
+        # Fix price logic errors
         if kline['high'] < max(kline['open'], kline['close']):
             kline['high'] = max(kline['open'], kline['close'])
 
@@ -844,41 +844,41 @@ async def clean_data(raw_data):
     return raw_data
 ```
 
-#### 3. 缓存问题
+#### 3. Cache Issues
 
-**问题**: 缓存命中率过低
+**Problem**: Cache hit rate is too low
 ```
-缓存命中率: 15% (期望 > 70%)
+Cache Hit Rate: 15% (Expected > 70%)
 ```
 
-**解决方案**:
+**Solution**:
 ```python
-# 优化缓存配置
+# Optimize cache configuration
 cache_config = {
-    'max_memory_size': 5000,  # 增加内存缓存大小
-    'default_expire_seconds': 7200,  # 延长过期时间
-    'enable_predictive_caching': True  # 启用预测性缓存
+    'max_memory_size': 5000,  # Increase memory cache size
+    'default_expire_seconds': 7200,  # Extend expiration time
+    'enable_predictive_caching': True  # Enable predictive caching
 }
 
-# 预热缓存
+# Warm up cache
 async def warm_cache(cache_manager, popular_symbols):
     for symbol in popular_symbols:
         for timeframe in ['1', '5', '15', '60']:
             await cache_manager.get_historical_data(symbol, timeframe, 500)
 
-    print("缓存预热完成")
+    print("Cache warming complete")
 ```
 
-#### 4. 性能问题
+#### 4. Performance Issues
 
-**问题**: 响应时间过长
+**Problem**: Response time is too long
 ```
-平均响应时间: 2.5秒 (期望 < 500ms)
+Average Response Time: 2.5s (Expected < 500ms)
 ```
 
-**解决方案**:
+**Solution**:
 ```python
-# 启用并发处理
+# Enable concurrent processing
 async def parallel_data_fetching(symbols, timeframe):
     tasks = []
 
@@ -890,11 +890,11 @@ async def parallel_data_fetching(symbols, timeframe):
 
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    # 过滤成功的结果
+    # Filter successful results
     valid_results = [r for r in results if not isinstance(r, Exception)]
     return valid_results
 
-# 启用连接复用
+# Enable connection reuse
 client_config = {
     'connection_pool_size': 20,
     'keep_alive_timeout': 60,
@@ -902,79 +902,79 @@ client_config = {
 }
 ```
 
-### 调试工具
+### Debugging Tools
 
-#### 1. 健康检查工具
+#### 1. Health Check Tool
 
 ```python
 async def health_check():
-    """全面的健康检查"""
+    """Comprehensive health check"""
 
-    # 检查API服务器
+    # Check API server
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get('http://localhost:8000/api/v1/health') as response:
                 if response.status == 200:
                     data = await response.json()
-                    print(f"✅ API服务器: {data.get('status')}")
+                    print(f"✅ API Server: {data.get('status')}")
                 else:
-                    print(f"❌ API服务器: HTTP {response.status}")
+                    print(f"❌ API Server: HTTP {response.status}")
     except Exception as e:
-        print(f"❌ API服务器: {e}")
+        print(f"❌ API Server: {e}")
 
-    # 检查缓存
+    # Check cache
     try:
         cache_manager = DataCacheManager('test_cache.db')
         await cache_manager.store_historical_data('TEST', '1', {'klines': []})
         cached = await cache_manager.get_historical_data('TEST', '1')
         if cached is not None:
-            print("✅ 缓存系统: 正常")
+            print("✅ Cache System: Normal")
         else:
-            print("❌ 缓存系统: 异常")
+            print("❌ Cache System: Abnormal")
     except Exception as e:
-        print(f"❌ 缓存系统: {e}")
+        print(f"❌ Cache System: {e}")
 
-    # 检查TradingView连接
+    # Check TradingView connection
     try:
         client = EnhancedTradingViewClient()
         if await client.connect():
-            print("✅ TradingView连接: 正常")
+            print("✅ TradingView Connection: Normal")
             await client.disconnect()
         else:
-            print("❌ TradingView连接: 失败")
+            print("❌ TradingView Connection: Failed")
     except Exception as e:
-        print(f"❌ TradingView连接: {e}")
+        print(f"❌ TradingView Connection: {e}")
 
-# 运行健康检查
+# Run health check
 asyncio.run(health_check())
 ```
 
-#### 2. 性能分析工具
+#### 2. Performance Analysis Tool
 
 ```python
 import time
 from functools import wraps
 
 def timing_decorator(func):
-    """性能计时装饰器"""
+    """Performance timing decorator"""
     @wraps(func)
     async def wrapper(*args, **kwargs):
         start_time = time.time()
         result = await func(*args, **kwargs)
         end_time = time.time()
 
-        print(f"{func.__name__} 执行时间: {end_time - start_time:.3f}秒")
+        print(f"{func.__name__} execution time: {end_time - start_time:.3f}s")
         return result
 
     return wrapper
 
-# 使用示例
+# Usage example
 @timing_decorator
 async def timed_data_fetch(symbol, timeframe):
     return await data_source.get_historical_data(symbol, timeframe)
 ```
 
-#### 3. 日志分析工具
+#### 3. Log Analysis Tool
 
 ```python
 import logging
@@ -989,9 +989,9 @@ class PerformanceLogger:
         self.metrics['response_times'].append(response_time)
         self.metrics['cache_hits'].append(cache_hit)
 
-        self.logger.info(f"请求: {symbol}:{timeframe}, "
-                        f"响应时间: {response_time:.3f}s, "
-                        f"缓存命中: {cache_hit}")
+        self.logger.info(f"Request: {symbol}:{timeframe}, "
+                        f"Response Time: {response_time:.3f}s, "
+                        f"Cache Hit: {cache_hit}")
 
     def get_statistics(self):
         if not self.metrics['response_times']:
@@ -1008,19 +1008,19 @@ class PerformanceLogger:
             'total_requests': len(response_times)
         }
 
-# 使用示例
+# Usage example
 perf_logger = PerformanceLogger()
 
-# 在数据获取时记录性能
+# Log performance during data acquisition
 async def monitored_data_fetch(symbol, timeframe):
     start_time = time.time()
 
-    # 检查缓存
+    # Check cache
     cached_data = await cache_manager.get_historical_data(symbol, timeframe)
     cache_hit = cached_data is not None
 
     if not cache_hit:
-        # 从API获取
+        # Get from API
         data = await api_client.get_data(symbol, timeframe)
     else:
         data = cached_data
@@ -1030,23 +1030,23 @@ async def monitored_data_fetch(symbol, timeframe):
 
     return data
 
-# 定期输出统计信息
+# Periodically output statistical information
 async def print_statistics():
     while True:
-        await asyncio.sleep(60)  # 每分钟输出一次
+        await asyncio.sleep(60)  # Output every minute
         stats = perf_logger.get_statistics()
         if stats:
-            print(f"性能统计: {stats}")
+            print(f"Performance Statistics: {stats}")
 ```
 
-## 📈 监控和告警
+## 📈 Monitoring and Alerting
 
-### Prometheus集成
+### Prometheus Integration
 
 ```python
 from prometheus_client import Counter, Histogram, Gauge, start_http_server
 
-# 定义指标
+# Define metrics
 request_count = Counter('tradingview_requests_total', 'Total requests', ['symbol', 'timeframe'])
 request_duration = Histogram('tradingview_request_duration_seconds', 'Request duration')
 cache_hit_rate = Gauge('tradingview_cache_hit_rate', 'Cache hit rate')
@@ -1056,13 +1056,13 @@ class PrometheusMonitor:
     def __init__(self, port=9090):
         self.port = port
         start_http_server(port)
-        print(f"Prometheus监控端口: {port}")
+        print(f"Prometheus monitoring port: {port}")
 
     def record_request(self, symbol, timeframe, duration, cache_hit):
         request_count.labels(symbol=symbol, timeframe=timeframe).inc()
         request_duration.observe(duration)
 
-        # 更新缓存命中率（简化计算）
+        # Update cache hit rate (simplified calculation)
         current_rate = cache_hit_rate._value.get() or 0
         new_rate = (current_rate * 0.9) + (1.0 if cache_hit else 0.0) * 0.1
         cache_hit_rate.set(new_rate)
@@ -1070,20 +1070,20 @@ class PrometheusMonitor:
     def record_quality_score(self, symbol, score):
         data_quality_score.labels(symbol=symbol).set(score)
 
-# 使用示例
+# Usage example
 monitor = PrometheusMonitor()
 
 async def monitored_request(symbol, timeframe):
     start_time = time.time()
 
-    # 执行请求
+    # Execute request
     cache_hit, data = await get_data_with_cache(symbol, timeframe)
 
-    # 记录指标
+    # Record metrics
     duration = time.time() - start_time
     monitor.record_request(symbol, timeframe, duration, cache_hit)
 
-    # 记录质量得分
+    # Record quality score
     if data and 'quality_score' in data:
         monitor.record_quality_score(symbol, data['quality_score'])
 
@@ -1092,15 +1092,15 @@ async def monitored_request(symbol, timeframe):
 
 ---
 
-## 🎯 总结
+## 🎯 Summary
 
-TradingView模块外部集成指南提供了完整的集成方案，包括：
+The TradingView Module External Integration Guide provides a complete integration solution, including:
 
-- **🔌 多种集成方式**: RESTful API、WebSocket、Python SDK
-- **🗄️ 双层缓存架构**: 内存+SQLite，提供高性能数据访问
-- **🛡️ 六维质量监控**: 全面的数据质量评估和告警机制
-- **📊 完整示例代码**: 涵盖各种使用场景的示例
-- **🛠️ 最佳实践指南**: 连接管理、缓存策略、错误处理
-- **🔧 故障排除工具**: 健康检查、性能分析、日志监控
+- **🔌 Multiple Integration Methods**: RESTful API, WebSocket, Python SDK
+- **🗄️ Dual-layer Cache Architecture**: Memory + SQLite, providing high-performance data access
+- **🛡️ Six-dimensional Quality Monitoring**: Comprehensive data quality assessment and alerting mechanism
+- **📊 Complete Example Code**: Examples covering various usage scenarios
+- **🛠️ Best Practice Guide**: Connection management, cache strategy, error handling
+- **🔧 Troubleshooting Tools**: Health check, performance analysis, log monitoring
 
-通过遵循本指南，您可以快速、可靠地将TradingView数据源集成到您的交易系统中，获得专业级的数据服务支持。
+By following this guide, you can quickly and reliably integrate the TradingView data source into your trading system and obtain professional-level data service support.

@@ -1,5 +1,5 @@
 """
-市场数据模块
+Market Data Module
 """
 import json
 from typing import Dict, Any, Callable, List
@@ -9,16 +9,16 @@ logger = get_logger(__name__)
 
 class QuoteMarket:
     """
-    市场数据类
+    Represents a specific market symbol within a quote session.
     """
     def __init__(self, quote_session, symbol, session='regular'):
         """
-        初始化市场数据
+        Initialize market data tracking.
 
         Args:
-            quote_session: 行情会话
-            symbol: 交易符号
-            session: 市场会话类型
+            quote_session: Parent quote session
+            symbol: Trading symbol
+            session: Market session type (e.g., 'regular')
         """
         self._symbol = symbol
         self._session = session
@@ -47,11 +47,11 @@ class QuoteMarket:
 
     def _handle_event(self, event, *data):
         """
-        处理事件
+        Dispatch an event to registered callbacks.
 
         Args:
-            event: 事件类型
-            data: 事件数据
+            event: Event type
+            data: Event payload
         """
         for callback in self._callbacks[event]:
             callback(*data)
@@ -61,14 +61,12 @@ class QuoteMarket:
 
     def _handle_error(self, *msgs):
         """
-        处理错误
+        Log and dispatch errors.
 
         Args:
-            msgs: 错误信息
+            msgs: Error messages
         """
         if not self._callbacks['error']:
-            # 修复格式化错误
-            # 将msgs转换为字符串并合并
             error_msg = " ".join(str(msg) for msg in msgs)
             logger.error(f"ERROR: {error_msg}")
         else:
@@ -76,10 +74,10 @@ class QuoteMarket:
 
     def _handle_data(self, packet):
         """
-        处理数据包
+        Process incoming data packets.
 
         Args:
-            packet: 数据包
+            packet: Data packet
         """
         if packet['type'] == 'qsd' and packet['data'][1]['s'] == 'ok':
             self._last_data.update(packet['data'][1]['v'])
@@ -94,43 +92,23 @@ class QuoteMarket:
             self._handle_error('Market error', packet['data'])
 
     def on_loaded(self, callback):
-        """
-        添加加载完成回调
-
-        Args:
-            callback: 回调函数
-        """
+        """Register a callback for when data is fully loaded."""
         self._callbacks['loaded'].append(callback)
 
     def on_data(self, callback):
-        """
-        添加数据回调
-
-        Args:
-            callback: 回调函数
-        """
+        """Register a callback for each data update."""
         self._callbacks['data'].append(callback)
 
     def on_event(self, callback):
-        """
-        添加事件回调
-
-        Args:
-            callback: 回调函数
-        """
+        """Register a generic event callback."""
         self._callbacks['event'].append(callback)
 
     def on_error(self, callback):
-        """
-        添加错误回调
-
-        Args:
-            callback: 回调函数
-        """
+        """Register an error callback."""
         self._callbacks['error'].append(callback)
 
     def close(self):
-        """关闭市场数据连接"""
+        """Stop tracking this symbol and cleanup listeners."""
         if len(self._symbol_listeners[self._symbol_key]) <= 1:
             self._quote_session.send('quote_remove_symbols', [
                 self._quote_session.session_id,

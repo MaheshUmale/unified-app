@@ -1,5 +1,5 @@
 """
-行情会话模块
+Quote Session Module
 """
 from typing import List, Dict, Any, Optional, Callable, Union
 from ..utils import gen_session_id
@@ -7,13 +7,13 @@ from .market import QuoteMarket
 
 def get_quote_fields(fields_type='all'):
     """
-    获取行情字段列表
+    Get a list of quote fields.
 
     Args:
-        fields_type: 字段类型
+        fields_type: Type of fields to retrieve
 
     Returns:
-        List[str]: 字段列表
+        List[str]: List of field names
     """
     if fields_type == 'price':
         return ['lp']
@@ -36,15 +36,15 @@ def get_quote_fields(fields_type='all'):
 
 class QuoteSession:
     """
-    行情会话类
+    Quote Session Class
     """
     def __init__(self, client, options=None):
         """
-        初始化行情会话
+        Initialize the quote session.
 
         Args:
-            client: 客户端实例
-            options: 会话选项
+            client: Client instance
+            options: Session options
         """
         if options is None:
             options = {}
@@ -53,22 +53,22 @@ class QuoteSession:
         self._client = client
         self._symbol_listeners = {}
 
-        # 创建会话
+        # Register session
         self._client.sessions[self._session_id] = {
             'type': 'quote',
             'on_data': self._on_session_data
         }
 
-        # 设置字段
+        # Configure fields
         fields = (options.get('custom_fields', [])
                   if options.get('custom_fields')
                   else get_quote_fields(options.get('fields')))
 
-        # 发送创建会话请求
+        # Send creation requests
         self._client.send('quote_create_session', [self._session_id])
         self._client.send('quote_set_fields', [self._session_id, *fields])
 
-        # 创建Market构造函数
+        # Factory for Market instances
         self.Market = lambda symbol, session='regular': QuoteMarket(
             self,
             symbol,
@@ -77,10 +77,10 @@ class QuoteSession:
 
     def _on_session_data(self, packet):
         """
-        处理会话数据
+        Handle session data.
 
         Args:
-            packet: 数据包
+            packet: Received packet
         """
         if packet['type'] == 'quote_completed':
             symbol_key = packet['data'][1]
@@ -104,26 +104,26 @@ class QuoteSession:
 
     @property
     def session_id(self):
-        """获取会话ID"""
+        """Get session ID"""
         return self._session_id
 
     @property
     def symbol_listeners(self):
-        """获取符号监听器"""
+        """Get active symbol listeners"""
         return self._symbol_listeners
 
     def send(self, packet_type, packet_data):
         """
-        发送数据包
+        Send a data packet.
 
         Args:
-            packet_type: 数据包类型
-            packet_data: 数据包内容
+            packet_type: Packet type
+            packet_data: Packet payload
         """
         self._client.send(packet_type, packet_data)
 
     def delete(self):
-        """删除会话"""
+        """Delete the session"""
         self._client.send('quote_delete_session', [self._session_id])
         if self._session_id in self._client.sessions:
             del self._client.sessions[self._session_id]
