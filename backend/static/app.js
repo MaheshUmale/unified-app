@@ -26,7 +26,7 @@ class ChartInstance {
         this.drawings = [];
         this.markers = [];
         // Disable EMA indicators and Markers for Chart 2 (index 1) by default
-        this.showIndicators = index === 1 ? false : true;
+        this.showIndicators = index === 1 ? true : true;
         this.hiddenPlots = new Set();
         this.colorOverrides = {}; // Keyed by indicator title or marker text
         this.oiData = null;
@@ -440,7 +440,7 @@ class ChartInstance {
 
     applyIndicators(indicators) {
         // Enforce no indicators/markers for Chart 2 (index 1)
-        if (this.index === 1) return;
+        // if (this.index === 1) return;
 
         let newlyAdded = false;
         const allMarkers = [];
@@ -557,7 +557,7 @@ class ChartInstance {
 
     addPriceLine(id, data) {
         // Enforce no price lines for Chart 2 (index 1)
-        if (this.index === 1) return;
+        // if (this.index === 1) return;
         if (!this.priceLines) this.priceLines = {};
         if (this.priceLines[id]) {
             this.candleSeries.removePriceLine(this.priceLines[id]);

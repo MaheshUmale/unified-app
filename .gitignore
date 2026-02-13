@@ -86,3 +86,6 @@ backend/backtest_logs/*.log
 *.db
 *.txt
 .vscode/settings.json
+*.duckdb
+*.duckdb-journal
+*.duckdb.wal
