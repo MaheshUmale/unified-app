@@ -475,7 +475,7 @@ class EnhancedTradingViewManager:
         tasks = [
             self._start_request_processor(),
             self._start_performance_monitor(),
-            self._start_health_checker(),
+            await self._start_health_checker(),
             self._start_cache_cleaner()
         ]
 
