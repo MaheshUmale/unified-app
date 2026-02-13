@@ -14,7 +14,8 @@ class ChartInstance {
         this.interval = '1';
         this.hrn = '';
         this.chart = null;
-        this.candleSeries = null;
+        this.mainSeries = null;
+        this.chartType = 'candles';
         this.volumeSeries = null;
         this.indicatorSeries = {};
         this.lastCandle = null;
@@ -26,7 +27,7 @@ class ChartInstance {
         this.drawings = [];
         this.markers = [];
         // Disable EMA indicators and Markers for Chart 2 (index 1) by default
-        this.showIndicators = index === 1 ? true : true;
+        this.showIndicators = true;
         this.hiddenPlots = new Set();
         this.colorOverrides = {}; // Keyed by indicator title or marker text
         this.oiData = null;
@@ -91,11 +92,7 @@ class ChartInstance {
             }
         });
 
-        this.candleSeries = this.chart.addCandlestickSeries({
-            upColor: '#22c55e', downColor: '#ef4444', borderVisible: true, wickUpColor: '#22c55e', wickDownColor: '#ef4444',
-            lastValueVisible: false,
-            priceLineVisible: false
-        });
+        this.setChartType(this.chartType);
 
         this.volumeSeries = this.chart.addHistogramSeries({
             color: '#3b82f6', priceFormat: { type: 'volume' }, priceScaleId: 'volume',
@@ -125,16 +122,12 @@ class ChartInstance {
                 const idx = keys.indexOf(param.time);
 
                 if (idx !== -1) {
-                    console.log("Found at index:", idx);
-                }
-                // const idx = this.fullHistory.candles.findIndex(c => c.time === param.time);
-                if (idx !== -1) {
                     this.replayIndex = idx;
                     this.stepReplay(0);
                     updateReplayUI(this);
                 }
             } else {
-                const price = param.point ? this.candleSeries.coordinateToPrice(param.point.y) : null;
+                const price = param.point ? this.mainSeries.coordinateToPrice(param.point.y) : null;
                 if (price) {
                     const hlineBtn = document.getElementById('drawingToolBtn');
                     const isHlineActive = hlineBtn && hlineBtn.classList.contains('bg-blue-600');
@@ -150,6 +143,47 @@ class ChartInstance {
         container.parentElement.addEventListener('mousedown', () => {
             setActiveChart(this);
         });
+    }
+
+    setChartType(type) {
+        this.chartType = type;
+        const data = Array.from(this.fullHistory.candles.values()).sort((a,b) => a.time - b.time);
+        const markers = this.markers;
+
+        if (this.mainSeries) {
+            this.chart.removeSeries(this.mainSeries);
+            this.mainSeries = null;
+        }
+
+        const options = {
+            lastValueVisible: false,
+            priceLineVisible: false
+        };
+
+        if (type === 'candles') {
+            this.mainSeries = this.chart.addCandlestickSeries({
+                ...options,
+                upColor: '#22c55e', downColor: '#ef4444', borderVisible: true, wickUpColor: '#22c55e', wickDownColor: '#ef4444',
+            });
+        } else if (type === 'bars') {
+            this.mainSeries = this.chart.addBarSeries({
+                ...options,
+                upColor: '#22c55e', downColor: '#ef4444',
+            });
+        } else if (type === 'area') {
+            this.mainSeries = this.chart.addAreaSeries({
+                ...options,
+                lineColor: '#3b82f6', topColor: 'rgba(59, 130, 246, 0.4)', bottomColor: 'rgba(59, 130, 246, 0)',
+            });
+        } else {
+            this.mainSeries = this.chart.addLineSeries({
+                ...options,
+                color: '#3b82f6',
+            });
+        }
+
+        if (data.length > 0) this.mainSeries.setData(data);
+        this.mainSeries.setMarkers(this.showIndicators && !this.hiddenPlots.has('__markers__') ? markers : []);
     }
 
     syncOiCanvas() {
@@ -185,7 +219,7 @@ class ChartInstance {
         if (maxOI === 0) return;
 
         sortedData.forEach(d => {
-            const y = this.candleSeries.priceToCoordinate(d.strike);
+            const y = this.mainSeries.priceToCoordinate(d.strike);
             if (y === null || y < 0 || y > height) return;
 
             const callW = (d.call_oi / maxOI) * profileWidth;
@@ -229,14 +263,14 @@ class ChartInstance {
             indicators: {}
         };
 
-        this.candleSeries.setData([]);
+        this.mainSeries.setData([]);
         this.volumeSeries.setData([]);
-        this.candleSeries.setMarkers([]);
+        this.mainSeries.setMarkers([]);
         Object.values(this.indicatorSeries).forEach(s => this.chart.removeSeries(s));
         this.indicatorSeries = {};
 
         if (this.priceLines) {
-            Object.values(this.priceLines).forEach(l => this.candleSeries.removePriceLine(l));
+            Object.values(this.priceLines).forEach(l => this.mainSeries.removePriceLine(l));
             this.priceLines = {};
         }
 
@@ -296,7 +330,7 @@ class ChartInstance {
                         priceLineVisible: false
                     });
                 });
-                this.candleSeries.setMarkers(this.showIndicators && !this.hiddenPlots.has('__markers__') ? this.markers : []);
+                this.mainSeries.setMarkers(this.showIndicators && !this.hiddenPlots.has('__markers__') ? this.markers : []);
             }
 
             if (this.showOiProfile) this.fetchOiProfile();
@@ -317,7 +351,7 @@ class ChartInstance {
         if (!displayCandles.some(c => c.hasExplicitColor)) {
             displayCandles = applyRvolColoring(displayCandles);
         }
-        this.candleSeries.setData(displayCandles);
+        this.mainSeries.setData(displayCandles);
         this.volumeSeries.setData(Array.from(this.fullHistory.volume.values()).sort((a, b) => a.time - b.time));
 
         if (displayCandles.length > 0) {
@@ -333,11 +367,11 @@ class ChartInstance {
         });
 
         // Restore markers
-        this.candleSeries.setMarkers(this.showIndicators && !this.hiddenPlots.has('__markers__') ? this.markers : []);
+        this.mainSeries.setMarkers(this.showIndicators && !this.hiddenPlots.has('__markers__') ? this.markers : []);
     }
 
     updateRealtimeCandle(quote) {
-        if (!this.candleSeries || this.isReplayMode) return;
+        if (!this.mainSeries || this.isReplayMode) return;
         const intervalMap = { '1': 60, '5': 300, '15': 900, '30': 1800, '60': 3600, 'D': 86400 };
         const duration = intervalMap[this.interval] || 60;
         const tickTime = Math.floor(quote.ts_ms / 1000);
@@ -355,7 +389,7 @@ class ChartInstance {
                 });
             }
             this.lastCandle = { time: candleTime, open: price, high: price, low: price, close: price, volume: ltq };
-            this.candleSeries.update(this.lastCandle);
+            this.mainSeries.update(this.lastCandle);
             this.lastUpdatedTime = candleTime;
             this.volumeSeries.update({ time: candleTime, value: ltq, color: 'rgba(59, 130, 246, 0.5)' });
         } else if (candleTime === this.lastCandle.time) {
@@ -363,7 +397,7 @@ class ChartInstance {
             this.lastCandle.high = Math.max(this.lastCandle.high, price);
             this.lastCandle.low = Math.min(this.lastCandle.low, price);
             this.lastCandle.volume += ltq;
-            this.candleSeries.update(this.lastCandle);
+            this.mainSeries.update(this.lastCandle);
             this.lastUpdatedTime = candleTime;
             this.volumeSeries.update({
                 time: this.lastCandle.time, value: this.lastCandle.volume,
@@ -406,7 +440,7 @@ class ChartInstance {
                         else {
                             candles.forEach((c, idx) => {
                                 if (c.time >= this.lastUpdatedTime) {
-                                    this.candleSeries.update(c);
+                                    this.mainSeries.update(c);
                                     this.volumeSeries.update(vol[idx]);
                                     this.lastUpdatedTime = Math.max(this.lastUpdatedTime, c.time);
                                 }
@@ -439,9 +473,6 @@ class ChartInstance {
     }
 
     applyIndicators(indicators) {
-        // Enforce no indicators/markers for Chart 2 (index 1)
-        // if (this.index === 1) return;
-
         let newlyAdded = false;
         const allMarkers = [];
 
@@ -536,7 +567,7 @@ class ChartInstance {
 
             this.markers = uniqueMarkers;
             if (!this.isReplayMode) {
-                this.candleSeries.setMarkers(this.showIndicators && !this.hiddenPlots.has('__markers__') ? this.markers : []);
+                this.mainSeries.setMarkers(this.showIndicators && !this.hiddenPlots.has('__markers__') ? this.markers : []);
             }
         }
 
@@ -556,14 +587,12 @@ class ChartInstance {
     }
 
     addPriceLine(id, data) {
-        // Enforce no price lines for Chart 2 (index 1)
-        // if (this.index === 1) return;
         if (!this.priceLines) this.priceLines = {};
         if (this.priceLines[id]) {
-            this.candleSeries.removePriceLine(this.priceLines[id]);
+            this.mainSeries.removePriceLine(this.priceLines[id]);
         }
         const title = data.title || id;
-        this.priceLines[id] = this.candleSeries.createPriceLine({
+        this.priceLines[id] = this.mainSeries.createPriceLine({
             price: data.price,
             color: this.colorOverrides[title] || tvColorToRGBA(data.color) || '#3b82f6',
             lineWidth: data.lineWidth || 2,
@@ -612,7 +641,7 @@ class ChartInstance {
             const vV = allVolume.slice(0, this.replayIndex + 1);
             const currentTime = vC[vC.length - 1].time;
 
-            this.candleSeries.setData(vC);
+            this.mainSeries.setData(vC);
             this.volumeSeries.setData(vV);
             if (vC.length > 0) this.lastUpdatedTime = vC[vC.length - 1].time;
 
@@ -627,7 +656,7 @@ class ChartInstance {
 
             // Subset markers
             const visibleMarkers = this.markers.filter(m => m.time <= currentTime);
-            this.candleSeries.setMarkers(this.showIndicators && !this.hiddenPlots.has('__markers__') ? visibleMarkers : []);
+            this.mainSeries.setMarkers(this.showIndicators && !this.hiddenPlots.has('__markers__') ? visibleMarkers : []);
 
             this.lastCandle = { ...vC[vC.length - 1] };
 
@@ -681,7 +710,7 @@ class ChartInstance {
     }
 
     addHorizontalLine(price, color = '#3b82f6') {
-        const line = this.candleSeries.createPriceLine({
+        const line = this.mainSeries.createPriceLine({
             price: price, color: color, lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Dotted, axisLabelVisible: false, title: 'HLINE'
         });
         this.drawings.push({ type: 'hline', price, color, line });
@@ -690,7 +719,7 @@ class ChartInstance {
 
     clearDrawings() {
         this.drawings.forEach(d => {
-            if (d.line) this.candleSeries.removePriceLine(d.line);
+            if (d.line) this.mainSeries.removePriceLine(d.line);
         });
         this.drawings = [];
         saveLayout();
@@ -842,6 +871,9 @@ function updateHeaderUI() {
     // Update symbol search
     document.getElementById('symbolSearch').value = chart.symbol;
 
+    // Update chart type selector
+    document.getElementById('chartTypeSelector').value = chart.chartType;
+
     // Update replay UI
     updateReplayUI(chart);
     updateActiveChartLabel();
@@ -908,6 +940,8 @@ function setLayout(n, overrideSymbol = null, overrideInterval = null) {
                 chartInstance.showIndicators = saved.showIndicators !== undefined ? saved.showIndicators : true;
                 chartInstance.hiddenPlots = new Set(saved.hiddenPlots || []);
                 chartInstance.colorOverrides = saved.colorOverrides || {};
+                chartInstance.chartType = saved.chartType || 'candles';
+                chartInstance.setChartType(chartInstance.chartType);
                 chartInstance.switchSymbol(chartInstance.symbol, chartInstance.interval).then(() => {
                     if (saved.drawings) {
                         saved.drawings.forEach(d => {
@@ -1112,6 +1146,7 @@ function saveLayout() {
             showIndicators: c.showIndicators,
             hiddenPlots: Array.from(c.hiddenPlots),
             colorOverrides: c.colorOverrides,
+            chartType: c.chartType,
             drawings: c.drawings.map(d => ({ type: d.type, price: d.price, color: d.color }))
         };
         localStorage.setItem(`chart_config_${i}`, JSON.stringify(config));
@@ -1156,14 +1191,11 @@ function tvColorToRGBA(color) {
     if (color === null || color === undefined) return null;
     if (typeof color === 'string') return color;
     if (typeof color === 'number') {
-        // TradingView colors can be ARGB or similar packed integers.
         const uColor = color >>> 0;
         const a = ((uColor >> 24) & 0xFF) / 255;
         const r = (uColor >> 16) & 0xFF;
         const g = (uColor >> 8) & 0xFF;
         const b = uColor & 0xFF;
-        // If alpha component is 0 in the bitmask, it's often intended to be opaque (1.0)
-        // unless explicitly a transparency-based indicator.
         const alpha = ((uColor >> 24) & 0xFF) === 0 ? 1.0 : a;
         return `rgba(${r}, ${g}, ${b}, ${alpha})`;
     }
@@ -1298,13 +1330,11 @@ function populateIndicatorList() {
     const list = document.getElementById('indicatorList');
     list.innerHTML = '';
 
-    // Plots section
     const plotsHeader = document.createElement('div');
     plotsHeader.className = 'text-[9px] font-black text-gray-500 mb-2 mt-2 uppercase tracking-tighter';
     plotsHeader.innerText = 'Plots & Indicators';
     list.appendChild(plotsHeader);
 
-    // Marker Toggle (Global for markers)
     if (chart.markers.length > 0) {
         const item = document.createElement('div');
         item.className = 'flex items-center justify-between bg-white/5 p-2 rounded-lg mb-2';
@@ -1321,13 +1351,12 @@ function populateIndicatorList() {
             } else {
                 chart.hiddenPlots.add('__markers__');
             }
-            chart.candleSeries.setMarkers(chart.showIndicators && !chart.hiddenPlots.has('__markers__') ? chart.markers : []);
+            chart.mainSeries.setMarkers(chart.showIndicators && !chart.hiddenPlots.has('__markers__') ? chart.markers : []);
             populateIndicatorList();
             saveLayout();
         });
         list.appendChild(item);
 
-        // Unique marker types for color overriding
         const uniqueLabels = [...new Set(chart.markers.map(m => m.text).filter(t => t))];
         uniqueLabels.forEach(label => {
             const mItem = document.createElement('div');
@@ -1345,7 +1374,7 @@ function populateIndicatorList() {
                 const newColor = e.target.value;
                 chart.colorOverrides[label] = newColor;
                 chart.markers = chart.markers.map(m => m.text === label ? { ...m, color: newColor } : m);
-                chart.candleSeries.setMarkers(chart.showIndicators && !chart.hiddenPlots.has('__markers__') ? chart.markers : []);
+                chart.mainSeries.setMarkers(chart.showIndicators && !chart.hiddenPlots.has('__markers__') ? chart.markers : []);
                 saveLayout();
             });
             list.appendChild(mItem);
@@ -1356,10 +1385,8 @@ function populateIndicatorList() {
         const title = series._backendTitle || key;
         const item = document.createElement('div');
         item.className = 'flex items-center justify-between bg-white/5 p-2 rounded-lg';
-
         const isHidden = chart.hiddenPlots.has(key);
         const currentColor = series.options().color;
-
         item.innerHTML = `
             <div class="flex items-center truncate mr-2">
                 <input type="color" class="indicator-color-picker w-4 h-4 rounded cursor-pointer mr-2 border-0 bg-transparent" value="${rgbaToHex(currentColor)}">
@@ -1369,14 +1396,12 @@ function populateIndicatorList() {
                 ${isHidden ? 'HIDDEN' : 'VISIBLE'}
             </button>
         `;
-
         item.querySelector('.indicator-color-picker').addEventListener('input', (e) => {
             const newColor = e.target.value;
             chart.colorOverrides[title] = newColor;
             series.applyOptions({ color: newColor });
             saveLayout();
         });
-
         item.querySelector('.toggle-plot-btn').addEventListener('click', (e) => {
             if (chart.hiddenPlots.has(key)) {
                 chart.hiddenPlots.delete(key);
@@ -1388,7 +1413,6 @@ function populateIndicatorList() {
             populateIndicatorList();
             saveLayout();
         });
-
         list.appendChild(item);
     });
 
@@ -1398,7 +1422,6 @@ function populateIndicatorList() {
             const item = document.createElement('div');
             item.className = 'flex items-center justify-between bg-white/5 p-2 rounded-lg mt-1';
             const currentColor = line.options().color;
-
             item.innerHTML = `
                 <div class="flex items-center truncate mr-2">
                     <input type="color" class="indicator-color-picker w-4 h-4 rounded cursor-pointer mr-2 border-0 bg-transparent" value="${rgbaToHex(currentColor)}">
@@ -1406,7 +1429,6 @@ function populateIndicatorList() {
                 </div>
                 <span class="text-[8px] text-gray-500 uppercase font-black">Line</span>
             `;
-
             item.querySelector('.indicator-color-picker').addEventListener('input', (e) => {
                 const newColor = e.target.value;
                 chart.colorOverrides[title] = newColor;
@@ -1417,14 +1439,6 @@ function populateIndicatorList() {
         });
     }
 
-    if (Object.keys(chart.indicatorSeries).length === 0 && (!chart.priceLines || Object.keys(chart.priceLines).length === 0)) {
-        const empty = document.createElement('div');
-        empty.className = 'text-[10px] text-gray-500 italic mb-4';
-        empty.innerText = 'No indicators loaded';
-        list.appendChild(empty);
-    }
-
-    // Drawings section
     const drawingsHeader = document.createElement('div');
     drawingsHeader.className = 'text-[9px] font-black text-gray-500 mb-2 mt-4 uppercase tracking-tighter';
     drawingsHeader.innerText = 'Drawings';
@@ -1440,23 +1454,22 @@ function populateIndicatorList() {
             </button>
         `;
         item.querySelector('.remove-draw-btn').addEventListener('click', () => {
-            if (d.line) chart.candleSeries.removePriceLine(d.line);
+            if (d.line) chart.mainSeries.removePriceLine(d.line);
             chart.drawings.splice(i, 1);
             populateIndicatorList();
             saveLayout();
         });
         list.appendChild(item);
     });
-
-    if (chart.drawings.length === 0) {
-        const empty = document.createElement('div');
-        empty.className = 'text-[10px] text-gray-500 italic';
-        empty.innerText = 'No drawings';
-        list.appendChild(empty);
-    }
 }
 
 function initDrawingControls() {
+    document.getElementById('chartTypeSelector').addEventListener('change', (e) => {
+        const chart = charts[activeChartIndex];
+        if (chart) chart.setChartType(e.target.value);
+        saveLayout();
+    });
+
     document.getElementById('toggleIndicatorsBtn').addEventListener('click', () => {
         const chart = charts[activeChartIndex];
         if (!chart) return;
@@ -1465,10 +1478,11 @@ function initDrawingControls() {
             const key = Object.keys(chart.indicatorSeries).find(k => chart.indicatorSeries[k] === s);
             s.applyOptions({ visible: chart.showIndicators && !chart.hiddenPlots.has(key) });
         });
-        chart.candleSeries.setMarkers(chart.showIndicators && !chart.hiddenPlots.has('__markers__') ? chart.markers : []);
+        chart.mainSeries.setMarkers(chart.showIndicators && !chart.hiddenPlots.has('__markers__') ? chart.markers : []);
         updateHeaderUI();
         saveLayout();
     });
+
     document.getElementById('drawingToolBtn').addEventListener('click', () => {
         const btn = document.getElementById('drawingToolBtn');
         const isActive = btn.classList.toggle('bg-blue-600');
@@ -1487,7 +1501,7 @@ function initReplayControls() {
         const chart = charts[activeChartIndex];
         if (!chart) return;
         chart.isReplayMode = true;
-        chart.loadReplayHistory(); // Load historical options data
+        chart.loadReplayHistory();
         document.getElementById('normalControls').classList.add('hidden');
         document.getElementById('replayControls').classList.remove('hidden');
         document.getElementById('replayStatus').innerText = 'SELECT START POINT';
@@ -1512,7 +1526,7 @@ function initReplayControls() {
         } else {
             chart.isPlaying = true;
             chart.replayInterval = setInterval(() => {
-                if (chart.replayIndex < chart.fullHistory.candles.size - 1) chart.stepReplay(1);
+                if (chart.replayIndex < Array.from(chart.fullHistory.candles.keys()).length - 1) chart.stepReplay(1);
                 else { chart.isPlaying = false; clearInterval(chart.replayInterval); updateReplayUI(chart); }
             }, 1000);
         }
@@ -1529,7 +1543,7 @@ function updateReplayUI(chart) {
     document.getElementById('playIcon').classList.toggle('hidden', chart.isPlaying);
     document.getElementById('pauseIcon').classList.toggle('hidden', !chart.isPlaying);
     if (chart.replayIndex !== -1) {
-        document.getElementById('replayStatus').innerText = `BAR ${chart.replayIndex + 1} / ${chart.fullHistory.candles.size}`;
+        document.getElementById('replayStatus').innerText = `BAR ${chart.replayIndex + 1} / ${Array.from(chart.fullHistory.candles.keys()).length}`;
     }
 }
 

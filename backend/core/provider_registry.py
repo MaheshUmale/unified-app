@@ -57,9 +57,14 @@ def initialize_default_providers():
         NSEOptionsProvider,
         TradingViewHistoricalProvider
     )
+    from external.enhanced_tv_provider import EnhancedTradingViewProvider
+
+    # Initialize Enhanced Provider
+    enhanced_tv = EnhancedTradingViewProvider()
 
     # Live Stream
     live_stream_registry.register("tradingview", TradingViewLiveStreamProvider(), priority=10)
+    live_stream_registry.register("enhanced_tv", enhanced_tv, priority=20)
 
     # Options Data
     options_data_registry.register("trendlyne", TrendlyneOptionsProvider(), priority=10)
@@ -67,3 +72,4 @@ def initialize_default_providers():
 
     # Historical Data
     historical_data_registry.register("tradingview", TradingViewHistoricalProvider(), priority=10)
+    historical_data_registry.register("enhanced_tv", enhanced_tv, priority=20)

@@ -213,6 +213,7 @@
             <button class="tab-btn pb-2 text-xs uppercase tracking-wider" data-tab="strategies">Strategies</button>
             <button class="tab-btn pb-2 text-xs uppercase tracking-wider" data-tab="alerts">Alerts</button>
             <button class="tab-btn pb-2 text-xs uppercase tracking-wider" data-tab="scalper">Scalper</button>
+            <button class="tab-btn pb-2 text-xs uppercase tracking-wider" data-tab="system">System</button>
         </div>
 
         <!-- Tab Content -->
@@ -364,6 +365,71 @@
             </div>
 
             <!-- Scalper Tab -->
+            <div id="systemTab" class="tab-pane hidden">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div class="glass-panel rounded-xl p-4">
+                        <h3 class="text-xs font-bold uppercase tracking-wider mb-4">TradingView Engine Health</h3>
+                        <div class="flex items-center gap-6 mb-6">
+                            <div class="relative w-24 h-24">
+                                <svg class="w-full h-full" viewBox="0 0 36 36">
+                                    <path class="stroke-slate-800" stroke-width="3" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                                    <path id="healthCircle" class="stroke-blue-500" stroke-width="3" stroke-dasharray="100, 100" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                                    <text x="18" y="20.35" class="fill-white font-black text-[8px] text-center" text-anchor="middle" id="healthScoreText" style="fill: var(--text-primary);">100%</text>
+                                </svg>
+                            </div>
+                            <div class="flex-1 space-y-2">
+                                <div class="flex justify-between items-center">
+                                    <span class="text-[10px] text-gray-500 uppercase">Status</span>
+                                    <span id="engineStatus" class="text-[10px] font-bold text-green-500 uppercase">RUNNING</span>
+                                </div>
+                                <div class="flex justify-between items-center">
+                                    <span class="text-[10px] text-gray-500 uppercase">Connections</span>
+                                    <span id="engineConnections" class="text-[10px] font-bold text-white" style="color: var(--text-primary);">0 Active</span>
+                                </div>
+                                <div class="flex justify-between items-center">
+                                    <span class="text-[10px] text-gray-500 uppercase">Cache Usage</span>
+                                    <span id="engineCache" class="text-[10px] font-bold text-blue-400">0%</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="space-y-3">
+                            <h4 class="text-[9px] text-gray-500 uppercase font-bold">Quality Metrics</h4>
+                            <div class="grid grid-cols-2 gap-3">
+                                <div class="bg-black/20 p-2 rounded">
+                                    <div class="text-[8px] text-gray-500 uppercase">Completeness</div>
+                                    <div id="qualityCompleteness" class="text-xs font-bold text-white" style="color: var(--text-primary);">0%</div>
+                                </div>
+                                <div class="bg-black/20 p-2 rounded">
+                                    <div class="text-[8px] text-gray-500 uppercase">Accuracy</div>
+                                    <div id="qualityAccuracy" class="text-xs font-bold text-white" style="color: var(--text-primary);">0%</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="glass-panel rounded-xl p-4">
+                        <h3 class="text-xs font-bold uppercase tracking-wider mb-4">Engine Performance</h3>
+                        <div class="space-y-4">
+                            <div class="flex justify-between items-center border-b border-white/5 pb-2">
+                                <span class="text-[10px] text-gray-500 uppercase">Avg Response Time</span>
+                                <span id="perfLatency" class="text-sm font-black text-blue-400">0ms</span>
+                            </div>
+                            <div class="flex justify-between items-center border-b border-white/5 pb-2">
+                                <span class="text-[10px] text-gray-500 uppercase">Throughput</span>
+                                <span id="perfThroughput" class="text-sm font-black text-white" style="color: var(--text-primary);">0 req/s</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-[10px] text-gray-500 uppercase">Error Rate</span>
+                                <span id="perfErrorRate" class="text-sm font-black text-red-500">0%</span>
+                            </div>
+                        </div>
+                        <div class="mt-6 p-3 bg-blue-500/10 rounded border border-blue-500/20">
+                            <h4 class="text-[9px] text-blue-400 uppercase font-black mb-1">System Recommendation</h4>
+                            <p id="systemRec" class="text-[10px] text-gray-300 italic">System operating within normal parameters.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div id="scalperTab" class="tab-pane hidden">
                 <div class="grid grid-cols-1 lg:grid-cols-4 gap-4">
                     <div class="lg:col-span-1 space-y-4">
@@ -781,6 +847,45 @@
             if (tabId === 'overview') loadOverviewData();
             if (tabId === 'alerts') loadAlerts();
             if (tabId === 'scalper') updateScalperStatusUI();
+            if (tabId === 'system') loadSystemStatus();
+        }
+
+        async function loadSystemStatus() {
+            try {
+                const response = await fetch('/api/tv/status');
+                const data = await response.json();
+
+                // Update Health Score
+                const health = data.system_health.overall_health || 0;
+                document.getElementById('healthScoreText').textContent = health.toFixed(0) + '%';
+                document.getElementById('healthCircle').setAttribute('stroke-dasharray', `${health}, 100`);
+
+                // Update Basic Stats
+                document.getElementById('engineStatus').textContent = data.is_running ? 'RUNNING' : 'STOPPED';
+                document.getElementById('engineConnections').textContent = `${data.connections.active} Active / ${data.connections.total} Total`;
+                document.getElementById('engineCache').textContent = data.cache.usage_percentage.toFixed(1) + '%';
+
+                // Update Quality
+                const quality = data.quality_metrics.current_metrics;
+                document.getElementById('qualityCompleteness').textContent = (quality.completeness_rate * 100).toFixed(1) + '%';
+                document.getElementById('qualityAccuracy').textContent = (quality.accuracy_rate * 100).toFixed(1) + '%';
+
+                // Update Performance
+                const perf = data.performance_metrics;
+                document.getElementById('perfLatency').textContent = perf.avg_response_time_ms.toFixed(0) + 'ms';
+                document.getElementById('perfThroughput').textContent = perf.requests_per_second.toFixed(2) + ' req/s';
+                document.getElementById('perfErrorRate').textContent = (perf.error_rate * 100).toFixed(2) + '%';
+
+                // Update Recommendations
+                const recs = data.system_health.recommendations;
+                if (recs && recs.length > 0) {
+                    document.getElementById('systemRec').textContent = recs[0];
+                } else {
+                    document.getElementById('systemRec').textContent = 'System operating within normal parameters.';
+                }
+            } catch (error) {
+                console.error('Error loading system status:', error);
+            }
         }
 
         async function loadData() {

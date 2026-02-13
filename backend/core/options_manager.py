@@ -53,6 +53,7 @@ class OptionsManager:
         self.symbol_map_cache: Dict[str, Dict[str, str]] = {}
         self.sio = None
         self.loop = None
+        self.tv_manager = None
         
         # New feature: Store previous chain data for buildup analysis
         self.previous_chains: Dict[str, List[Dict[str, Any]]] = {}
@@ -67,6 +68,10 @@ class OptionsManager:
         # Register alert callback
         alert_system.register_callback(self._on_alert_triggered)
     
+    def set_tv_manager(self, tv_manager):
+        """Set the Enhanced TradingView Manager."""
+        self.tv_manager = tv_manager
+
     def _on_alert_triggered(self, alert_data: Dict[str, Any]):
         """Handle triggered alerts."""
         if self.sio:
@@ -444,6 +449,19 @@ class OptionsManager:
             from core.symbol_mapper import symbol_mapper
             hrn = symbol_mapper.get_hrn(underlying)
             
+            # Layer 0: Enhanced TradingView Manager (Highest Quality)
+            if self.tv_manager:
+                try:
+                    # Get 1m data for the most accurate current price
+                    tv_data = await self.tv_manager.get_historical_data(underlying, "1", 1)
+                    if tv_data and tv_data.data:
+                        price = tv_data.data[-1]['close']
+                        if price > 0:
+                            logger.info(f"Spot Price discovered from Enhanced TV Manager for {underlying}: {price}")
+                            return price
+                except Exception as e:
+                    logger.debug(f"Enhanced TV Manager spot discovery failed for {underlying}: {e}")
+
             # Layer 1: Ticks Table (Live Feed)
             # Use explicit keys to avoid matching option symbols (e.g. NIFTY260217P...)
             target_keys = [underlying, underlying.replace(':', '|')]
