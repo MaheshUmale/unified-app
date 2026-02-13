@@ -749,11 +749,12 @@ class OptionsManager:
     async def _refresh_wss_symbols(self, underlying: str):
         provider = options_data_registry.get_primary()
         data = await provider.get_option_chain(underlying)
+
+        if underlying not in self.symbol_map_cache:
+            self.symbol_map_cache[underlying] = {}
+
+        all_symbols = []
         if data and 'symbols' in data:
-            if underlying not in self.symbol_map_cache:
-                self.symbol_map_cache[underlying] = {}
-            
-            all_symbols = []
             for item in data['symbols']:
                 symbol = item['f'][0]
                 strike = float(item['f'][3]) if item['f'][3] is not None else 0
@@ -761,9 +762,23 @@ class OptionsManager:
                 
                 all_symbols.append(symbol)
                 self.symbol_map_cache[underlying][f"{strike}_{opt_type}"] = symbol
-            
-            if underlying in self.wss_clients:
-                self.wss_clients[underlying].add_symbols(all_symbols[:300])
+
+        # Fallback to local DB if symbols not found via provider
+        if not self.symbol_map_cache[underlying]:
+            logger.info(f"Symbols not found via provider for {underlying}, trying local DB fallback...")
+            db_res = db.query(
+                "SELECT DISTINCT symbol, strike, option_type FROM options_snapshots WHERE underlying = ? ORDER BY timestamp DESC LIMIT 200",
+                (underlying,)
+            )
+            for r in db_res:
+                symbol = r['symbol']
+                strike = r['strike']
+                opt_type = r['option_type'].lower()
+                all_symbols.append(symbol)
+                self.symbol_map_cache[underlying][f"{strike}_{opt_type}"] = symbol
+
+        if all_symbols and underlying in self.wss_clients:
+            self.wss_clients[underlying].add_symbols(list(set(all_symbols))[:400])
     
     async def _calculate_pcr(self, underlying, timestamp, rows, spot_price=0):
         """Calculate PCR with enhanced metrics."""

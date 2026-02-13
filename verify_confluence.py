@@ -23,11 +23,18 @@ def verify_confluence_chart():
             time.sleep(5)
 
             print("Switching to PCR Trend tab...")
-            page.click('button[data-tab="pcr-trend"]')
+            page.click('button[data-tab="overview"]')
             time.sleep(5) # Wait for chart to render
 
-            page.screenshot(path='/home/jules/verification/confluence_chart.png', full_page=True)
-            print("Screenshot saved to /home/jules/verification/confluence_chart.png")
+            page.screenshot(path='verification_overview.png', full_page=True)
+            print("Screenshot saved to verification_overview.png")
+
+            print("Switching to Scalper tab...")
+            page.click('button[data-tab="scalper"]')
+            time.sleep(5)
+
+            page.screenshot(path='verification_scalper.png', full_page=True)
+            print("Screenshot saved to verification_scalper.png")
 
         except Exception as e:
             print(f"Error: {e}")

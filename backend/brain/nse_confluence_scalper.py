@@ -11,6 +11,7 @@ import time
 from scipy.signal import find_peaks
 from core.options_manager import options_manager
 from core.oi_buildup_analyzer import oi_buildup_analyzer
+from brain.MarketPsychologyAnalyzer import MarketPsychologyAnalyzer
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +73,13 @@ class DataStreamer:
         # Update levels
         if target == 'underlying':
             self.scalper.engine.find_levels(new_df, 'underlying')
+            # Market Psychology Analysis
+            try:
+                zones, signals = self.scalper.psych_analyzer.analyze(candle_data['ohlcv'])
+                self.scalper.psych_data['zones'] = zones
+                self.scalper.psych_data['signals'] = signals
+            except Exception as e:
+                logger.error(f"Psychology analysis error: {e}")
         else:
             self.scalper.engine.update_option_levels(instrument_key, new_df)
 
@@ -194,7 +202,8 @@ class ConfluenceEngine:
 
     def is_in_signal_zone(self, price):
         """Underlying within 0.05% of a major level."""
-        major_levels = self.underlying_levels + self.hvn_levels
+        psych_levels = [z['price'] for z in self.scalper.psych_data.get('zones', [])]
+        major_levels = self.underlying_levels + self.hvn_levels + psych_levels
         for level in major_levels:
             if abs(price - level) / level <= 0.0005:
                 return True, level
@@ -240,8 +249,6 @@ class SignalGenerator:
         self.scalper = scalper
 
     def check_signals(self):
-        if len(self.scalper.order_manager.active_trades) > 0: return
-
         spot = self.scalper.current_spot
         in_zone, level = self.scalper.engine.is_in_signal_zone(spot)
 
@@ -252,16 +259,20 @@ class SignalGenerator:
         chain_res = options_manager.get_chain_with_greeks(self.scalper.underlying)
         chain_data = chain_res.get('chain', [])
         if spot == 0: spot = chain_res.get('spot_price', 0)
-        if not chain_data: return
 
-        pcr = self.scalper.engine.calculate_pcr(chain_data)
+        pcr = 0
+        if chain_data:
+            pcr = self.scalper.engine.calculate_pcr(chain_data)
+
         spurts = {'call': 0, 'put': 0}
-        if self.scalper.prev_chain:
+        if chain_data and self.scalper.prev_chain:
             spurts = self.scalper.engine.get_oi_spurt(chain_data, self.scalper.prev_chain)
-        self.scalper.prev_chain = chain_data
+        if chain_data:
+            self.scalper.prev_chain = chain_data
 
-        if len(self.scalper.engine.pcr_history) < 2: return
-        pcr_rising = self.scalper.engine.pcr_history[-1] > self.scalper.engine.pcr_history[-2]
+        pcr_rising = False
+        if len(self.scalper.engine.pcr_history) >= 2:
+            pcr_rising = self.scalper.engine.pcr_history[-1] > self.scalper.engine.pcr_history[-2]
 
         price_chg = 0
         if len(self.scalper.streamer.tick_buffer) >= 2:
@@ -269,35 +280,47 @@ class SignalGenerator:
 
         net_spurt = spurts['put'] - spurts['call']
         oi_status = self.scalper.engine.get_buildup_status(price_chg, net_spurt)
+
+        # Trend indicators
         bullish_oi = (pcr_rising and spurts['put'] > spurts['call']) or (oi_status in ["LONG_BUILDUP", "SHORT_COVERING"])
         bearish_oi = (not pcr_rising and spurts['call'] > spurts['put']) or (oi_status in ["SHORT_BUILDUP", "LONG_UNWINDING"])
 
+        # Psychology Signals Integration
+        psych_signals = self.scalper.psych_data.get('signals', {})
+        latest_psych = None
+        if psych_signals:
+            latest_ts = max(psych_signals.keys())
+            # Convert to seconds if it is a datetime object
+            ts_seconds = latest_ts.timestamp() if isinstance(latest_ts, datetime) else latest_ts
+            if (time.time() - ts_seconds) < 300: # Last 5 mins
+                latest_psych = psych_signals[latest_ts]
+
+        if latest_psych == "SHORT_TRAP": bullish_oi = True
+        if latest_psych == "LONG_TRAP": bearish_oi = True
+
+        # Option Data
         call_sym = self.scalper.streamer.symbols.get('atm_call')
         put_sym = self.scalper.streamer.symbols.get('atm_put')
         call_levels = self.scalper.engine.option_levels.get(call_sym, {})
         put_levels = self.scalper.engine.option_levels.get(put_sym, {})
         call_tick = self.scalper.last_ticks.get('atm_call')
         put_tick = self.scalper.last_ticks.get('atm_put')
-
-        if not call_tick or not put_tick or not call_levels or not put_levels: return
-
         call_vwap = self.scalper.streamer.vwap.get('atm_call', 0)
         put_vwap = self.scalper.streamer.vwap.get('atm_put', 0)
 
-        is_at_support = (in_zone and spot <= level * 1.0005) or any(abs(spot-s)/s < 0.0005 for s in sup_oi)
-        is_brk_resistance = (in_zone and spot >= level * 0.9995) or any(abs(spot-r)/r < 0.0005 for r in res_oi)
-
-        call_brk = call_tick['last_price'] > max(call_levels.get('last_swing_h', 0), call_vwap, call_levels.get('p15_h', 0), call_levels.get('orb_h', 0))
-        put_brk_dwn = put_tick['last_price'] < min(put_levels.get('last_swing_l', 999999), put_levels.get('p15_l', 999999), put_levels.get('orb_l', 999999))
-
-        put_brk = put_tick['last_price'] > max(put_levels.get('last_swing_h', 0), put_vwap, put_levels.get('p15_h', 0), put_levels.get('orb_h', 0))
-        call_brk_dwn = call_tick['last_price'] < min(call_levels.get('last_swing_l', 999999), call_levels.get('p15_l', 999999), call_levels.get('orb_l', 999999))
+        # Confluence bits
+        call_brk = call_tick['last_price'] > max(call_levels.get('last_swing_h', 0), call_vwap, call_levels.get('p15_h', 0), call_levels.get('orb_h', 0)) if call_tick and call_levels else False
+        put_brk_dwn = put_tick['last_price'] < min(put_levels.get('last_swing_l', 999999), put_levels.get('p15_l', 999999), put_levels.get('orb_l', 999999)) if put_tick and put_levels else False
+        put_brk = put_tick['last_price'] > max(put_levels.get('last_swing_h', 0), put_vwap, put_levels.get('p15_h', 0), put_levels.get('orb_h', 0)) if put_tick and put_levels else False
+        call_brk_dwn = call_tick['last_price'] < min(call_levels.get('last_swing_l', 999999), call_levels.get('p15_l', 999999), call_levels.get('orb_l', 999999)) if call_tick and call_levels else False
 
         oi_conf = "BULLISH" if bullish_oi else "BEARISH" if bearish_oi else "NEUTRAL"
+        if latest_psych: oi_conf += f" ({latest_psych})"
 
         # Confluence metrics for UI
         if self.scalper.sio and self.scalper.loop:
             oi_power = "STRONG" if abs(net_spurt) > 500000 else "MODERATE" if abs(net_spurt) > 100000 else "WEAK"
+
             asyncio.run_coroutine_threadsafe(
                 self.scalper.sio.emit('scalper_metrics', {
                     'pcr': round(pcr, 2),
@@ -308,18 +331,25 @@ class SignalGenerator:
                     'vwap': {'call': round(call_vwap, 2), 'put': round(put_vwap, 2)},
                     'oi_levels': {'support': sup_oi[:2], 'resistance': res_oi[:2]},
                     'confluence': {
-                        'lvl': is_at_support or is_brk_resistance,
+                        'lvl': in_zone,
                         'pcr': pcr_rising,
-                        'oi': spurts['put'] > spurts['call'] if bullish_oi else spurts['call'] > spurts['put'],
-                        'opt_brk': call_brk if bullish_oi else put_brk,
-                        'inv_dwn': put_brk_dwn if bullish_oi else call_brk_dwn
+                        'oi': bullish_oi or bearish_oi,
+                        'opt_brk': call_brk if bullish_oi else put_brk if bearish_oi else False,
+                        'inv_dwn': put_brk_dwn if bullish_oi else call_brk_dwn if bearish_oi else False
                     }
                 }),
                 self.scalper.loop
             )
 
+        # Actual trade logic
+        if len(self.scalper.order_manager.active_trades) > 0: return
+        if not call_tick or not put_tick or not call_levels or not put_levels: return
+
+        is_at_support = (in_zone and spot <= level * 1.0005) or any(abs(spot-s)/s < 0.0005 for s in sup_oi)
+        is_brk_resistance = (in_zone and spot >= level * 0.9995) or any(abs(spot-r)/r < 0.0005 for r in res_oi)
+
         # Bullish Signal
-        if (is_at_support or is_brk_resistance) and bullish_oi:
+        if (is_at_support or is_brk_resistance or latest_psych == "SHORT_TRAP") and bullish_oi:
             if call_brk and put_brk_dwn:
                 inv_status = "PUT_BREAKDOWN"
                 msg = f"[SIGNAL: CALL_BUY] [LVL: {level or spot}] [OI: {oi_conf}] [INV: {inv_status}]"
@@ -340,7 +370,7 @@ class SignalGenerator:
                 self.scalper.order_manager.execute_buy(call_sym, 'CALL', call_tick['last_price'], call_levels['last_swing_l'])
 
         # Bearish Signal
-        elif (is_at_support or is_brk_resistance) and bearish_oi:
+        elif (is_at_support or is_brk_resistance or latest_psych == "LONG_TRAP") and bearish_oi:
             if put_brk and call_brk_dwn:
                 inv_status = "CALL_BREAKDOWN"
                 msg = f"[SIGNAL: PUT_BUY] [LVL: {level or spot}] [OI: {oi_conf}] [INV: {inv_status}]"
@@ -446,6 +476,8 @@ class NSEConfluenceScalper:
         self.engine = ConfluenceEngine(self)
         self.signal_generator = SignalGenerator(self)
         self.order_manager = OrderManager(self)
+        self.psych_analyzer = MarketPsychologyAnalyzer()
+        self.psych_data = {"zones": [], "signals": {}}
         self.sio = None
         self.loop = None
         self.current_spot = 0
