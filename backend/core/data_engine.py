@@ -58,8 +58,22 @@ def flush_tick_buffer():
     if to_insert:
         try:
             db.insert_ticks(to_insert)
+            logger.debug(f"Flushed {len(to_insert)} ticks to DB")
         except Exception as e:
             logger.error(f"DB Insert Error: {e}")
+
+def periodic_flush():
+    """Background task to flush ticks every 10 seconds."""
+    while True:
+        try:
+            time.sleep(10)
+            flush_tick_buffer()
+        except Exception as e:
+            logger.error(f"Error in periodic_flush: {e}")
+            time.sleep(5)
+
+# Start periodic flush thread
+threading.Thread(target=periodic_flush, daemon=True).start()
 
 last_emit_times = {}
 

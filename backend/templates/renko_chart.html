@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tick Chart | PRODESK</title>
+    <title>Renko Chart | PRODESK</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
@@ -53,22 +53,12 @@
             z-index: 10;
             pointer-events: none;
         }
-
-        .replay-control {
-            background: rgba(30, 41, 59, 0.9);
-            border: 1px solid rgba(59, 130, 246, 0.3);
-            border-radius: 9999px;
-            padding: 4px 12px;
-            display: flex;
-            items-center: center;
-            gap: 8px;
-        }
     </style>
 </head>
 <body class="h-full flex flex-col light-theme">
     <header class="h-14 py-2 glass-panel border-b border-white/5 sticky top-0 z-50 px-4 flex items-center justify-between">
         <div class="flex items-center gap-4">
-            <span class="text-sm font-black text-blue-500 italic tracking-tighter uppercase">PRO<span class="text-gray-500">DESK</span> TICK</span>
+            <span class="text-sm font-black text-blue-500 italic tracking-tighter uppercase">PRO<span class="text-gray-500">DESK</span> RENKO</span>
             <div class="h-6 w-px bg-white/10 mx-2"></div>
             <div id="display-symbol" class="text-xs font-black uppercase tracking-widest text-blue-500">-</div>
             <div id="status-indicator" class="flex items-center gap-1.5 ml-4">
@@ -81,8 +71,8 @@
             <!-- Normal Controls -->
             <div id="normal-controls" class="flex items-center gap-3">
                 <div class="flex items-center gap-2 bg-black/10 rounded-full px-3 py-1">
-                    <span class="text-[10px] font-bold text-gray-400 uppercase">Ticks:</span>
-                    <input type="number" id="ticks-input" value="100" class="bg-transparent text-[10px] font-black w-12 outline-none text-blue-500" min="1">
+                    <span class="text-[10px] font-bold text-gray-400 uppercase">Box Size:</span>
+                    <input type="number" id="box-size-input" value="10" class="bg-transparent text-[10px] font-black w-12 outline-none text-blue-500" min="1" step="0.5">
                 </div>
                 <button id="replay-mode-btn" class="text-[10px] font-black px-4 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-full text-white transition-all uppercase tracking-tight shadow-md shadow-blue-500/20 active:scale-95">Replay</button>
             </div>
@@ -102,6 +92,7 @@
                 </button>
                 <button id="exit-replay-btn" class="text-[9px] font-bold px-3 py-1 hover:bg-red-900/40 rounded-full text-red-400 transition-colors">EXIT</button>
             </div>
+
             <button id="theme-toggle" class="p-2 hover:bg-black/5 rounded-full transition-colors">
                 <svg id="sun-icon" class="hidden w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z"/></svg>
                 <svg id="moon-icon" class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/></svg>
@@ -120,13 +111,8 @@
     <script>
         const socket = io();
         let chart, candleSeries, volumeSeries;
-        let historicalTicks = [];
-        let isReplayMode = false;
-        let replayIndex = -1;
-        let isPlaying = false;
-        let replayInterval = null;
 
-        // Parse symbol from URL (support both ?symbol= and /symbol= format)
+        // Parse symbol from URL
         let symbol = 'NSE:NIFTY';
         const urlParams = new URLSearchParams(window.location.search);
         const pathParts = window.location.pathname.split('/');
@@ -134,7 +120,6 @@
         if (urlParams.get('symbol')) {
             symbol = urlParams.get('symbol');
         } else {
-            // Check for /tick/symbol=...
             const symbolPart = pathParts.find(p => p.startsWith('symbol='));
             if (symbolPart) {
                 symbol = symbolPart.split('=')[1];
@@ -142,9 +127,14 @@
         }
         symbol = symbol.toUpperCase();
 
-        let ticksPerCandle = parseInt(urlParams.get('ticks')) || 100;
+        let boxSize = parseFloat(urlParams.get('boxSize')) || 10;
+        let historicalTicks = [];
+        let isReplayMode = false;
+        let replayIndex = -1;
+        let isPlaying = false;
+        let replayInterval = null;
 
-        document.getElementById('ticks-input').value = ticksPerCandle;
+        document.getElementById('box-size-input').value = boxSize;
         document.getElementById('display-symbol').textContent = symbol;
 
         function setStatus(text, color) {
@@ -154,53 +144,57 @@
             dot.className = `w-2 h-2 rounded-full ${color}`;
         }
 
-        class TickAggregator {
-            constructor(tpc) {
-                this.tpc = tpc;
-                this.currentTickCount = 0;
-                this.currentCandle = null;
+        class RenkoAggregator {
+            constructor(boxSize) {
+                this.boxSize = boxSize;
+                this.lastRenkoClose = 0;
                 this.lastTime = 0;
             }
 
-            setTicksPerCandle(tpc) {
-                this.tpc = tpc;
-                this.currentTickCount = 0;
-                this.currentCandle = null;
+            setBoxSize(bs) {
+                this.boxSize = bs;
+                this.lastRenkoClose = 0;
+                this.lastTime = 0;
             }
 
             processTick(tick) {
                 const price = Number(tick.price);
-                const qty = Number(tick.qty || 0);
                 let ts = Math.floor(tick.ts_ms / 1000);
 
-                if (!this.currentCandle || this.currentTickCount >= this.tpc) {
-                    if (ts <= this.lastTime) {
-                        ts = this.lastTime + 1;
-                    }
+                if (this.lastRenkoClose === 0) {
+                    this.lastRenkoClose = price;
+                    this.lastTime = ts;
+                    return []; // No bar yet
+                }
+
+                const bars = [];
+                let diff = price - this.lastRenkoClose;
+
+                while (Math.abs(diff) >= this.boxSize) {
+                    if (ts <= this.lastTime) ts = this.lastTime + 1;
                     this.lastTime = ts;
 
-                    this.currentCandle = {
+                    const isUp = diff > 0;
+                    const open = this.lastRenkoClose;
+                    const close = isUp ? open + this.boxSize : open - this.boxSize;
+
+                    bars.push({
                         time: ts,
-                        open: price,
-                        high: price,
-                        low: price,
-                        close: price,
-                        volume: qty
-                    };
-                    this.currentTickCount = 1;
-                    return { type: 'new', candle: this.currentCandle };
-                } else {
-                    this.currentCandle.high = Math.max(this.currentCandle.high, price);
-                    this.currentCandle.low = Math.min(this.currentCandle.low, price);
-                    this.currentCandle.close = price;
-                    this.currentCandle.volume += qty;
-                    this.currentTickCount++;
-                    return { type: 'update', candle: this.currentCandle };
+                        open: open,
+                        high: Math.max(open, close),
+                        low: Math.min(open, close),
+                        close: close
+                    });
+
+                    this.lastRenkoClose = close;
+                    diff = price - this.lastRenkoClose;
                 }
+
+                return bars;
             }
         }
 
-        const aggregator = new TickAggregator(ticksPerCandle);
+        const aggregator = new RenkoAggregator(boxSize);
 
         function initChart() {
             const container = document.getElementById('chart');
@@ -245,14 +239,6 @@
                 upColor: '#22c55e', downColor: '#ef4444', borderVisible: true, wickUpColor: '#22c55e', wickDownColor: '#ef4444'
             });
 
-            volumeSeries = chart.addHistogramSeries({
-                color: '#3b82f6', priceFormat: { type: 'volume' }, priceScaleId: 'volume'
-            });
-
-            chart.priceScale('volume').applyOptions({
-                scaleMargins: { top: 0.8, bottom: 0 }, visible: false
-            });
-
             window.addEventListener('resize', () => {
                 chart.resize(container.clientWidth, container.clientHeight);
             });
@@ -261,12 +247,10 @@
         async function loadHistory() {
             setStatus('Loading History...', 'bg-yellow-500');
             try {
-                console.log(`Fetching history for ${symbol}...`);
                 const res = await fetch(`/api/ticks/history/${encodeURIComponent(symbol)}?limit=10000`);
                 if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
                 const data = await res.json();
                 historicalTicks = data.history || [];
-                console.log(`Received ${historicalTicks.length} ticks from server.`);
 
                 if (!isReplayMode) {
                     renderTicks(historicalTicks);
@@ -285,31 +269,15 @@
 
         function renderTicks(ticks) {
             const candles = [];
-            const volumes = [];
-
+            aggregator.lastRenkoClose = 0;
             aggregator.lastTime = 0;
-            aggregator.currentCandle = null;
-            aggregator.currentTickCount = 0;
 
             ticks.forEach(t => {
-                const result = aggregator.processTick(t);
-                if (result.type === 'new') {
-                    candles.push({...result.candle});
-                } else if (candles.length > 0) {
-                    candles[candles.length - 1] = {...result.candle};
-                }
-            });
-
-            candles.forEach(c => {
-                volumes.push({
-                    time: c.time,
-                    value: c.volume,
-                    color: c.close >= c.open ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)'
-                });
+                const bars = aggregator.processTick(t);
+                bars.forEach(b => candles.push(b));
             });
 
             candleSeries.setData(candles);
-            volumeSeries.setData(volumes);
 
             if (candles.length > 0) {
                 updatePriceUI(candles[candles.length - 1].close);
@@ -329,24 +297,19 @@
                 if (isReplayMode) return;
                 if (data[symbol]) {
                     const tick = data[symbol];
-                    const result = aggregator.processTick({
+                    const bars = aggregator.processTick({
                         price: tick.last_price,
-                        qty: tick.ltq,
                         ts_ms: tick.ts_ms
                     });
 
-                    candleSeries.update(result.candle);
-                    volumeSeries.update({
-                        time: result.candle.time,
-                        value: result.candle.volume,
-                        color: result.candle.close >= result.candle.open ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)'
-                    });
-                    updatePriceUI(result.candle.close);
+                    bars.forEach(b => candleSeries.update(b));
+                    if (bars.length > 0) {
+                        updatePriceUI(bars[bars.length - 1].close);
+                    }
                 }
             });
         }
 
-        // --- Replay Logic ---
         function initReplay() {
             document.getElementById('replay-mode-btn').addEventListener('click', () => {
                 isReplayMode = true;
@@ -394,7 +357,7 @@
                             clearInterval(replayInterval);
                             updateReplayUI();
                         }
-                    }, 100);
+                    }, 50);
                 }
                 updateReplayUI();
             });
@@ -457,10 +420,10 @@
             }
         }
 
-        document.getElementById('ticks-input').addEventListener('change', (e) => {
-            ticksPerCandle = parseInt(e.target.value) || 100;
-            aggregator.setTicksPerCandle(ticksPerCandle);
-            loadHistory();
+        document.getElementById('box-size-input').addEventListener('change', (e) => {
+            boxSize = parseFloat(e.target.value) || 10;
+            aggregator.setBoxSize(boxSize);
+            renderTicks(historicalTicks);
         });
 
         initChart();
