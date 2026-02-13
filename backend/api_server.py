@@ -879,7 +879,8 @@ async def get_tick_history(instrument_key: str, limit: int = 5000):
 
 
 @fastapi_app.get("/tick")
-async def serve_tick_chart(request: Request):
+@fastapi_app.get("/tick/{path:path}")
+async def serve_tick_chart(request: Request, path: Optional[str] = None):
     """Serves the separate tick chart page."""
     return templates.TemplateResponse("tick_chart.html", {"request": request})
 

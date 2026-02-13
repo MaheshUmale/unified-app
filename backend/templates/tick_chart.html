@@ -60,7 +60,11 @@
         <div class="flex items-center gap-4">
             <span class="text-sm font-black text-blue-500 italic tracking-tighter uppercase">PRO<span class="text-gray-500">DESK</span> TICK</span>
             <div class="h-6 w-px bg-white/10 mx-2"></div>
-            <div id="display-symbol" class="text-xs font-black uppercase tracking-widest text-gray-500">-</div>
+            <div id="display-symbol" class="text-xs font-black uppercase tracking-widest text-blue-500">-</div>
+            <div id="status-indicator" class="flex items-center gap-1.5 ml-4">
+                <div id="status-dot" class="w-2 h-2 rounded-full bg-gray-400"></div>
+                <span id="status-text" class="text-[10px] font-bold text-gray-400 uppercase">Connecting...</span>
+            </div>
         </div>
 
         <div class="flex items-center gap-3">
@@ -86,11 +90,34 @@
     <script>
         const socket = io();
         let chart, candleSeries, volumeSeries;
-        let symbol = new URLSearchParams(window.location.search).get('symbol') || 'NSE:NIFTY';
-        let ticksPerCandle = parseInt(new URLSearchParams(window.location.search).get('ticks')) || 100;
+
+        // Parse symbol from URL (support both ?symbol= and /symbol= format)
+        let symbol = 'NSE:NIFTY';
+        const urlParams = new URLSearchParams(window.location.search);
+        const pathParts = window.location.pathname.split('/');
+
+        if (urlParams.get('symbol')) {
+            symbol = urlParams.get('symbol');
+        } else {
+            // Check for /tick/symbol=...
+            const symbolPart = pathParts.find(p => p.startsWith('symbol='));
+            if (symbolPart) {
+                symbol = symbolPart.split('=')[1];
+            }
+        }
+        symbol = symbol.toUpperCase();
+
+        let ticksPerCandle = parseInt(urlParams.get('ticks')) || 100;
 
         document.getElementById('ticks-input').value = ticksPerCandle;
         document.getElementById('display-symbol').textContent = symbol;
+
+        function setStatus(text, color) {
+            const dot = document.getElementById('status-dot');
+            const el = document.getElementById('status-text');
+            el.textContent = text;
+            dot.className = `w-2 h-2 rounded-full ${color}`;
+        }
 
         class TickAggregator {
             constructor(tpc) {
@@ -173,8 +200,10 @@
         }
 
         async function loadHistory() {
+            setStatus('Loading History...', 'bg-yellow-500');
             try {
                 const res = await fetch(`/api/ticks/history/${encodeURIComponent(symbol)}?limit=10000`);
+                if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
                 const data = await res.json();
                 const ticks = data.history || [];
 
@@ -210,9 +239,13 @@
                 if (candles.length > 0) {
                     const last = candles[candles.length - 1];
                     updatePriceUI(last.close);
+                    setStatus('Live Feed Active', 'bg-green-500');
+                } else {
+                    setStatus('No History Found', 'bg-red-500');
                 }
             } catch (e) {
                 console.error("Load history failed", e);
+                setStatus('History Load Failed', 'bg-red-500');
             }
         }
 
