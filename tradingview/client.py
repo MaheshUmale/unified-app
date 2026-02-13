@@ -90,8 +90,8 @@ class Client:
 
         # Check websockets version and use correct property
         try:
-            import pkg_resources
-            websockets_version = pkg_resources.get_distribution("websockets").version
+            import websockets
+            websockets_version = getattr(websockets, '__version__', '0.0')
             version_parts = [int(x) for x in websockets_version.split('.')[:2]]
 
             if version_parts[0] >= 10:
@@ -123,10 +123,9 @@ class Client:
 
         try:
             import websockets
-            import pkg_resources
 
             # Get websockets version
-            websockets_version = pkg_resources.get_distribution("websockets").version
+            websockets_version = getattr(websockets, '__version__', '0.0')
             version_parts = [int(x) for x in websockets_version.split('.')[:2]]
 
             # Request headers
@@ -320,10 +319,9 @@ class Client:
 
         try:
             import websockets
-            import pkg_resources
 
             # Get websockets version
-            websockets_version = pkg_resources.get_distribution("websockets").version
+            websockets_version = getattr(websockets, '__version__', '0.0')
             version_parts = [int(x) for x in websockets_version.split('.')[:2]]
 
             # Capture connection-related exceptions

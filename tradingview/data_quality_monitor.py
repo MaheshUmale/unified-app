@@ -266,11 +266,12 @@ class ContinuityValidator(DataValidator):
     def __init__(self, expected_interval: int = 900):  # 15 min = 900s
         super().__init__("Continuity Validator")
         self.expected_interval = expected_interval
-        self.last_timestamp = None
+        self.last_timestamps = {} # symbol -> timestamp
         self.tolerance = expected_interval * 0.1  # 10% tolerance
 
     async def validate(self, data: Dict[str, Any]) -> Tuple[bool, List[str]]:
         """Validate time sequence continuity"""
+        # Note: This validator now requires 'symbol' in data for multi-symbol support
         self.validation_count += 1
         errors = []
 
@@ -278,10 +279,12 @@ class ContinuityValidator(DataValidator):
             if 'time' not in data:
                 return True, []
 
+            symbol = data.get('symbol', 'DEFAULT')
             current_timestamp = float(data['time'])
 
-            if self.last_timestamp is not None:
-                time_gap = current_timestamp - self.last_timestamp
+            if symbol in self.last_timestamps:
+                last_timestamp = self.last_timestamps[symbol]
+                time_gap = current_timestamp - last_timestamp
                 expected_gap = self.expected_interval
 
                 # Interval check
@@ -291,7 +294,7 @@ class ContinuityValidator(DataValidator):
                     else:
                         errors.append(f"Data gap too small: {time_gap:.0f}s (Expected: {expected_gap:.0f}s)")
 
-            self.last_timestamp = current_timestamp
+            self.last_timestamps[symbol] = current_timestamp
 
             if errors:
                 self.error_count += 1
@@ -558,7 +561,7 @@ class DataQualityEngine:
             metrics.total_records = len(data_batch)
 
             # Run validations
-            validation_results = await self._validate_data_batch(data_batch)
+            validation_results = await self._validate_data_batch(data_batch, symbol)
 
             # Detect anomalies
             anomalies = await self._detect_batch_anomalies(symbol, data_batch)
@@ -576,7 +579,7 @@ class DataQualityEngine:
             logger.error(f"Quality assessment failed: {e}")
             return QualityMetrics(symbol=symbol, timeframe="15m", overall_quality_score=0.0)
 
-    async def _validate_data_batch(self, data_batch: List[Dict[str, Any]]) -> Dict[str, List]:
+    async def _validate_data_batch(self, data_batch: List[Dict[str, Any]], symbol: str = None) -> Dict[str, List]:
         """Validate a batch using all active validators"""
         validation_results = {
             'valid_records': [],
@@ -585,6 +588,11 @@ class DataQualityEngine:
         }
 
         for data in data_batch:
+            # Ensure symbol is present for continuity check
+            if symbol and 'symbol' not in data:
+                data = data.copy()
+                data['symbol'] = symbol
+
             is_valid = True
             record_errors = []
 
