@@ -31,7 +31,11 @@ def verify_confluence_chart():
 
             print("Switching to Scalper tab...")
             page.click('button[data-tab="scalper"]')
-            time.sleep(5)
+            time.sleep(2)
+
+            print("Starting Scalper...")
+            page.click('button#startScalperBtn')
+            time.sleep(10)
 
             page.screenshot(path='verification_scalper.png', full_page=True)
             print("Screenshot saved to verification_scalper.png")

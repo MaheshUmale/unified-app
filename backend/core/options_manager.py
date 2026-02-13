@@ -735,7 +735,7 @@ class OptionsManager:
         
         if rows:
             db.insert_options_snapshot(rows)
-            await self._calculate_pcr(underlying, timestamp, rows)
+            await self._calculate_pcr(underlying, timestamp, rows, spot_price)
             logger.info(f"Saved TV snapshot for {underlying} with {len(rows)} rows")
             
             if underlying in self.wss_clients:

@@ -1,7 +1,7 @@
 import logging
 import pandas as pd
 import numpy as np
-from datetime import datetime
+import datetime
 import pytz
 import asyncio
 import json
@@ -291,12 +291,16 @@ class SignalGenerator:
         if psych_signals:
             latest_ts = max(psych_signals.keys())
             # Convert to seconds if it is a datetime object
-            ts_seconds = latest_ts.timestamp() if isinstance(latest_ts, datetime) else latest_ts
+            ts_seconds = latest_ts.timestamp() if isinstance(latest_ts, datetime.datetime) else latest_ts
             if (time.time() - ts_seconds) < 300: # Last 5 mins
                 latest_psych = psych_signals[latest_ts]
 
-        if latest_psych == "SHORT_TRAP": bullish_oi = True
-        if latest_psych == "LONG_TRAP": bearish_oi = True
+        if latest_psych == "SHORT_TRAP":
+            bullish_oi = True
+            self.scalper.log(f"Market Psychology: SHORT TRAP DETECTED at {spot}")
+        if latest_psych == "LONG_TRAP":
+            bearish_oi = True
+            self.scalper.log(f"Market Psychology: LONG TRAP DETECTED at {spot}")
 
         # Option Data
         call_sym = self.scalper.streamer.symbols.get('atm_call')
@@ -319,23 +323,45 @@ class SignalGenerator:
 
         # Confluence metrics for UI
         if self.scalper.sio and self.scalper.loop:
-            oi_power = "STRONG" if abs(net_spurt) > 500000 else "MODERATE" if abs(net_spurt) > 100000 else "WEAK"
+            # Persistent metrics fallback
+            if net_spurt == 0 and hasattr(self.scalper, '_last_net_spurt'):
+                net_spurt = self.scalper._last_net_spurt
+                oi_status = self.scalper._last_oi_status
+            else:
+                self.scalper._last_net_spurt = net_spurt
+                self.scalper._last_oi_status = oi_status
+
+            # Dynamic OI Power based on net spurt and total OI context
+            power_val = abs(net_spurt)
+            if power_val > 1000000: oi_power = "EXTREME"
+            elif power_val > 500000: oi_power = "STRONG"
+            elif power_val > 100000: oi_power = "MODERATE"
+            else: oi_power = "WEAK"
+
+            # Identify which zone we are in
+            zone_desc = str(round(level, 2)) if level else "NONE"
+            if level:
+                is_psych = any(abs(level - z['price'])/level < 0.0001 for z in self.scalper.psych_data.get('zones', []))
+                is_hvn = any(abs(level - h)/level < 0.0001 for h in self.scalper.engine.hvn_levels)
+                if is_psych: zone_desc += " (PSYCH)"
+                elif is_hvn: zone_desc += " (HVN)"
+                else: zone_desc += " (LEVEL)"
 
             asyncio.run_coroutine_threadsafe(
                 self.scalper.sio.emit('scalper_metrics', {
                     'pcr': round(pcr, 2),
-                    'oi_power': oi_power,
+                    'oi_power': f"{oi_power} ({format(power_val, ',')})",
                     'oi_sentiment': oi_conf,
                     'oi_status': oi_status,
-                    'underlying_level': level or (sup_oi[0] if sup_oi else 0),
+                    'underlying_level': zone_desc,
                     'vwap': {'call': round(call_vwap, 2), 'put': round(put_vwap, 2)},
                     'oi_levels': {'support': sup_oi[:2], 'resistance': res_oi[:2]},
                     'confluence': {
                         'lvl': in_zone,
                         'pcr': pcr_rising,
                         'oi': bullish_oi or bearish_oi,
-                        'opt_brk': call_brk if bullish_oi else put_brk if bearish_oi else False,
-                        'inv_dwn': put_brk_dwn if bullish_oi else call_brk_dwn if bearish_oi else False
+                        'opt_brk': (call_brk if bullish_oi else put_brk) if (bullish_oi or bearish_oi) else False,
+                        'inv_dwn': (put_brk_dwn if bullish_oi else call_brk_dwn) if (bullish_oi or bearish_oi) else False
                     }
                 }),
                 self.scalper.loop
@@ -358,7 +384,7 @@ class SignalGenerator:
                 if self.scalper.sio and self.scalper.loop:
                     asyncio.run_coroutine_threadsafe(
                         self.scalper.sio.emit('scalper_log', {
-                            'time': datetime.now().strftime('%H:%M:%S'),
+                            'time': datetime.datetime.now().strftime('%H:%M:%S'),
                             'signal': 'CALL BUY',
                             'underlying_level': round(level or spot, 2),
                             'oi_confirmation': oi_conf,
@@ -379,7 +405,7 @@ class SignalGenerator:
                 if self.scalper.sio and self.scalper.loop:
                     asyncio.run_coroutine_threadsafe(
                         self.scalper.sio.emit('scalper_log', {
-                            'time': datetime.now().strftime('%H:%M:%S'),
+                            'time': datetime.datetime.now().strftime('%H:%M:%S'),
                             'signal': 'PUT BUY',
                             'underlying_level': round(level or spot, 2),
                             'oi_confirmation': oi_conf,
@@ -416,7 +442,7 @@ class OrderManager:
             'symbol': symbol, 'side': side, 'entry_price': entry_price,
             'limit_price': limit_price, 'sl': final_sl,
             'tp': entry_price + (risk_amount * 2.5),
-            'quantity': quantity, 'entry_time': datetime.now(),
+            'quantity': quantity, 'entry_time': datetime.datetime.now(),
             'last_price': entry_price, 'max_price': entry_price,
             'status': 'OPEN', 'be_moved': False, 'underlying_entry': self.scalper.current_spot
         }
@@ -440,7 +466,7 @@ class OrderManager:
                 trade['be_moved'] = True
                 self.scalper.log(f"RiskMgmt: Trailing SL moved to BE for {trade['side']}")
 
-            elapsed = (datetime.now() - trade['entry_time']).total_seconds()
+            elapsed = (datetime.datetime.now() - trade['entry_time']).total_seconds()
             if elapsed > 180:
                 underlying_in_favor = (self.scalper.current_spot > trade['underlying_entry']) if trade['side'] == 'CALL' else (self.scalper.current_spot < trade['underlying_entry'])
                 if underlying_in_favor and (price - trade['entry_price']) / trade['entry_price'] < 0.01:
@@ -449,7 +475,7 @@ class OrderManager:
     def _close_trade(self, trade, reason):
         trade['status'] = 'CLOSED'
         trade['exit_price'] = trade['last_price']
-        trade['exit_time'] = datetime.now()
+        trade['exit_time'] = datetime.datetime.now()
         trade['pnl'] = (trade['exit_price'] - trade['entry_price']) * trade['quantity']
         self.scalper.log(f"TRADE CLOSED: {trade['side']} @ {trade['exit_price']} | Reason: {reason} | PnL: {trade['pnl']}")
         self.log_trade(trade)
@@ -490,7 +516,7 @@ class NSEConfluenceScalper:
 
     def log(self, message):
         ist = pytz.timezone('Asia/Kolkata')
-        timestamp = datetime.now(ist).strftime("%H:%M:%S")
+        timestamp = datetime.datetime.now(ist).strftime("%H:%M:%S")
         formatted_msg = f"[{timestamp}] {message}"
         logger.info(formatted_msg)
         if self.sio and self.loop:
