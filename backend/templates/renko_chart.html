@@ -149,24 +149,29 @@
                 this.boxSize = boxSize;
                 this.lastRenkoClose = 0;
                 this.lastTime = 0;
+                this.accumulatedVolume = 0;
             }
 
             setBoxSize(bs) {
                 this.boxSize = bs;
                 this.lastRenkoClose = 0;
                 this.lastTime = 0;
+                this.accumulatedVolume = 0;
             }
 
             processTick(tick) {
                 const price = Number(tick.price);
+                const qty = Number(tick.qty || 0);
                 let ts = Math.floor(tick.ts_ms / 1000);
 
                 if (this.lastRenkoClose === 0) {
                     this.lastRenkoClose = price;
                     this.lastTime = ts;
+                    this.accumulatedVolume = qty;
                     return []; // No bar yet
                 }
 
+                this.accumulatedVolume += qty;
                 const bars = [];
                 let diff = price - this.lastRenkoClose;
 
@@ -183,10 +188,12 @@
                         open: open,
                         high: Math.max(open, close),
                         low: Math.min(open, close),
-                        close: close
+                        close: close,
+                        volume: this.accumulatedVolume
                     });
 
                     this.lastRenkoClose = close;
+                    this.accumulatedVolume = 0; // Reset after forming a bar
                     diff = price - this.lastRenkoClose;
                 }
 
@@ -239,6 +246,14 @@
                 upColor: '#22c55e', downColor: '#ef4444', borderVisible: true, wickUpColor: '#22c55e', wickDownColor: '#ef4444'
             });
 
+            volumeSeries = chart.addHistogramSeries({
+                color: '#3b82f6', priceFormat: { type: 'volume' }, priceScaleId: 'volume'
+            });
+
+            chart.priceScale('volume').applyOptions({
+                scaleMargins: { top: 0.8, bottom: 0 }, visible: false
+            });
+
             window.addEventListener('resize', () => {
                 chart.resize(container.clientWidth, container.clientHeight);
             });
@@ -269,15 +284,25 @@
 
         function renderTicks(ticks) {
             const candles = [];
+            const volumes = [];
             aggregator.lastRenkoClose = 0;
             aggregator.lastTime = 0;
+            aggregator.accumulatedVolume = 0;
 
             ticks.forEach(t => {
                 const bars = aggregator.processTick(t);
-                bars.forEach(b => candles.push(b));
+                bars.forEach(b => {
+                    candles.push(b);
+                    volumes.push({
+                        time: b.time,
+                        value: b.volume,
+                        color: b.close >= b.open ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)'
+                    });
+                });
             });
 
             candleSeries.setData(candles);
+            volumeSeries.setData(volumes);
 
             if (candles.length > 0) {
                 updatePriceUI(candles[candles.length - 1].close);
@@ -299,10 +324,18 @@
                     const tick = data[symbol];
                     const bars = aggregator.processTick({
                         price: tick.last_price,
-                        ts_ms: tick.ts_ms
+                        ts_ms: tick.ts_ms,
+                        qty: tick.ltq
                     });
 
-                    bars.forEach(b => candleSeries.update(b));
+                    bars.forEach(b => {
+                        candleSeries.update(b);
+                        volumeSeries.update({
+                            time: b.time,
+                            value: b.volume,
+                            color: b.close >= b.open ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)'
+                        });
+                    });
                     if (bars.length > 0) {
                         updatePriceUI(bars[bars.length - 1].close);
                     }
