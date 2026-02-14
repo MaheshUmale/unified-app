@@ -35,6 +35,10 @@ from db.local_db import db
 # Import TradingView Enhanced Manager
 import sys
 from pathlib import Path
+
+dictConfig(LOGGING_CONFIG)
+logger = logging.getLogger(__name__)
+
 root_path = Path(__file__).parent.parent
 if str(root_path) not in sys.path:
     sys.path.insert(0, str(root_path))
@@ -46,9 +50,6 @@ except ImportError as e:
     logger.error(f"Failed to import TradingView Enhanced Manager: {e}")
     tv_manager = None
 
-# Configure Logging
-dictConfig(LOGGING_CONFIG)
-logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
