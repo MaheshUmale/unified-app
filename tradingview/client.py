@@ -256,15 +256,14 @@ class Client:
                     break
 
                 try:
-                    # Send an integer as a ping packet per TradingView protocol
+                    # Send a heartbeat packet per TradingView protocol (no ~m~ wrap)
                     import time
                     ping_id = int(time.time() * 1000)
-                    ping_message = format_ws_packet(f"~h~{ping_id}")
+                    ping_message = f"~h~{ping_id}"
 
-                    if ping_message:
-                        await self._ws.send(ping_message)
-                        if self._debug:
-                            logger.debug(f"Sending heartbeat ping: {ping_id}")
+                    await self._ws.send(ping_message)
+                    if self._debug:
+                        logger.debug(f"Sending heartbeat ping: {ping_id}")
                 except Exception as e:
                     self._handle_error(f"Failed to send heartbeat: {str(e)}")
                     # Mark connection as closed for next cycle
@@ -416,10 +415,20 @@ class Client:
                 if self._debug:
                     logger.debug(f"Received: {packet}")
 
-                # Handle Ping packets
+                # Handle Heartbeat packets
+                if isinstance(packet, str) and packet.startswith('~h~'):
+                    try:
+                        await self._ws.send(packet) # Send back exact string as required by TV protocol
+                        self._handle_event('ping', packet)
+                    except Exception as e:
+                        self._handle_error(f"Heartbeat response error: {str(e)}")
+                    continue
+
+                # Handle numeric Ping packets (legacy or alternate)
                 if isinstance(packet, int):
                     try:
-                        await self._ws.send(format_ws_packet(f"~h~{packet}"))
+                        # Some versions might need ~m~ wrap, but usually ~h~ is enough
+                        await self._ws.send(f"~h~{packet}")
                         self._handle_event('ping', packet)
                     except Exception as e:
                         self._handle_error(f"Ping handling error: {str(e)}")
