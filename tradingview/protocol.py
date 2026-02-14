@@ -27,7 +27,11 @@ def parse_ws_packet(data):
         except Exception:
             return []
 
-    # Remove ~h~ markers
+    # Heartbeat check
+    if data.startswith('~h~'):
+        return [data]
+
+    # Remove ~h~ markers from data if mixed (though usually they are separate)
     clean_data = data.replace('~h~', '')
 
     # Split data packets

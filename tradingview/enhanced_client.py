@@ -367,6 +367,9 @@ class EnhancedTradingViewClient(Client):
             self.monitor.state = ConnectionState.CONNECTING
             self._notify_connection_state_change(ConnectionState.CONNECTING)
 
+            # Register heartbeat monitor
+            self.on_ping(lambda p: self.monitor.record_pong())
+
             # Call parent connection method
             success = await super().connect(**kwargs)
 
@@ -476,9 +479,7 @@ class EnhancedTradingViewClient(Client):
             try:
                 # Record ping time for monitoring
                 self.monitor.record_ping()
-                # If basic connection is open, also record pong
-                if self.is_open:
-                    self.monitor.record_pong()
+                # Note: record_pong is called by on_ping callback when receiving heartbeats
 
                 await asyncio.sleep(self.monitor.ping_interval)
 
