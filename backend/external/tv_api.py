@@ -17,15 +17,7 @@ logger = logging.getLogger(__name__)
 
 class TradingViewAPI:
     def __init__(self):
-        username = os.getenv('TV_USERNAME')
-        password = os.getenv('TV_PASSWORD')
-        if TvDatafeed:
-            self.tv = TvDatafeed(username, password) if username and password else TvDatafeed()
-            logger.info("TradingViewAPI initialized with tvDatafeed")
-        else:
-            self.tv = None
-            logger.warning("tvDatafeed not installed, falling back to Streamer only")
-
+        self._tv = None
         self.streamer = Streamer(export_result=False)
         self.symbol_map = {
             'NIFTY': {'symbol': 'NIFTY', 'exchange': 'NSE'},
@@ -33,6 +25,18 @@ class TradingViewAPI:
             'FINNIFTY': {'symbol': 'CNXFINANCE', 'exchange': 'NSE'},
             'INDIA VIX': {'symbol': 'INDIAVIX', 'exchange': 'NSE'}
         }
+
+    @property
+    def tv(self):
+        if self._tv is None and TvDatafeed:
+            username = os.getenv('TV_USERNAME')
+            password = os.getenv('TV_PASSWORD')
+            try:
+                self._tv = TvDatafeed(username, password) if username and password else TvDatafeed()
+                logger.info("TradingViewAPI initialized with tvDatafeed")
+            except Exception as e:
+                logger.error(f"Failed to initialize tvDatafeed: {e}")
+        return self._tv
 
     def get_hist_candles(self, symbol_or_hrn, interval_min='1', n_bars=1000):
         try:

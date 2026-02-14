@@ -10,7 +10,7 @@ from .protocol import parse_ws_packet, format_ws_packet
 from .chart import ChartSession
 from .quote import QuoteSession
 
-from tradingview.utils import get_logger
+from tradingview.utils import get_logger, gen_session_id
 logger = get_logger(__name__)
 
 class Client:
@@ -130,7 +130,11 @@ class Client:
             version_parts = [int(x) for x in websockets_version.split('.')[:2]]
 
             # Request headers
-            headers = {'Origin': 'https://www.tradingview.com'}
+            headers = {
+                'Origin': 'https://www.tradingview.com',
+                'Referer': 'https://www.tradingview.com/',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
+            }
 
             logger.info(f"tradingview connect: {url}, {headers}")
 
@@ -146,8 +150,7 @@ class Client:
                         websockets.connect(
                             url,
                             extra_headers=headers,
-                            ping_interval=8,
-                            ping_timeout=5,
+                            ping_interval=None, # Disable WebSocket PING frames
                             close_timeout=3,
                             max_size=10 * 1024 * 1024,  # 10MB max message size
                             open_timeout=handshake_timeout
@@ -180,8 +183,7 @@ class Client:
                         websockets.connect(
                             url,
                             origin="https://www.tradingview.com",
-                            ping_interval=8,
-                            ping_timeout=5,
+                            ping_interval=None,
                             open_timeout=handshake_timeout
                         ),
                         timeout=connection_timeout
@@ -206,40 +208,48 @@ class Client:
                     timeout=connection_timeout
                 )
 
-            # Trigger connected event
-            self._handle_event('connected')
+            # Stop old tasks to avoid conflict
+            await self._stop_background_tasks()
 
-            # Set authentication - following JavaScript version logic
+            # Start message receiving loop BEFORE handshake to catch immediate responses
+            self._message_loop_task = asyncio.create_task(self._message_loop())
+
+            # Wait for initial session info from server
+            logger.debug("Waiting for initial session info...")
+            # We don't have a clean way to wait for a specific message yet,
+            # so we'll use a short sleep as a workaround, but better would be an event.
+            await asyncio.sleep(1.0)
+
+            # Set authentication and initial state
+            # Following the exact sequence in tv_live_wss.py
+            token = "unauthorized_user_token"
             if self._token:
                 try:
                     from .misc_requests import get_user
                     user = await get_user(self._token, self._signature, self._location)
-                    # Use auth_token
-                    self._send_queue.insert(0, format_ws_packet({
-                        'm': 'set_auth_token',
-                        'p': [user.auth_token]
-                    }))
-                    self._logged = True
-                    asyncio.create_task(self._send_queue_data())
+                    if user and user.auth_token:
+                        token = user.auth_token
                 except Exception as e:
-                    self._handle_error(f"Authentication error: {str(e)}")
+                    self._handle_error(f"Failed to get auth token: {str(e)}")
             else:
-                # Use anonymous Token, consistent with JS version
-                self._send_queue.insert(0, format_ws_packet({
-                    'm': 'set_auth_token',
-                    'p': ['unauthorized_user_token']
-                }))
-                self._logged = True
-                asyncio.create_task(self._send_queue_data())
+                # Use standard guest token
+                token = "unauthorized_user_token"
 
-            # Stop old tasks to avoid conflict
-            await self._stop_background_tasks()
+            # 1. Set Auth Token
+            msg = format_ws_packet({'m': 'set_auth_token', 'p': [token]})
+            logger.debug(f"Handshake: sending auth token: {msg}")
+            await self._ws.send(msg)
 
-            # Start message receiving loop
-            self._message_loop_task = asyncio.create_task(self._message_loop())
+            self._logged = True
 
-            # Start heartbeat task
-            self._start_heartbeat()
+            # Trigger connected event ONLY AFTER handshake is complete
+            self._handle_event('connected')
+
+            # Flush any messages queued during handshake
+            await self._send_queue_data()
+
+            # Note: Proactive heartbeat disabled to avoid 'wrong data' protocol errors.
+            # TradingView protocol uses reactive heartbeats handled in _parse_packet.
 
             return True
 
@@ -309,6 +319,7 @@ class Client:
 
     async def _message_loop(self):
         """Message receiving loop"""
+        logger.debug("Message loop started")
         retry_count = 0
         max_retries = 5
         base_wait_time = 1
@@ -342,6 +353,7 @@ class Client:
                     if version_parts[0] >= 6:
                         try:
                             async for message in self._ws:
+                                logger.debug(f"RAW RECEIVED: {message}")
                                 await self._parse_packet(message)
                                 retry_count = 0  # Reset retry on success
                         except tuple(connection_exceptions) if connection_exceptions else Exception as e:
@@ -418,7 +430,9 @@ class Client:
                 # Handle Heartbeat packets
                 if isinstance(packet, str) and packet.startswith('~h~'):
                     try:
-                        await self._ws.send(packet) # Send back exact string as required by TV protocol
+                        # Reactive heartbeat: send back EXACTLY what we received if it's a string heartbeat
+                        # Some servers expect it wrapped in ~m~len~m~, which format_ws_packet handles
+                        await self._ws.send(format_ws_packet(packet))
                         self._handle_event('ping', packet)
                     except Exception as e:
                         self._handle_error(f"Heartbeat response error: {str(e)}")
@@ -522,29 +536,11 @@ class Client:
 
             logger.debug(f"Client.send: type={packet_type}, data={packet_data}")
 
-            processed_data = []
-
-            # Some commands require preserving array structure
-            should_preserve_arrays = packet_type in ['create_series', 'modify_series']
-
-            for item in packet_data:
-                try:
-                    if isinstance(item, dict) and not isinstance(item, str):
-                        # Dicts are always JSON stringified
-                        processed_data.append(json.dumps(item))
-                    elif isinstance(item, list) and not isinstance(item, str) and not should_preserve_arrays:
-                        # Arrays stringified unless preserved
-                        processed_data.append(json.dumps(item))
-                    else:
-                        # Others kept as is
-                        processed_data.append(item)
-                except Exception as e:
-                    self._handle_error(f"Data item processing error: {str(e)}")
-                    processed_data.append(str(item))
-
+            # No manual stringification of nested items.
+            # format_ws_packet's json.dumps will handle them as JSON objects.
             formatted_packet = format_ws_packet({
                 'm': packet_type,
-                'p': processed_data
+                'p': packet_data
             })
 
             if formatted_packet:

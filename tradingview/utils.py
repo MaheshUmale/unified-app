@@ -13,7 +13,7 @@ def get_logger(name):
 
 def gen_session_id(type='xs'):
     """
-    Generate a session ID.
+    Generate a session ID (lowercase and digits only, as expected by TradingView).
 
     Args:
         type: Session type prefix
@@ -21,7 +21,7 @@ def gen_session_id(type='xs'):
     Returns:
         str: Generated session ID
     """
-    chars = string.ascii_letters + string.digits
+    chars = string.ascii_lowercase + string.digits
     random_str = ''.join(random.choice(chars) for _ in range(12))
     return f"{type}_{random_str}"
 

@@ -32,20 +32,6 @@ from external.tv_api import tv_api
 from external.tv_scanner import search_options
 from db.local_db import db
 
-# Import TradingView Enhanced Manager
-import sys
-from pathlib import Path
-root_path = Path(__file__).parent.parent
-if str(root_path) not in sys.path:
-    sys.path.insert(0, str(root_path))
-
-try:
-    from tradingview.enhanced_tradingview_manager import create_enhanced_tradingview_manager, DataQualityLevel
-    tv_manager = create_enhanced_tradingview_manager(config_dir=str(root_path / "tradingview"))
-except ImportError as e:
-    logger.error(f"Failed to import TradingView Enhanced Manager: {e}")
-    tv_manager = None
-
 # Configure Logging
 dictConfig(LOGGING_CONFIG)
 logger = logging.getLogger(__name__)
@@ -57,22 +43,8 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing Enhanced ProTrade Terminal...")
     global main_loop
     
-    # Start TradingView Enhanced Manager
-    if tv_manager:
-        try:
-            await tv_manager.start()
-            logger.info("TradingView Enhanced Manager started successfully")
-        except Exception as e:
-            logger.error(f"Error starting TradingView Enhanced Manager: {e}")
-
     # Initialize Data Providers
     initialize_default_providers()
-
-    # Link Manager to Enhanced Provider
-    from core.provider_registry import historical_data_registry
-    provider = historical_data_registry.get_provider("enhanced_tv")
-    if provider and hasattr(provider, 'set_manager'):
-        provider.set_manager(tv_manager)
 
     try:
         main_loop = asyncio.get_running_loop()
@@ -87,8 +59,6 @@ async def lifespan(app: FastAPI):
     
     # Start Options Management
     options_manager.set_socketio(sio, loop=main_loop)
-    if tv_manager:
-        options_manager.set_tv_manager(tv_manager)
     await options_manager.start()
 
     # Initialize Scalper
@@ -98,8 +68,6 @@ async def lifespan(app: FastAPI):
     
     logger.info("Shutting down ProTrade Terminal...")
     try:
-        if tv_manager:
-            await tv_manager.stop()
         await options_manager.stop()
         data_engine.flush_tick_buffer()
     except Exception as e:
@@ -280,41 +248,6 @@ async def get_tv_options(underlying: str = Query(...)):
     return {"symbols": results}
 
 
-@fastapi_app.get("/api/tv/status")
-async def get_tv_status():
-    """Returns TradingView Enhanced Manager system status."""
-    if not tv_manager:
-        raise HTTPException(status_code=503, detail="TradingView Manager not available")
-    return tv_manager.get_system_status()
-
-
-@fastapi_app.get("/api/tv/klines")
-async def get_tv_klines(
-    symbol: str = Query(...),
-    timeframe: str = Query("15"),
-    count: int = Query(100),
-    quality: str = Query("production")
-):
-    """Fetch high-quality K-line data from TradingView Enhanced Manager."""
-    if not tv_manager:
-        raise HTTPException(status_code=503, detail="TradingView Manager not available")
-
-    try:
-        quality_level = DataQualityLevel(quality.lower())
-        data = await tv_manager.get_historical_data(symbol, timeframe, count, quality_level)
-        return {
-            "success": True,
-            "symbol": data.symbol,
-            "timeframe": data.timeframe,
-            "data": data.data,
-            "quality_score": data.quality_score,
-            "metadata": data.metadata
-        }
-    except Exception as e:
-        logger.error(f"Error fetching TV klines: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 @fastapi_app.get("/api/tv/intraday/{instrument_key}")
 async def get_intraday(instrument_key: str, interval: str = '1'):
     """Fetch intraday candles with indicators."""
@@ -322,23 +255,13 @@ async def get_intraday(instrument_key: str, interval: str = '1'):
         clean_key = unquote(instrument_key)
         hrn = symbol_mapper.get_hrn(clean_key)
         
-        from core.provider_registry import historical_data_registry
-        provider = historical_data_registry.get_primary()
-
-        tv_candles = await provider.get_hist_candles(clean_key, interval, 1000)
+        tv_candles = await asyncio.to_thread(tv_api.get_hist_candles, clean_key, interval, 1000)
         
         valid_indicators = []
-
-        # TV indicators disabled for now due to argument complexity
-
         if tv_candles:
             try:
                 import pandas as pd
-                # Filter out None timestamps and sort
-                analyzer_candles = sorted([c for c in tv_candles if c[0] is not None], key=lambda x: x[0])
-                if not analyzer_candles:
-                    raise ValueError("No valid candles after filtering")
-
+                analyzer_candles = sorted(tv_candles, key=lambda x: x[0])
                 df = pd.DataFrame(analyzer_candles, columns=['ts', 'o', 'h', 'l', 'c', 'v'])
                 
                 # EMA 9
@@ -1057,9 +980,6 @@ app = socketio.ASGIApp(sio, fastapi_app)
 
 if __name__ == "__main__":
     import uvicorn
-    from config import SERVER_PORT
-
-    # Standardize on SERVER_PORT (5051) but allow override via PORT env var for flexibility
-    port = int(os.getenv("PORT", SERVER_PORT))
-    logger.info(f"Starting ProTrade API Server on port {port}...")
+    # Use port 3000 for live preview
+    port = int(os.getenv("PORT", 3000))
     uvicorn.run("api_server:app", host="0.0.0.0", port=port, reload=False)
