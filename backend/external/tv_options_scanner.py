@@ -60,7 +60,8 @@ async def fetch_option_chain(underlying: str):
     }
 
     try:
-        async with httpx.AsyncClient() as client:
+        # Use cookies from config if available for session persistence
+        async with httpx.AsyncClient(cookies=TV_COOKIE if TV_COOKIE else None) as client:
             response = await client.post(
                 url,
                 json=payload,

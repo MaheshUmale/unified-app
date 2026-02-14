@@ -630,6 +630,57 @@ def get_tradingview_auth(account_name: Optional[str] = None) -> Optional[Dict[st
     return None
 
 
+def get_tradingview_cookies(account_name: Optional[str] = None) -> Dict[str, str]:
+    """
+    Get session cookies as a dictionary.
+    """
+    auth = get_tradingview_auth(account_name)
+    if auth:
+        return {
+            'sessionid': auth['token'],
+            'sessionid_sign': auth['signature']
+        }
+    return {}
+
+
+def get_tradingview_cookie_jar(account_name: Optional[str] = None):
+    """
+    Get session cookies as a CookieJar.
+    """
+    try:
+        import rookiepy
+        # Try to get full cookie jar from Brave if available
+        raw_cookies = rookiepy.brave(['.tradingview.com'])
+        if raw_cookies:
+            # Check if our current account session matches what's in Brave
+            # If so, return the full jar for better compatibility
+            auth = get_tradingview_auth(account_name)
+            session_id = next((c['value'] for c in raw_cookies if c['name'] == 'sessionid'), "")
+            if auth and auth['token'] == session_id:
+                return rookiepy.to_cookiejar(raw_cookies)
+
+        # Fallback: Construct jar from auth info
+        import http.cookiejar
+        jar = http.cookiejar.CookieJar()
+        auth = get_tradingview_auth(account_name)
+        if auth:
+            for name, value in [('sessionid', auth['token']), ('sessionid_sign', auth['signature'])]:
+                cookie = http.cookiejar.Cookie(
+                    version=0, name=name, value=value,
+                    port=None, port_specified=False,
+                    domain='.tradingview.com', domain_specified=True, domain_initial_dot=True,
+                    path='/', path_specified=True,
+                    secure=True, expires=None, discard=True,
+                    comment=None, comment_url=None, rest={'HttpOnly': None}, rfc2109=False
+                )
+                jar.set_cookie(cookie)
+            return jar
+    except Exception as e:
+        logger.warning(f"Failed to get cookie jar: {e}")
+
+    return None
+
+
 def create_account_from_env() -> Optional[TradingViewAccount]:
     """Helper to create account configuration from current environment variables."""
     session_token = os.getenv('TV_SESSION')

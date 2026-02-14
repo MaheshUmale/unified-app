@@ -103,8 +103,9 @@ class EnhancedTradingViewProvider(ILiveStreamProvider, IHistoricalDataProvider):
     async def get_hist_candles(self, symbol: str, interval: str, count: int) -> List[List]:
         """Fetch historical candles using the enhanced client."""
         try:
-            # Enhanced client has a get_klines helper (from Client base class)
-            klines = await self.client.get_klines(symbol, interval, count)
+            chart = self.client.Session.Chart()
+            # ChartSession has a get_historical_data convenience method
+            klines = await chart.get_historical_data(symbol, interval, count)
             # Format: [ts, o, h, l, c, v]
             return [[k['time'], k['open'], k['high'], k['low'], k['close'], k['volume']] for k in klines]
         except Exception as e:

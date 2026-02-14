@@ -109,15 +109,21 @@ STRATEGY_CONFIG = {
 }
 
 # TradingView Cookie (Optional)
-TV_COOKIE = os.getenv("TV_COOKIE", "")
+TV_COOKIE = os.getenv("TV_COOKIE", None)
 try:
-    import rookiepy
-    # Retrieve Brave cookies for TradingView
-    TV_COOKIE = rookiepy.to_cookiejar(rookiepy.brave(['.tradingview.com']))
-    print("TradingView cookies loaded via rookiepy (Brave)")
+    # Use unified session manager from tradingview module
+    from tradingview.auth_config import get_tradingview_cookie_jar
+    TV_COOKIE = get_tradingview_cookie_jar()
+    if TV_COOKIE:
+        print("TradingView cookies loaded via unified session manager")
 except Exception as e:
-    # Fallback to env var string if rookiepy fails or isn't needed
-    pass
+    # Fallback to manual rookiepy if module not fully loaded or other issues
+    try:
+        import rookiepy
+        TV_COOKIE = rookiepy.to_cookiejar(rookiepy.brave(['.tradingview.com']))
+        print("TradingView cookies loaded via fallback rookiepy")
+    except:
+        pass
 
 TV_STUDY_ID = os.getenv("TV_STUDY_ID", "USER:f9c7fa68b382417ba34df4122c632dcf")
 
