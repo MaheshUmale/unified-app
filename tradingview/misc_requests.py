@@ -318,6 +318,17 @@ async def get_indicator(indicator_id, version='last', session='', signature=''):
     """
     Get indicator data.
     """
+    # Try to get credentials from AuthConfig if not provided
+    if not session or not signature:
+        try:
+            from .auth_config import get_tradingview_auth
+            auth = get_tradingview_auth()
+            if auth:
+                session = session or auth.get('token', '')
+                signature = signature or auth.get('signature', '')
+        except Exception:
+            pass
+
     # Check built-in types
     if indicator_id.startswith('STD;'):
         indicator_type = indicator_id.replace('STD;', '')
@@ -490,6 +501,16 @@ async def get_user(session, signature='', location='https://www.tradingview.com/
     """
     Get user info via session ID.
     """
+    if not session or not signature:
+        try:
+            from .auth_config import get_tradingview_auth
+            auth = get_tradingview_auth()
+            if auth:
+                session = session or auth.get('token', '')
+                signature = signature or auth.get('signature', '')
+        except Exception:
+            pass
+
     async with aiohttp.ClientSession() as client:
         async with client.get(
             location,
@@ -553,6 +574,16 @@ async def get_private_indicators(session, signature=''):
     """
     Get user's private indicators.
     """
+    if not session or not signature:
+        try:
+            from .auth_config import get_tradingview_auth
+            auth = get_tradingview_auth()
+            if auth:
+                session = session or auth.get('token', '')
+                signature = signature or auth.get('signature', '')
+        except Exception:
+            pass
+
     async with aiohttp.ClientSession() as client:
         async with client.get(
             'https://pine-facade.tradingview.com/pine-facade/list',
@@ -599,6 +630,16 @@ async def get_chart_token(layout, credentials=None):
     session = credentials.get('session')
     signature = credentials.get('signature')
 
+    if not session or not signature:
+        try:
+            from .auth_config import get_tradingview_auth
+            auth = get_tradingview_auth()
+            if auth:
+                session = session or auth.get('token', '')
+                signature = signature or auth.get('signature', '')
+        except Exception:
+            pass
+
     async with aiohttp.ClientSession() as client:
         async with client.get(
             'https://www.tradingview.com/chart-token',
@@ -624,6 +665,9 @@ async def get_drawings(layout, symbol='', credentials=None, chart_id='_shared'):
     """
     Get chart drawings.
     """
+    if credentials is None:
+        credentials = {}
+
     chart_token = await get_chart_token(layout, credentials)
 
     async with aiohttp.ClientSession() as client:

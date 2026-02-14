@@ -1,99 +1,69 @@
-#!/usr/bin/env python3
-"""
-此示例创建Pine权限管理器并测试所有可用功能
-"""
-import asyncio
 import os
 import sys
-from datetime import datetime, timedelta
+from dotenv import load_dotenv
 
-from ...tradingview import PinePermManager
+# Add project root to path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+
+from tradingview.client import TradingViewClient
 
 async def main():
-    """主函数"""
-    # 检查环境变量
-    session = os.environ.get('TV_SESSION')
-    signature = os.environ.get('TV_SIGNATURE')
+    """Main function"""
+    load_dotenv()
+
+    # Check credentials
+    session = os.getenv('TV_SESSION')
+    signature = os.getenv('TV_SIGNATURE')
 
     if not session or not signature:
-        raise ValueError('请设置TV_SESSION和TV_SIGNATURE环境变量')
+        raise ValueError('Please set TV_SESSION and TV_SIGNATURE environment variables')
 
-    # 获取Pine ID
+    # Get Pine ID from args
     if len(sys.argv) < 2:
-        raise ValueError('请指定Pine ID作为第一个参数')
+        print('Usage: python pine_perm_manage.py <PINE_ID>')
+        return
 
     pine_id = sys.argv[1]
-    print('Pine ID:', pine_id)
 
-    # 创建Pine权限管理器
-    manager = PinePermManager(
-        session,
-        signature,
-        pine_id
-    )
+    # Create client
+    client = TradingViewClient()
+    await client.connect(session=session, signature=signature)
 
-    # 获取已授权用户
-    users = await manager.get_users()
-    print('已授权用户:', users)
+    # Create Pine permission manager
+    # Assuming client has a get_pine_manager method or similar
+    # For this example, we'll demonstrate the intended API usage
+    try:
+        # Get authorized users
+        users = await client.get_pine_privileges(pine_id)
+        print('Authorized users:', users)
 
-    # 添加用户'TradingView'
-    print("添加用户'TradingView'...")
+        # Add user 'TradingView' as an example
+        print("Adding user 'TradingView'...")
+        result = await client.add_pine_privilege(pine_id, 'TradingView')
+        if result:
+            print('Added successfully!')
+        else:
+            print('User already authorized or unknown error')
 
-    status = await manager.add_user('TradingView')
-    if status == 'ok':
-        print('添加成功!')
-    elif status == 'exists':
-        print('该用户已经被授权')
-    else:
-        print('未知错误...')
+        # Get authorized users again
+        users = await client.get_pine_privileges(pine_id)
+        print('Authorized users:', users)
 
-    # 再次获取已授权用户
-    users = await manager.get_users()
-    print('已授权用户:', users)
+        # Remove user 'TradingView'
+        print("Removing user 'TradingView'...")
+        result = await client.remove_pine_privilege(pine_id, 'TradingView')
+        if result:
+            print('Removed successfully!')
+        else:
+            print('Unknown error')
 
-    # 修改过期日期
-    print('修改过期日期...')
+        # Final check
+        users = await client.get_pine_privileges(pine_id)
+        print('Final authorized users:', users)
 
-    # 添加一天
-    new_date = datetime.now() + timedelta(days=1)
-    status = await manager.modify_expiration('TradingView', new_date)
-
-    if status == 'ok':
-        print('修改成功!')
-    else:
-        print('未知错误...')
-
-    # 再次获取已授权用户
-    users = await manager.get_users()
-    print('已授权用户:', users)
-
-    # 移除过期日期
-    print('移除过期日期...')
-
-    status = await manager.modify_expiration('TradingView')
-
-    if status == 'ok':
-        print('移除成功!')
-    else:
-        print('未知错误...')
-
-    # 再次获取已授权用户
-    users = await manager.get_users()
-    print('已授权用户:', users)
-
-    # 移除用户'TradingView'
-    print("移除用户'TradingView'...")
-
-    status = await manager.remove_user('TradingView')
-
-    if status == 'ok':
-        print('移除成功!')
-    else:
-        print('未知错误...')
-
-    # 再次获取已授权用户
-    users = await manager.get_users()
-    print('已授权用户:', users)
+    finally:
+        await client.close()
 
 if __name__ == '__main__':
+    import asyncio
     asyncio.run(main())

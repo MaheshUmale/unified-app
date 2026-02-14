@@ -472,14 +472,15 @@ class EnhancedTradingViewManager:
         })
 
         # Start background tasks
-        tasks = [
-            self._start_request_processor(),
-            self._start_performance_monitor(),
-            self._start_health_checker(),
-            self._start_cache_cleaner()
+        task_funcs = [
+            self._start_request_processor,
+            self._start_performance_monitor,
+            self._start_health_checker,
+            self._start_cache_cleaner
         ]
 
-        for task in tasks:
+        for func in task_funcs:
+            task = asyncio.create_task(func())
             self._background_tasks.add(task)
 
     async def stop(self):

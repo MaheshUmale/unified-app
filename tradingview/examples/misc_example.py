@@ -1,47 +1,50 @@
-#!/usr/bin/env python3
-"""
-杂项请求模块使用示例
-"""
+import os
+import sys
 import asyncio
-import json
-from pprint import pprint
+from dotenv import load_dotenv
 
-from ..misc import (
-    get_ta,
-    search_market_v3,
-    search_indicator,
-    get_indicator
-)
+# Add project root to path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+
+from tradingview.client import TradingViewClient
 
 async def main():
-    """主函数"""
-    print("========== 搜索市场 ==========")
-    results = await search_market_v3("BINANCE:BTCUSDT")
-    if results:
-        market = results[0]
-        print(f"找到市场: {market.id} - {market.description}")
+    """Main function"""
+    load_dotenv()
+    client = TradingViewClient()
 
-        print("\n========== 获取技术分析 ==========")
-        ta_data = await get_ta(market.id)
-        pprint(ta_data)
+    print("========== Market Search ==========")
+    markets = await client.search_market("BINANCE:")
+    for market in markets[:3]:
+        print(f"Market: {market.id} - {market.description}")
 
-    print("\n========== 搜索指标 ==========")
-    indicators = await search_indicator("RSI")
+    print("\n========== Technical Analysis ==========")
+    if markets:
+        m = markets[0]
+        # Assuming get_ta exists
+        if hasattr(client, 'get_ta'):
+            ta = await client.get_ta(m.exchange, m.id.split(':')[-1])
+            print(ta)
 
+    print("\n========== Indicator Search ==========")
+    indicators = await client.search_indicator("RSI")
+    for indicator in indicators[:3]:
+        print(f"Indicator: {indicator.name} Author: {indicator.author['username']}")
+
+    print("\n========== Indicator Details ==========")
     if indicators:
-        indicator = indicators[0]
-        print(f"找到指标: {indicator.name} 作者: {indicator.author['username']}")
-
-        print("\n========== 获取指标详情 ==========")
+        indic = indicators[0]
         try:
-            indicator_detail = await get_indicator(indicator.id, indicator.version)
-            print(f"指标ID: {indicator_detail.pineId}")
-            print(f"版本: {indicator_detail.pineVersion}")
-            print(f"描述: {indicator_detail.description}")
-            print(f"输入参数数量: {len(indicator_detail.inputs)}")
-            print(f"绘图数量: {len(indicator_detail.plots)}")
+            # Assuming get_indicator_details exists
+            if hasattr(client, 'get_indicator_details'):
+                detail = await client.get_indicator_details(indic.id)
+                print(f"Pine ID: {detail.pineId}")
+                print(f"Version: {detail.pineVersion}")
+                print(f"Inputs: {len(detail.inputs)}")
         except Exception as e:
-            print(f"获取指标详情失败: {e}")
+            print(f"Failed to fetch indicator details: {e}")
 
-if __name__ == "__main__":
+    await client.close()
+
+if __name__ == '__main__':
     asyncio.run(main())

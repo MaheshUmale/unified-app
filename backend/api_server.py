@@ -1083,6 +1083,9 @@ app = socketio.ASGIApp(sio, fastapi_app)
 
 if __name__ == "__main__":
     import uvicorn
-    # Use port 3000 for live preview
-    port = int(os.getenv("PORT", 3000))
+    from config import SERVER_PORT
+
+    # Standardize on SERVER_PORT (5051) but allow override via PORT env var for flexibility
+    port = int(os.getenv("PORT", SERVER_PORT))
+    logger.info(f"Starting ProTrade API Server on port {port}...")
     uvicorn.run("api_server:app", host="0.0.0.0", port=port, reload=False)

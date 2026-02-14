@@ -6,7 +6,7 @@ def verify_confluence_chart():
     # Ensure server is running
     print("Checking if server is running...")
     try:
-        requests.get('http://localhost:3000/options')
+        requests.get('http://localhost:5051/options')
     except:
         print("Server not running. Starting it...")
         # (Assuming it's managed by the sandbox, but if not I should have started it)
@@ -19,7 +19,7 @@ def verify_confluence_chart():
 
         print("Navigating to Options Dashboard...")
         try:
-            page.goto('http://localhost:3000/options', timeout=60000)
+            page.goto('http://localhost:5051/options', timeout=60000)
             time.sleep(5)
 
             print("Switching to PCR Trend tab...")

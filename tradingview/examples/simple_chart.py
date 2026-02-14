@@ -1,105 +1,62 @@
-#!/usr/bin/env python3
-"""
-此示例创建一个BTCEUR日线图表
-"""
-import asyncio
 import os
-import time
+import sys
+import asyncio
+from dotenv import load_dotenv
 
-from ...tradingview import Client
+# Add project root to path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
-# export TV_SESSION=b7dc5nugsk5td47u39wiolrj1iy0u544
-# export TV_SIGNATURE=v3:goGfCVtvE/NAUTmU4Kk+NhmPgfgIDk9mozUpMgUf77E=
+from tradingview.client import TradingViewClient
 
 async def main():
-    """主函数"""
-    session = os.environ.get('TV_SESSION')
-    signature = os.environ.get('TV_SIGNATURE')
+    load_dotenv()
+
+    # Credentials
+    session = os.getenv('TV_SESSION')
+    signature = os.getenv('TV_SIGNATURE')
 
     if not session or not signature:
-        raise ValueError('请设置TV_SESSION和TV_SIGNATURE环境变量')
+        print('Please set TV_SESSION and TV_SIGNATURE environment variables')
+        return
 
-    client = Client(
-        # 取消注释并设置环境变量以使用用户登录
-        token=session,
-        signature=signature
-    )
+    # Create client
+    client = TradingViewClient()
 
-    # 连接到TradingView
-    await client.connect()
+    # Connect
+    await client.connect(session=session, signature=signature)
 
-    chart = client.Session.Chart()  # 初始化Chart会话
+    # Create chart
+    chart = client.new_chart()
 
-    # 设置市场
-    chart.set_market('BINANCE:BTCEUR', {
-        'timeframe': 'D',
-    })
+    # Set market
+    print('Setting market to BINANCE:BTCUSDT...')
+    chart.set_market('BINANCE:BTCUSDT', timeframe='60')
 
-    # 监听错误（可以避免崩溃）
-    def on_error(*err):
-        print('图表错误:', *err)
-        # 做一些处理...
+    # Define callbacks
+    @chart.on_update
+    async def on_update():
+        if chart.periods:
+            print(f'Last candle: {chart.periods[-1]}')
 
-    chart.on_error(on_error)
-
-    # 当交易对成功加载时
-    def on_symbol_loaded():
-        print(f'市场 "{chart.infos.description}" 已加载!')
-
-    chart.on_symbol_loaded(on_symbol_loaded)
-
-    # 当价格变化时
-    def on_update():
-        if not chart.periods or not chart.periods[0]:
-            return
-        print(f'[{chart.infos.description}]: {chart.periods[0].close} {chart.infos.currency_id}')
-        # 做一些处理...
-
-    chart.on_update(on_update)
-
-    # 等待5秒并将市场设置为BINANCE:ETHEUR
-    print('\n5秒后将市场设置为BINANCE:ETHEUR...')
+    # Wait for 5 seconds and change market
     await asyncio.sleep(5)
+    print('Setting market to OANDA:XAUUSD...')
+    chart.set_market('OANDA:XAUUSD', timeframe='D')
 
-    print('设置市场为BINANCE:ETHEUR...')
-    chart.set_market('BINANCE:ETHEUR', {
-        'timeframe': 'D',
-    })
-
-    # 等待10秒并将时间框架设置为15分钟
-    print('\n5秒后将时间框架设置为15分钟...')
+    # Wait for 5 seconds and close chart
     await asyncio.sleep(5)
-
-    print('设置时间框架为15分钟...')
-    chart.set_series('15')
-
-    # 等待5秒并将图表类型设置为"Heikin Ashi"
-    print('\n5秒后将图表类型设置为"Heikin Ashi"...')
+    print('\nClosing chart in 5 seconds...')
     await asyncio.sleep(5)
+    print('Closing chart...')
+    # Assuming delete method exists
+    if hasattr(chart, 'delete'):
+        await chart.delete()
 
-    # print('设置图表类型为"Heikin Ashi"...')
-    # chart.set_market('BINANCE:ETHEUR', {
-    #     'timeframe': 'D',
-    #     'type': 'HeikinAshi',
-    # })
-    print('设置图表类型为 OANDA:XAUUSD...')
-    chart.set_market('OANDA:XAUUSD', {
-        'timeframe': 'D',
-    })
-
-    # 等待5秒并关闭图表
-    print('\n5秒后关闭图表...')
+    # Wait for 5 seconds and close client
+    print('\nClosing client in 5 seconds...')
     await asyncio.sleep(5)
-
-    print('关闭图表...')
-    chart.delete()
-
-    # 等待5秒并关闭客户端
-    print('\n5秒后关闭客户端...')
-    await asyncio.sleep(5)
-
-    print('关闭客户端...')
-    await client.end()
+    print('Closing client...')
+    await client.close()
 
 if __name__ == '__main__':
     asyncio.run(main())

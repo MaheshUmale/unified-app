@@ -2,21 +2,20 @@
 # -*- coding: utf-8 -*-
 
 """
-TradingView CLI - 数据源引擎专业命令行工具
-Professional Command Line Interface for TradingView Data Source Engine
+TradingView CLI - Professional Command Line Interface for TradingView Data Source Engine
 
-作者: Claude Code Assistant
-创建时间: 2024-12
-版本: 2.0.0
+Author: Claude Code Assistant
+Created: 2024-12
+Version: 2.0.0
 
-这是一个专业的TradingView数据源引擎CLI工具，提供完整的数据源管理功能：
-- TradingView连接管理和健康监控
-- 实时数据获取和质量验证
-- 多品种数据同步和缓存管理
-- 数据备份和故障恢复机制
-- 性能优化和连接稳定性监控
+This is a professional TradingView data source engine CLI tool providing complete data management:
+- TradingView connection management and health monitoring
+- Real-time data acquisition and quality verification
+- Multi-symbol data synchronization and cache management
+- Data backup and fault recovery mechanisms
+- Performance optimization and connection stability monitoring
 
-使用方法:
+Usage:
     python -m tradingview.cli --help
     python -m tradingview.cli connect --symbols BTCUSDT,ETHUSDT
     python -m tradingview.cli data --action fetch --symbol BTCUSDT --timeframe 15m
@@ -35,7 +34,7 @@ from typing import Dict, List, Any, Optional, Union
 import logging
 from dataclasses import dataclass, field
 
-# 添加项目根目录到路径
+# Add project root to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
@@ -57,7 +56,7 @@ try:
 except ImportError:
     BASE_TRADINGVIEW_AVAILABLE = False
 
-# 配置日志
+# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -66,7 +65,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ConnectionStatus:
-    """连接状态信息"""
+    """Connection status info"""
     connected: bool = False
     connection_time: Optional[datetime] = None
     last_heartbeat: Optional[datetime] = None
@@ -77,7 +76,7 @@ class ConnectionStatus:
 
 @dataclass
 class DataQuality:
-    """数据质量信息"""
+    """Data quality info"""
     symbol: str
     timeframe: str
     quality_score: float
@@ -90,7 +89,7 @@ class DataQuality:
 
 @dataclass
 class SyncStatus:
-    """同步状态信息"""
+    """Sync status info"""
     symbol: str
     timeframe: str
     last_sync: Optional[datetime] = None
@@ -101,17 +100,17 @@ class SyncStatus:
 
 class TradingViewCLI:
     """
-    TradingView数据源引擎专业CLI工具
+    Professional CLI Tool for TradingView Data Engine
 
-    提供完整的TradingView数据源命令行接口：
-    - connect: 连接TradingView
-    - disconnect: 断开连接
-    - status: 查看连接状态
-    - data: 数据管理
-    - quality: 数据质量检查
-    - sync: 数据同步
-    - backup: 数据备份
-    - monitor: 实时监控
+    Provides complete TradingView data source command line interface:
+    - connect: Connect to TradingView
+    - disconnect: Disconnect from TradingView
+    - status: View connection status
+    - data: Data management
+    - quality: Data quality check
+    - sync: Data synchronization
+    - backup: Data backup
+    - monitor: Real-time monitoring
     """
 
     def __init__(self):
@@ -130,20 +129,20 @@ class TradingViewCLI:
             except Exception as e:
                 logger.warning(f"Enhanced manager initialization failed: {e}")
 
-    # ==================== 连接管理命令 ====================
+    # ==================== Connection Management Commands ====================
 
     async def connect_command(self, args):
-        """连接TradingView"""
-        print(f"🔌 连接TradingView数据源")
-        print(f"品种列表: {args.symbols}")
-        print(f"时间框架: {args.timeframes}")
+        """Connect to TradingView"""
+        print(f"🔌 Connecting to TradingView data source")
+        print(f"Symbol List: {args.symbols}")
+        print(f"Timeframes: {args.timeframes}")
 
         try:
             if self.tradingview_manager:
                 logger = logging.getLogger(__name__)
-                logger.debug(f"🐛 开始连接TradingView...")
+                logger.debug(f"🐛 Starting connection to TradingView...")
 
-                # 准备连接配置
+                # Prepare connection config
                 connection_config = {
                     "symbols": args.symbols.split(',') if args.symbols else [],
                     "timeframes": args.timeframes.split(',') if args.timeframes else ['15m'],
@@ -154,80 +153,80 @@ class TradingViewCLI:
                     "backup_enabled": args.enable_backup
                 }
 
-                logger.debug(f"🐛 连接配置: {connection_config}")
+                logger.debug(f"🐛 Connection Config: {connection_config}")
 
-                # 执行连接
+                # Execute connection
                 connection_id = f"cli_connection_{int(time.time())}"
-                logger.debug(f"🐛 创建连接ID: {connection_id}")
+                logger.debug(f"🐛 Creating Connection ID: {connection_id}")
 
-                # 连接前状态检查
-                logger.debug(f"🐛 连接前状态检查:")
-                logger.debug(f"🐛   - 现有连接数: {len(self.tradingview_manager.connection_manager.connections)}")
-                logger.debug(f"🐛   - 连接管理器状态: {dict(self.tradingview_manager.connection_manager.connection_status)}")
+                # Status check before connection
+                logger.debug(f"🐛 Status check before connection:")
+                logger.debug(f"🐛   - Existing connections: {len(self.tradingview_manager.connection_manager.connections)}")
+                logger.debug(f"🐛   - Manager status: {dict(self.tradingview_manager.connection_manager.connection_status)}")
 
                 success = await self.tradingview_manager.connection_manager.create_connection(connection_id, connection_config)
-                logger.debug(f"🐛 连接结果: {success}")
+                logger.debug(f"🐛 Connection Result: {success}")
 
-                # 连接后状态检查
-                logger.debug(f"🐛 连接后状态检查:")
-                logger.debug(f"🐛   - 连接数: {len(self.tradingview_manager.connection_manager.connections)}")
-                logger.debug(f"🐛   - 连接状态: {dict(self.tradingview_manager.connection_manager.connection_status)}")
-                logger.debug(f"🐛   - 健康状态: {dict(self.tradingview_manager.connection_manager.connection_health)}")
+                # Status check after connection
+                logger.debug(f"🐛 Status check after connection:")
+                logger.debug(f"🐛   - Connection count: {len(self.tradingview_manager.connection_manager.connections)}")
+                logger.debug(f"🐛   - Connection status: {dict(self.tradingview_manager.connection_manager.connection_status)}")
+                logger.debug(f"🐛   - Health status: {dict(self.tradingview_manager.connection_manager.connection_health)}")
 
                 if connection_id in self.tradingview_manager.connection_manager.connections:
                     client = self.tradingview_manager.connection_manager.connections[connection_id]
-                    logger.debug(f"🐛 客户端详情:")
-                    logger.debug(f"🐛   - 客户端类型: {type(client).__name__}")
-                    logger.debug(f"🐛   - 是否有WebSocket: {hasattr(client, 'client') and hasattr(client.client, '_ws')}")
+                    logger.debug(f"🐛 Client Details:")
+                    logger.debug(f"🐛   - Client Type: {type(client).__name__}")
+                    logger.debug(f"🐛   - Has WebSocket: {hasattr(client, 'client') and hasattr(client.client, '_ws')}")
                     if hasattr(client, 'client') and hasattr(client.client, '_ws'):
                         ws_state = getattr(client.client._ws, 'state', 'unknown') if client.client._ws else 'none'
-                        logger.debug(f"🐛   - WebSocket状态: {ws_state}")
+                        logger.debug(f"🐛   - WebSocket State: {ws_state}")
 
                 if success:
-                    print(f"✅ 成功连接到TradingView")
+                    print(f"✅ Successfully connected to TradingView")
 
-                    # 更新连接状态
+                    # Update connection status
                     self.connection_status.connected = True
                     self.connection_status.connection_time = datetime.now()
                     self.connection_status.active_symbols = connection_config["symbols"]
 
-                    # 显示连接信息
+                    # Show connection info
                     await self._show_connection_info(args)
 
-                    # 测试数据获取
+                    # Test data fetch
                     if args.test_data:
                         await self._test_data_fetch(args)
 
-                    # 启动健康监控
+                    # Start health monitoring
                     if args.health_monitor:
                         await self._start_health_monitoring(args)
 
-                    # 持续监控模式
+                    # Continuous monitor mode
                     if args.monitor:
                         await self._start_data_monitoring(args)
 
                 else:
-                    print(f"❌ 连接TradingView失败")
-                    logger.error(f"🐛 连接失败 - 连接ID: {connection_id}")
-                    logger.debug(f"🐛 连接状态检查:")
-                    logger.debug(f"🐛   - 连接管理器状态: {dict(self.tradingview_manager.connection_manager.connection_status)}")
-                    logger.debug(f"🐛   - 连接健康状态: {dict(self.tradingview_manager.connection_manager.connection_health)}")
+                    print(f"❌ Failed to connect to TradingView")
+                    logger.error(f"🐛 Connection failed - ID: {connection_id}")
+                    logger.debug(f"🐛 Status check details:")
+                    logger.debug(f"🐛   - Connection Manager status: {dict(self.tradingview_manager.connection_manager.connection_status)}")
+                    logger.debug(f"🐛   - Connection Health status: {dict(self.tradingview_manager.connection_manager.connection_health)}")
                     await self._show_connection_errors(args)
 
             else:
-                # 基础连接模式
+                # Basic connection mode
                 await self._basic_tradingview_connect(args)
 
         except Exception as e:
-            print(f"❌ 连接失败: {e}")
+            print(f"❌ Connection failed: {e}")
             if args.verbose:
                 import traceback
                 traceback.print_exc()
             sys.exit(1)
 
     async def disconnect_command(self, args):
-        """断开TradingView连接"""
-        print(f"🔌 断开TradingView连接")
+        """Disconnect from TradingView"""
+        print(f"🔌 Disconnecting from TradingView")
 
         try:
             if self.tradingview_manager:
@@ -237,7 +236,7 @@ class TradingViewCLI:
                     "backup_data": args.backup_data
                 }
 
-                # 获取可用连接并断开
+                # Get available connection and disconnect
                 connection_id = self.tradingview_manager.connection_manager.get_available_connection()
                 if connection_id:
                     await self.tradingview_manager.connection_manager.close_connection(connection_id)
@@ -246,34 +245,34 @@ class TradingViewCLI:
                     success = False
 
                 if success:
-                    print(f"✅ TradingView连接已断开")
+                    print(f"✅ TradingView disconnected")
 
-                    # 更新连接状态
+                    # Update connection status
                     self.connection_status.connected = False
 
-                    # 显示断开摘要
+                    # Show disconnect summary
                     await self._show_disconnect_summary(args)
 
                 else:
-                    print(f"❌ 断开连接失败")
+                    print(f"❌ Failed to disconnect")
 
             else:
-                # 基础断开模式
+                # Basic disconnect mode
                 await self._basic_tradingview_disconnect(args)
 
         except Exception as e:
-            print(f"❌ 断开连接失败: {e}")
+            print(f"❌ Disconnect failed: {e}")
             if args.verbose:
                 import traceback
                 traceback.print_exc()
 
     async def status_command(self, args):
-        """查看TradingView连接状态"""
-        print(f"📊 TradingView连接状态")
+        """View TradingView connection status"""
+        print(f"📊 TradingView Connection Status")
 
         try:
             if self.tradingview_manager:
-                # 获取连接状态信息
+                # Get status info
                 status_info = {
                     "connections": self.tradingview_manager.connection_manager.connection_status,
                     "health": self.tradingview_manager.connection_manager.connection_health,
@@ -281,37 +280,37 @@ class TradingViewCLI:
                     "system_health": self.tradingview_manager.system_health
                 }
 
-                # 显示连接状态
+                # Display status
                 await self._display_connection_status(status_info, args)
 
-                # 显示品种状态
+                # Display symbol status
                 if args.symbols:
                     await self._display_symbol_status(status_info, args)
 
-                # 显示性能指标
+                # Display performance metrics
                 if args.performance:
                     await self._display_performance_metrics(status_info, args)
 
-                # 显示质量指标
+                # Display quality metrics
                 if args.quality:
                     await self._display_quality_metrics(status_info, args)
 
             else:
-                # 基础状态显示
+                # Basic status display
                 await self._basic_status_display(args)
 
         except Exception as e:
-            print(f"❌ 状态查询失败: {e}")
+            print(f"❌ Status query failed: {e}")
             if args.verbose:
                 import traceback
                 traceback.print_exc()
 
-    # ==================== 数据管理命令 ====================
+    # ==================== Data Management Commands ====================
 
     async def data_command(self, args):
-        """数据管理"""
-        print(f"💾 数据管理")
-        print(f"操作类型: {args.action}")
+        """Data Management"""
+        print(f"💾 Data Management")
+        print(f"Action Type: {args.action}")
 
         try:
             if args.action == 'fetch':
@@ -327,28 +326,28 @@ class TradingViewCLI:
             elif args.action == 'cache':
                 await self._manage_cache(args)
 
-            print(f"✅ 数据操作完成")
+            print(f"✅ Data operation completed")
 
         except Exception as e:
-            print(f"❌ 数据操作失败: {e}")
+            print(f"❌ Data operation failed: {e}")
             if args.verbose:
                 import traceback
                 traceback.print_exc()
 
     async def quality_command(self, args):
-        """数据质量检查"""
-        print(f"🔍 数据质量检查")
-        print(f"检查类型: {args.check_type}")
+        """Data quality check"""
+        print(f"🔍 Data Quality Check")
+        print(f"Check Type: {args.check_type}")
 
         try:
             if self.quality_monitor:
-                # 使用质量监控引擎进行数据质量评估
+                # Use quality engine for assessment
                 if args.symbols:
                     symbols = args.symbols.split(',')
                     quality_results = {}
                     for symbol in symbols:
-                        # 获取一些示例数据进行质量评估
-                        sample_data = []  # 这里应该获取实际的数据
+                        # Get sample data for evaluation
+                        sample_data = []  # Should fetch actual data here
                         quality_metrics = await self.quality_monitor.evaluate_data_quality(symbol, sample_data)
                         quality_results[symbol] = quality_metrics
                 else:
@@ -356,29 +355,29 @@ class TradingViewCLI:
 
                 await self._display_quality_results(quality_results, args)
 
-                # 生成质量报告
+                # Generate quality report
                 if args.report:
                     report_path = await self._generate_quality_report(quality_results, args)
-                    print(f"📄 质量报告已生成: {report_path}")
+                    print(f"📄 Quality report generated: {report_path}")
 
-                # 自动修复
+                # Auto fix
                 if args.auto_fix and quality_results.get('fixable_issues'):
                     await self._auto_fix_quality_issues(quality_results, args)
 
             else:
-                # 基础质量检查
+                # Basic quality check
                 await self._basic_quality_check(args)
 
         except Exception as e:
-            print(f"❌ 质量检查失败: {e}")
+            print(f"❌ Quality check failed: {e}")
             if args.verbose:
                 import traceback
                 traceback.print_exc()
 
     async def sync_command(self, args):
-        """数据同步"""
-        print(f"🔄 数据同步")
-        print(f"同步类型: {args.sync_type}")
+        """Data Synchronization"""
+        print(f"🔄 Data Synchronization")
+        print(f"Sync Type: {args.sync_type}")
 
         try:
             if self.tradingview_manager:
@@ -392,7 +391,7 @@ class TradingViewCLI:
                     "force": args.force
                 }
 
-                # 执行同步 - 使用现有的数据获取方法
+                # Perform sync - using existing data fetch methods
                 sync_results = {}
                 if args.symbols:
                     symbols = args.symbols.split(',')
@@ -400,7 +399,7 @@ class TradingViewCLI:
                         try:
                             data = await self.tradingview_manager.get_historical_data(
                                 symbol=symbol,
-                                timeframe="15m",  # 默认时间框架
+                                timeframe="15m",  # Default timeframe
                                 count=100
                             )
                             sync_results[symbol] = {"status": "success", "count": len(data) if data else 0}
@@ -409,24 +408,24 @@ class TradingViewCLI:
 
                 await self._display_sync_results(sync_results, args)
 
-                # 同步监控
+                # Sync monitor
                 if args.monitor:
                     await self._monitor_sync_progress(sync_results, args)
 
             else:
-                # 基础同步模式
+                # Basic sync mode
                 await self._basic_data_sync(args)
 
         except Exception as e:
-            print(f"❌ 数据同步失败: {e}")
+            print(f"❌ Data sync failed: {e}")
             if args.verbose:
                 import traceback
                 traceback.print_exc()
 
     async def backup_command(self, args):
-        """数据备份"""
-        print(f"💾 数据备份")
-        print(f"备份类型: {args.backup_type}")
+        """Data Backup"""
+        print(f"💾 Data Backup")
+        print(f"Backup Type: {args.backup_type}")
 
         try:
             if self.tradingview_manager:
@@ -439,22 +438,22 @@ class TradingViewCLI:
                     "encrypt": args.encrypt
                 }
 
-                # 简单的备份实现
+                # Basic backup implementation
                 import json
                 from datetime import datetime
 
                 backup_path = args.output or f"tradingview_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
 
-                # 收集需要备份的数据
+                # Collect backup data
                 backup_data = {
                     "timestamp": datetime.now().isoformat(),
                     "backup_type": args.backup_type,
                     "connections": dict(self.tradingview_manager.connection_manager.connection_status),
                     "performance": vars(self.tradingview_manager.performance_metrics) if hasattr(self.tradingview_manager.performance_metrics, '__dict__') else {},
-                    "cache_stats": {}  # 缓存统计信息
+                    "cache_stats": {}  # Cache stats
                 }
 
-                # 保存备份文件
+                # Save backup file
                 with open(backup_path, 'w') as f:
                     json.dump(backup_data, f, indent=2, default=str)
 
@@ -465,136 +464,135 @@ class TradingViewCLI:
                 }
 
                 if backup_result.get('success', False):
-                    print(f"✅ 数据备份完成")
-                    print(f"📁 备份路径: {backup_result.get('backup_path')}")
-                    print(f"📊 备份大小: {backup_result.get('backup_size', 'N/A')}")
+                    print(f"✅ Data backup completed")
+                    print(f"📁 Backup Path: {backup_result.get('backup_path')}")
+                    print(f"📊 Backup Size: {backup_result.get('backup_size', 'N/A')}")
 
-                    # 验证备份
+                    # Verify backup
                     if args.verify:
                         await self._verify_backup(backup_result, args)
 
                 else:
-                    print(f"❌ 数据备份失败")
+                    print(f"❌ Data backup failed")
 
             else:
-                # 基础备份模式
+                # Basic backup mode
                 await self._basic_data_backup(args)
 
         except Exception as e:
-            print(f"❌ 备份失败: {e}")
+            print(f"❌ Backup failed: {e}")
             if args.verbose:
                 import traceback
                 traceback.print_exc()
 
     async def monitor_command(self, args):
-        """实时监控"""
-        print(f"📈 开始实时监控")
-        print(f"监控指标: {args.metrics}")
-        print(f"刷新间隔: {args.interval}秒")
-        print(f"按 Ctrl+C 停止监控\\n")
+        """Real-time monitoring"""
+        print(f"📈 Starting real-time monitoring")
+        print(f"Monitoring Metrics: {args.metrics}")
+        print(f"Refresh Interval: {args.interval}s")
+        print(f"Press Ctrl+C to stop monitoring\n")
 
         try:
             while True:
-                # 清屏
+                # Clear screen
                 if not args.no_clear:
                     os.system('clear' if os.name == 'posix' else 'cls')
 
-                print(f"📡 TradingView监控面板 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                print(f"📡 TradingView Monitoring Dashboard - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
                 print("=" * 80)
 
-                # 收集监控数据
+                # Collect monitoring data
                 monitoring_data = await self._collect_monitoring_data(args)
 
-                # 显示监控面板
+                # Display dashboard
                 await self._display_monitoring_dashboard(monitoring_data, args)
 
-                # 等待指定间隔
+                # Wait interval
                 await asyncio.sleep(args.interval)
 
         except KeyboardInterrupt:
-            print(f"\\n⏹️ 监控已停止")
+            print(f"\n⏹️ Monitoring stopped")
 
     async def stream_command(self, args):
-        """实时数据流监控 - 持续WebSocket连接和数据推送"""
-        print(f"🌊 启动实时数据流监控")
-        print(f"币种: {args.symbols}")
-        print(f"时间框架: {args.timeframe}")
-        print(f"按 Ctrl+C 停止数据流\\n")
+        """Real-time data stream monitoring - persistent WebSocket and pushes"""
+        print(f"🌊 Starting real-time data stream")
+        print(f"Symbols: {args.symbols}")
+        print(f"Timeframe: {args.timeframe}")
+        print(f"Press Ctrl+C to stop stream\n")
 
         if not ENHANCED_TRADINGVIEW_AVAILABLE:
-            print("❌ 增强TradingView模块不可用，无法启动实时数据流")
+            print("❌ Enhanced TradingView modules not available, cannot start stream")
             return
 
         try:
-            # 创建增强TradingView客户端
+            # Create enhanced client
             client = EnhancedTradingViewClient()
-            print(f"🔌 连接到TradingView服务器...")
+            print(f"🔌 Connecting to TradingView server...")
 
-            # 连接到TradingView
+            # Connect
             await client.connect()
-            print(f"✅ WebSocket连接已建立")
+            print(f"✅ WebSocket connection established")
 
-            # 解析币种列表
+            # Parse symbols
             symbols = args.symbols.split(',') if ',' in args.symbols else [args.symbols]
 
-            # 为每个币种创建图表会话
+            # Create sessions for each symbol
             sessions = {}
             for symbol in symbols:
-                # 规范化币种格式
+                # Normalize symbol
                 if ':' not in symbol:
                     symbol_formatted = f"BINANCE:{symbol.upper()}"
                 else:
                     symbol_formatted = symbol.upper()
 
-                print(f"📊 设置数据流: {symbol_formatted} {args.timeframe}")
+                print(f"📊 Setting up stream: {symbol_formatted} {args.timeframe}")
 
-                # 创建图表会话
+                # Create session
                 chart_session = client.Session.Chart()
                 sessions[symbol_formatted] = chart_session
 
-                # 设置实时数据回调
+                # Set callback
                 def create_callback(sym):
                     def on_symbol_loaded():
-                        print(f"✅ {sym} 订阅成功，开始接收实时数据...")
+                        print(f"✅ {sym} subscription successful, receiving real-time data...")
 
                     def on_update():
-                        """实时数据更新回调"""
+                        """Update callback"""
                         if not chart_session.periods:
                             return
 
-                        # 获取最新K线数据
                         latest_periods = sorted(chart_session.periods, key=lambda p: p.time, reverse=True)
                         if not latest_periods:
                             return
 
                         latest_period = latest_periods[0]
 
-                        # 格式化时间戳
+                        # Format timestamp
                         timestamp = latest_period.time
                         dt = datetime.fromtimestamp(timestamp)
                         time_str = dt.strftime('%Y-%m-%d %H:%M:%S')
 
-                        # 实时打印数据
+                        # Print data
                         print(f"📊 {time_str} | {sym} | "
-                              f"开:{latest_period.open:>8.2f} | "
-                              f"高:{latest_period.high:>8.2f} | "
-                              f"低:{latest_period.low:>8.2f} | "
-                              f"收:{latest_period.close:>8.2f} | "
-                              f"量:{getattr(latest_period, 'volume', 0):>10.2f}")
+                              f"O:{latest_period.open:>8.2f} | "
+                              f"H:{latest_period.high:>8.2f} | "
+                              f"L:{latest_period.low:>8.2f} | "
+                              f"C:{latest_period.close:>8.2f} | "
+                              f"V:{getattr(latest_period, 'volume', 0):>10.2f}")
 
                     def on_error(*msgs):
                         error_msg = " ".join(str(msg) for msg in msgs)
-                        print(f"❌ {sym} 数据流错误: {error_msg}")
+                        print(f"❌ {sym} stream error: {error_msg}")
 
                     return on_symbol_loaded, on_update, on_error
 
-                # 注册回调
+                # Register callbacks
                 on_symbol_loaded, on_update, on_error = create_callback(symbol_formatted)
                 chart_session.on_symbol_loaded(on_symbol_loaded)
                 chart_session.on_update(on_update)
                 chart_session.on_error(on_error)
 
-                # 转换时间框架格式
+                # Timeframe normalization
                 if args.timeframe.endswith('m'):
                     tf_value = args.timeframe[:-1]
                 elif args.timeframe.endswith('h'):
@@ -604,72 +602,72 @@ class TradingViewCLI:
                 else:
                     tf_value = args.timeframe
 
-                # 设置市场订阅（实时模式）
+                # Set market
                 chart_session.set_market(symbol_formatted, {
                     'timeframe': tf_value,
-                    'range': 1  # 只需要最新的数据点，用于实时更新
+                    'range': 1
                 })
 
-            print(f"\\n🌊 实时数据流已启动，正在监听 {len(sessions)} 个币种...")
-            print(f"{'时间':>19} | {'币种':>15} | {'开盘':>8} | {'最高':>8} | {'最低':>8} | {'收盘':>8} | {'成交量':>10}")
+            print(f"\n🌊 Real-time data stream started, listening to {len(sessions)} symbols...")
+            print(f"{'Time':>19} | {'Symbol':>15} | {'Open':>8} | {'High':>8} | {'Low':>8} | {'Close':>8} | {'Volume':>10}")
             print("-" * 100)
 
-            # 保持连接活跃，持续接收数据
+            # Keep loop running
             while True:
-                await asyncio.sleep(1)  # 保持事件循环运行
+                await asyncio.sleep(1)
 
         except KeyboardInterrupt:
-            print(f"\\n⏹️ 实时数据流已停止")
+            print(f"\n⏹️ Real-time stream stopped")
 
         except Exception as e:
-            print(f"❌ 实时数据流错误: {e}")
+            print(f"❌ Stream error: {e}")
             if args.verbose:
                 import traceback
                 traceback.print_exc()
 
         finally:
-            # 清理连接
+            # Cleanup
             try:
                 if 'client' in locals():
                     await client.close()
-                    print(f"🔌 WebSocket连接已关闭")
+                    print(f"🔌 WebSocket connection closed")
             except Exception as e:
-                logger.warning(f"清理连接时出错: {e}")
+                logger.warning(f"Error during cleanup: {e}")
 
-    # ==================== 辅助方法 ====================
+    # ==================== Helper Methods ====================
 
     async def _show_connection_info(self, args):
-        """显示连接信息"""
-        print(f"\\n📋 连接信息:")
-        print(f"  状态: {'🟢 已连接' if self.connection_status.connected else '🔴 未连接'}")
-        print(f"  连接时间: {self.connection_status.connection_time}")
-        print(f"  活跃品种: {len(self.connection_status.active_symbols)}")
-        print(f"  质量评分: {self.connection_status.quality_score:.2%}")
+        """Show connection info"""
+        print(f"\n📋 Connection Information:")
+        print(f"  Status: {'🟢 Connected' if self.connection_status.connected else '🔴 Disconnected'}")
+        print(f"  Connection Time: {self.connection_status.connection_time}")
+        print(f"  Active Symbols: {len(self.connection_status.active_symbols)}")
+        print(f"  Quality Score: {self.connection_status.quality_score:.2%}")
 
         if self.connection_status.active_symbols:
-            print(f"\\n📊 监控品种:")
+            print(f"\n📊 Monitored Symbols:")
             for symbol in self.connection_status.active_symbols:
                 print(f"    📈 {symbol}")
 
     async def _test_data_fetch(self, args):
-        """测试数据获取"""
-        print(f"\\n🧪 测试数据获取...")
+        """Test data fetch"""
+        print(f"\n🧪 Testing data fetch...")
 
         try:
             if self.tradingview_manager and self.connection_status.active_symbols:
                 test_symbol = self.connection_status.active_symbols[0]
                 test_data = await self.tradingview_manager.fetch_test_data(test_symbol, "15m")
 
-                print(f"  测试品种: {test_symbol}")
-                print(f"  数据量: {len(test_data) if test_data else 0} 条")
-                print(f"  结果: {'✅ 成功' if test_data else '❌ 失败'}")
+                print(f"  Test Symbol: {test_symbol}")
+                print(f"  Data Points: {len(test_data) if test_data else 0}")
+                print(f"  Result: {'✅ Success' if test_data else '❌ Failure'}")
 
         except Exception as e:
-            print(f"  ❌ 测试失败: {e}")
+            print(f"  ❌ Test failed: {e}")
 
     async def _start_health_monitoring(self, args):
-        """启动健康监控"""
-        print(f"\\n🏥 启动连接健康监控...")
+        """Start health monitoring"""
+        print(f"\n🏥 Starting health monitoring...")
 
         if self.tradingview_manager:
             health_config = {
@@ -679,71 +677,71 @@ class TradingViewCLI:
             }
 
             await self.tradingview_manager.start_health_monitoring(health_config)
-            print(f"  ✅ 健康监控已启动")
+            print(f"  ✅ Health monitoring started")
 
     async def _start_data_monitoring(self, args):
-        """启动数据监控"""
-        print(f"\\n📊 启动数据监控模式...")
-        print(f"按 Ctrl+C 退出监控")
+        """Start data monitoring"""
+        print(f"\n📊 Starting data monitoring mode...")
+        print(f"Press Ctrl+C to exit")
 
         try:
             while True:
                 await asyncio.sleep(10)
-                print(f"📡 {datetime.now().strftime('%H:%M:%S')} - 数据流正常")
+                print(f"📡 {datetime.now().strftime('%H:%M:%S')} - Data stream normal")
         except KeyboardInterrupt:
-            print(f"\\n⏹️ 退出数据监控")
+            print(f"\n⏹️ Exiting data monitoring")
 
     async def _display_connection_status(self, status_info: Dict[str, Any], args):
-        """显示连接状态"""
-        print(f"\\n🔌 连接状态:")
-        print(f"  状态: {'🟢 在线' if status_info.get('connected', False) else '🔴 离线'}")
-        print(f"  延迟: {status_info.get('latency', 'N/A')}ms")
-        print(f"  上次心跳: {status_info.get('last_heartbeat', 'N/A')}")
-        print(f"  错误计数: {status_info.get('error_count', 0)}")
-        print(f"  质量评分: {status_info.get('quality_score', 1.0):.2%}")
+        """Display connection status"""
+        print(f"\n🔌 Connection Status:")
+        print(f"  State: {'🟢 Online' if status_info.get('connected', False) else '🔴 Offline'}")
+        print(f"  Latency: {status_info.get('latency', 'N/A')}ms")
+        print(f"  Last Heartbeat: {status_info.get('last_heartbeat', 'N/A')}")
+        print(f"  Error Count: {status_info.get('error_count', 0)}")
+        print(f"  Quality Score: {status_info.get('quality_score', 1.0):.2%}")
 
-        # WebSocket状态
+        # WebSocket status
         ws_status = status_info.get('websocket_status', {})
         if ws_status:
-            print(f"\\n🌐 WebSocket状态:")
-            print(f"  连接状态: {ws_status.get('state', 'N/A')}")
-            print(f"  消息数量: {ws_status.get('message_count', 0)}")
-            print(f"  错误数量: {ws_status.get('error_count', 0)}")
+            print(f"\n🌐 WebSocket Status:")
+            print(f"  State: {ws_status.get('state', 'N/A')}")
+            print(f"  Message Count: {ws_status.get('message_count', 0)}")
+            print(f"  Error Count: {ws_status.get('error_count', 0)}")
 
     async def _display_symbol_status(self, status_info: Dict[str, Any], args):
-        """显示品种状态"""
-        print(f"\\n📈 品种状态:")
+        """Display symbol status"""
+        print(f"\n📈 Symbol Status:")
 
         symbols_status = status_info.get('symbols', {})
         for symbol, symbol_info in symbols_status.items():
             status_icon = "🟢" if symbol_info.get('active', False) else "🔴"
             print(f"  {status_icon} {symbol}")
-            print(f"    最后更新: {symbol_info.get('last_update', 'N/A')}")
-            print(f"    数据质量: {symbol_info.get('quality_score', 0.0):.1%}")
-            print(f"    订阅状态: {symbol_info.get('subscription_status', 'N/A')}")
+            print(f"    Last Update: {symbol_info.get('last_update', 'N/A')}")
+            print(f"    Data Quality: {symbol_info.get('quality_score', 0.0):.1%}")
+            print(f"    Subscription: {symbol_info.get('subscription_status', 'N/A')}")
 
     async def _fetch_data(self, args):
-        """获取数据"""
+        """Fetch data"""
         logger = logging.getLogger(__name__)
-        print(f"\\n📥 获取数据:")
-        print(f"  品种: {args.symbol}")
-        print(f"  时间框架: {args.timeframe}")
-        print(f"  数据量: {args.count} 条")
+        print(f"\n📥 Fetching Data:")
+        print(f"  Symbol: {args.symbol}")
+        print(f"  Timeframe: {args.timeframe}")
+        print(f"  Count: {args.count} records")
 
         try:
             if self.tradingview_manager:
-                logger.debug(f"🐛 开始获取历史数据...")
-                logger.debug(f"🐛 请求参数: symbol={args.symbol}, timeframe={args.timeframe}, count={args.count}")
+                logger.debug(f"🐛 Starting historical data fetch...")
+                logger.debug(f"🐛 Parameters: symbol={args.symbol}, timeframe={args.timeframe}, count={args.count}")
 
-                # 检查连接状态
+                # Check connection
                 available_connection = self.tradingview_manager.connection_manager.get_available_connection()
-                logger.debug(f"🐛 可用连接检查: {available_connection}")
+                logger.debug(f"🐛 Available connection check: {available_connection}")
 
                 if not available_connection:
-                    logger.debug(f"🐛 连接状态详情:")
-                    logger.debug(f"🐛   - 所有连接: {list(self.tradingview_manager.connection_manager.connections.keys())}")
-                    logger.debug(f"🐛   - 连接状态: {dict(self.tradingview_manager.connection_manager.connection_status)}")
-                    logger.debug(f"🐛   - 健康状态: {dict(self.tradingview_manager.connection_manager.connection_health)}")
+                    logger.debug(f"🐛 Connection status details:")
+                    logger.debug(f"🐛   - All connections: {list(self.tradingview_manager.connection_manager.connections.keys())}")
+                    logger.debug(f"🐛   - Manager status: {dict(self.tradingview_manager.connection_manager.connection_status)}")
+                    logger.debug(f"🐛   - Health status: {dict(self.tradingview_manager.connection_manager.connection_health)}")
 
                 data = await self.tradingview_manager.get_historical_data(
                     symbol=args.symbol,
@@ -751,62 +749,62 @@ class TradingViewCLI:
                     count=args.count
                 )
 
-                # 修复MarketData对象的长度显示
+                # Show record count from MarketData object
                 data_count = len(data.data) if data and hasattr(data, 'data') and data.data else 0
-                print(f"  ✅ 获取成功: {data_count} 条数据")
+                print(f"  ✅ Fetch successful: {data_count} records")
 
-                # 显示数据样本
+                # Show sample
                 if data and hasattr(data, 'data') and data.data and args.show_sample:
                     await self._show_data_sample(data.data[:5])
 
-                # 保存数据
+                # Save data
                 if args.save and data and hasattr(data, 'data') and data.data:
                     save_path = await self._save_data(data.data, args)
-                    print(f"  💾 数据已保存: {save_path}")
+                    print(f"  💾 Data saved: {save_path}")
 
             else:
-                print(f"  ❌ 增强功能不可用")
+                print(f"  ❌ Enhanced features unavailable")
 
         except Exception as e:
-            print(f"  ❌ 获取失败: {e}")
+            print(f"  ❌ Fetch failed: {e}")
 
     async def _show_data_sample(self, sample_data: List[Dict]):
-        """显示数据样本"""
-        print(f"\\n📊 数据样本:")
+        """Show data sample"""
+        print(f"\n📊 Data Sample:")
         for i, record in enumerate(sample_data, 1):
-            print(f"  {i}. 时间: {record.get('timestamp', 'N/A')}")
+            print(f"  {i}. Time: {record.get('timestamp', 'N/A')}")
             print(f"     OHLC: {record.get('open', 'N/A')}/{record.get('high', 'N/A')}/{record.get('low', 'N/A')}/{record.get('close', 'N/A')}")
-            print(f"     成交量: {record.get('volume', 'N/A')}")
+            print(f"     Volume: {record.get('volume', 'N/A')}")
 
     async def _display_quality_results(self, results: Dict[str, Any], args):
-        """显示质量检查结果"""
-        print(f"\\n🔍 质量检查结果:")
+        """Display quality results"""
+        print(f"\n🔍 Quality Check Results:")
 
         overall_score = results.get('overall_score', 0.0)
-        print(f"  总体评分: {overall_score:.1%}")
+        print(f"  Overall Score: {overall_score:.1%}")
 
-        # 各维度评分
+        # Dimension scores
         dimensions = results.get('dimensions', {})
         for dimension, score in dimensions.items():
             score_icon = "🟢" if score > 0.8 else "🟡" if score > 0.6 else "🔴"
             print(f"  {score_icon} {dimension}: {score:.1%}")
 
-        # 问题列表
+        # Issues
         issues = results.get('issues', [])
         if issues:
-            print(f"\\n⚠️ 发现问题:")
+            print(f"\n⚠️ Issues Found:")
             for issue in issues:
                 print(f"    - {issue}")
 
-        # 建议
+        # Recommendations
         recommendations = results.get('recommendations', [])
         if recommendations:
-            print(f"\\n💡 改进建议:")
+            print(f"\n💡 Recommendations:")
             for rec in recommendations:
                 print(f"    - {rec}")
 
     async def _collect_monitoring_data(self, args) -> Dict[str, Any]:
-        """收集监控数据"""
+        """Collect monitoring data"""
         monitoring_data = {
             "timestamp": datetime.now().isoformat(),
             "connection": {},
@@ -817,7 +815,7 @@ class TradingViewCLI:
 
         try:
             if self.tradingview_manager:
-                # 收集监控数据
+                # Collect
                 raw_data = {
                     "connections": dict(self.tradingview_manager.connection_manager.connection_status),
                     "health": dict(self.tradingview_manager.connection_manager.connection_health),
@@ -825,108 +823,107 @@ class TradingViewCLI:
                 }
                 monitoring_data.update(raw_data)
             else:
-                # 模拟监控数据
+                # Mock
                 monitoring_data.update(self._get_mock_monitoring_data())
 
         except Exception as e:
-            logger.warning(f"监控数据收集失败: {e}")
+            logger.warning(f"Monitoring data collection failed: {e}")
 
         return monitoring_data
 
     async def _display_monitoring_dashboard(self, data: Dict[str, Any], args):
-        """显示监控面板"""
+        """Display dashboard"""
         metrics = args.metrics.split(',') if args.metrics != 'all' else ['connection', 'data_flow', 'quality', 'performance']
 
         if 'connection' in metrics:
             connection_data = data.get('connection', {})
-            print(f"\\n🔌 连接指标:")
+            print(f"\n🔌 Connection Metrics:")
             for key, value in connection_data.items():
                 print(f"  {key}: {value}")
 
         if 'data_flow' in metrics:
             data_flow = data.get('data_flow', {})
-            print(f"\\n📊 数据流指标:")
+            print(f"\n📊 Data Flow Metrics:")
             for key, value in data_flow.items():
                 print(f"  {key}: {value}")
 
         if 'quality' in metrics:
             quality_data = data.get('quality', {})
-            print(f"\\n🔍 质量指标:")
+            print(f"\n🔍 Quality Metrics:")
             for key, value in quality_data.items():
                 print(f"  {key}: {value}")
 
         if 'performance' in metrics:
             performance_data = data.get('performance', {})
-            print(f"\\n⚡ 性能指标:")
+            print(f"\n⚡ Performance Metrics:")
             for key, value in performance_data.items():
                 print(f"  {key}: {value}")
 
     def _get_mock_monitoring_data(self) -> Dict[str, Any]:
-        """获取模拟监控数据"""
+        """Get mock monitoring data"""
         return {
             "connection": {
-                "状态": "🟢 已连接",
-                "延迟": "25ms",
-                "稳定性": "99.8%",
-                "重连次数": "0"
+                "Status": "🟢 Connected",
+                "Latency": "25ms",
+                "Stability": "99.8%",
+                "Reconnections": "0"
             },
             "data_flow": {
-                "实时数据": "🟢 正常",
-                "数据速率": "15 msg/s",
-                "队列长度": "2",
-                "丢包率": "0.01%"
+                "Real-time Data": "🟢 Normal",
+                "Data Rate": "15 msg/s",
+                "Queue Length": "2",
+                "Loss Rate": "0.01%"
             },
             "quality": {
-                "数据完整性": "99.9%",
-                "时效性": "🟢 正常",
-                "准确性": "99.5%",
-                "异常数据": "0.1%"
+                "Completeness": "99.9%",
+                "Timeliness": "🟢 Normal",
+                "Accuracy": "99.5%",
+                "Anomalies": "0.1%"
             },
             "performance": {
-                "CPU使用": "15%",
-                "内存使用": "245MB",
-                "网络IO": "正常",
-                "响应时间": "45ms"
+                "CPU Usage": "15%",
+                "Memory Usage": "245MB",
+                "Network IO": "Normal",
+                "Response Time": "45ms"
             }
         }
 
     async def _basic_tradingview_connect(self, args):
-        """基础TradingView连接"""
-        print(f"🔌 基础模式连接TradingView")
-        print(f"✅ 模拟连接成功")
-        print(f"💡 提示: 安装增强模块获得完整功能")
+        """Basic connect"""
+        print(f"🔌 Connecting in Basic Mode")
+        print(f"✅ Mock connection successful")
+        print(f"💡 Hint: Install enhanced modules for full features")
 
     async def _basic_status_display(self, args):
-        """基础状态显示"""
-        print(f"\\n📋 基础状态:")
-        print(f"  增强功能: ❌ 不可用")
-        print(f"  基础功能: ✅ 可用")
-        print(f"  模拟模式: 🟢 运行中")
+        """Basic status"""
+        print(f"\n📋 Basic Status:")
+        print(f"  Enhanced Features: ❌ Unavailable")
+        print(f"  Basic Features: ✅ Available")
+        print(f"  Mock Mode: 🟢 Running")
 
-    # ==================== 占位符方法 ====================
+    # ==================== Placeholder Methods ====================
 
     async def _show_connection_errors(self, args):
-        """显示连接错误的详细信息"""
+        """Show detailed connection error info"""
         logger = logging.getLogger(__name__)
 
-        print("\n🔍 连接诊断信息:")
+        print("\n🔍 Connection Diagnostic Information:")
 
-        # 检查网络连接
+        # Check network
         try:
             import socket
             import urllib.request
 
-            # 测试基本网络连接
             try:
                 urllib.request.urlopen('https://www.tradingview.com', timeout=5)
-                print("  ✅ 网络连接正常 - 可以访问TradingView官网")
+                print("  ✅ Network Connection OK - TradingView website reachable")
             except Exception as e:
-                print(f"  ❌ 网络连接异常 - {e}")
-                logger.debug(f"🐛 网络测试失败: {e}")
+                print(f"  ❌ Network Connection Error - {e}")
+                logger.debug(f"🐛 Network test failed: {e}")
         except ImportError:
-            print("  ⚠️ 无法进行网络连接测试")
+            print("  ⚠️ Network test unavailable")
 
-        # 检查认证配置
+        # Check auth
         try:
             from tradingview.auth_config import get_auth_manager
             auth_manager = get_auth_manager()
@@ -934,38 +931,37 @@ class TradingViewCLI:
             if auth_manager.auth_config and auth_manager.auth_config.accounts:
                 accounts = auth_manager.auth_config.accounts
                 active_accounts = [acc for acc in accounts if acc.is_active]
-                print(f"  📋 已配置账号数量: {len(accounts)}")
-                print(f"  🔑 活跃账号数量: {len(active_accounts)}")
+                print(f"  📋 Configured Accounts: {len(accounts)}")
+                print(f"  🔑 Active Accounts: {len(active_accounts)}")
 
                 if active_accounts:
                     for account in active_accounts:
                         has_token = bool(account.session_token)
                         has_signature = bool(account.signature)
-                        print(f"  🔐 账号 '{account.name}': Token={has_token}, Signature={has_signature}")
+                        print(f"  🔐 Account '{account.name}': Token={has_token}, Signature={has_signature}")
 
                         if args.debug:
-                            # 显示token的基本信息（不泄露完整token）
                             if account.session_token:
                                 token_preview = account.session_token[:20] + "..." + account.session_token[-10:] if len(account.session_token) > 30 else account.session_token
-                                logger.debug(f"🐛 Token预览 - {account.name}: {token_preview}")
-                                logger.debug(f"🐛 Token长度 - {account.name}: {len(account.session_token)}")
+                                logger.debug(f"🐛 Token Preview - {account.name}: {token_preview}")
+                                logger.debug(f"🐛 Token Length - {account.name}: {len(account.session_token)}")
 
                             if account.signature:
                                 sig_preview = account.signature[:15] + "..." + account.signature[-10:] if len(account.signature) > 25 else account.signature
-                                logger.debug(f"🐛 Signature预览 - {account.name}: {sig_preview}")
-                                logger.debug(f"🐛 Signature长度 - {account.name}: {len(account.signature)}")
+                                logger.debug(f"🐛 Signature Preview - {account.name}: {sig_preview}")
+                                logger.debug(f"🐛 Signature Length - {account.name}: {len(account.signature)}")
 
-                        logger.debug(f"🐛 账号详情 - {account.name}: {vars(account)}")
+                        logger.debug(f"🐛 Account details - {account.name}: {vars(account)}")
                 else:
-                    print("  ⚠️ 没有活跃的认证账号")
+                    print("  ⚠️ No active authentication accounts")
             else:
-                print("  ❌ 没有配置任何TradingView账号")
+                print("  ❌ No TradingView accounts configured")
         except Exception as e:
-            print(f"  ❌ 认证配置检查失败: {e}")
-            logger.debug(f"🐛 认证检查异常: {e}")
+            print(f"  ❌ Auth configuration check failed: {e}")
+            logger.debug(f"🐛 Auth check exception: {e}")
 
-        # 检查依赖包
-        print("\n📦 依赖包检查:")
+        # Check dependencies
+        print("\n📦 Dependency Package Check:")
         dependencies = [
             'websockets', 'python-socks', 'psutil',
             'asyncio', 'json', 'dataclasses'
@@ -976,57 +972,58 @@ class TradingViewCLI:
                 __import__(dep.replace('-', '_'))
                 print(f"  ✅ {dep}")
             except ImportError:
-                print(f"  ❌ {dep} - 未安装")
-                logger.debug(f"🐛 缺失依赖: {dep}")
+                print(f"  ❌ {dep} - Not installed")
+                logger.debug(f"🐛 Missing dependency: {dep}")
 
         if args.debug:
-            print("\n🐛 详细调试信息:")
+            print("\n🐛 Detailed Debug Info:")
             if self.tradingview_manager:
-                print(f"  - 连接管理器: {type(self.tradingview_manager.connection_manager).__name__}")
-                print(f"  - 连接数量: {len(self.tradingview_manager.connection_manager.connections)}")
-                print(f"  - 连接状态: {dict(self.tradingview_manager.connection_manager.connection_status)}")
+                print(f"  - Connection Manager: {type(self.tradingview_manager.connection_manager).__name__}")
+                print(f"  - Connection Count: {len(self.tradingview_manager.connection_manager.connections)}")
+                print(f"  - Manager Status: {dict(self.tradingview_manager.connection_manager.connection_status)}")
 
-        print("\n💡 建议排查步骤:")
-        print("  1. 检查网络连接是否正常")
-        print("  2. 确认TradingView认证信息是否正确")
-        print("  3. 验证所有依赖包是否已安装")
-        print("  4. 尝试使用 --debug 参数获取更多信息")
-        print("  5. 检查防火墙是否阻止WebSocket连接")
+        print("\n💡 Suggested Troubleshooting Steps:")
+        print("  1. Verify network connection")
+        print("  2. Confirm TradingView authentication info is correct")
+        print("  3. Ensure all dependency packages are installed")
+        print("  4. Try with --debug flag for more information")
+        print("  5. Check if firewall blocks WebSocket connections")
 
-        print("\n📖 增强客户端说明:")
-        print("  🎯 作用: 在基础TradingView客户端上增加企业级功能")
-        print("  ⚡ 功能: 自动重连、连接监控、健康检查、性能统计")
-        print("  🛡️ 优势: 更稳定的连接、更好的错误处理、更详细的诊断")
-        print("  🔄 智能重连: 连接断开时自动重连，支持指数退避策略")
-        print("  📊 状态监控: 实时监控连接质量、延迟、错误率等指标")
-        print("  🎛️ 消息处理: 批量处理、优先级队列、智能缓存")
+        print("\n📖 Enhanced Client Description:")
+        print("  🎯 Purpose: Adds enterprise-grade features to basic TradingView client")
+        print("  ⚡ Features: Auto-reconnect, connection monitoring, health checks, performance stats")
+        print("  🛡️ Benefits: More stable connections, better error handling, detailed diagnostics")
+        print("  🔄 Smart Reconnect: Auto-reconnect with exponential backoff on disconnect")
+        print("  📊 Monitoring: Real-time monitoring of quality, latency, error rates, etc.")
+        print("  🎛️ Message Handling: Batch processing, priority queues, smart caching")
 
         if args.debug:
-            print("\n🔍 当前连接问题分析:")
-            print("  📡 WebSocket物理连接: ✅ 正常 (状态1=OPEN)")
-            print("  🔐 TradingView认证: ❌ 失败 (token被服务器拒绝)")
-            print("  🎯 根本原因: 需要有效的TradingView会话认证")
+            print("\n🔍 Current Issue Analysis:")
+            print("  📡 WebSocket Physical Connection: ✅ OK (State 1=OPEN)")
+            print("  🔐 TradingView Auth: ❌ FAILED (token rejected by server)")
+            print("  🎯 Root Cause: Valid TradingView session authentication required")
+
     async def _basic_tradingview_disconnect(self, args): pass
     async def _show_disconnect_summary(self, args): pass
     async def _display_performance_metrics(self, status_info, args): pass
     async def _display_quality_metrics(self, status_info, args): pass
     async def _list_data(self, args): pass
     async def _export_data(self, args):
-        """导出数据"""
-        print(f"\\n📤 导出数据:")
-        print(f"  品种: {args.symbol}")
-        print(f"  输出文件: {args.output}")
+        """Export data"""
+        print(f"\n📤 Exporting Data:")
+        print(f"  Symbol: {args.symbol}")
+        print(f"  Output File: {args.output}")
 
         try:
             if self.tradingview_manager:
-                # 首先获取数据
+                # Fetch data first
                 data = await self.tradingview_manager.get_historical_data(
                     symbol=args.symbol,
                     timeframe=getattr(args, 'timeframe', '15m'),
                     count=getattr(args, 'count', 100)
                 )
 
-                # 准备导出数据
+                # Prepare export
                 if data and hasattr(data, 'data') and data.data:
                     export_data = {
                         'symbol': data.symbol,
@@ -1037,22 +1034,22 @@ class TradingViewCLI:
                         'data': data.data
                     }
 
-                    # 导出到文件
+                    # Export to file
                     output_path = args.output or f"{args.symbol}_{args.timeframe}_export.json"
                     with open(output_path, 'w', encoding='utf-8') as f:
                         json.dump(export_data, f, indent=2, default=str, ensure_ascii=False)
 
-                    print(f"  ✅ 导出成功: {output_path}")
-                    print(f"  📊 数据量: {len(data.data)} 条")
-                    print(f"  🏆 质量评分: {data.quality_score:.3f}")
+                    print(f"  ✅ Export successful: {output_path}")
+                    print(f"  📊 Records: {len(data.data)}")
+                    print(f"  🏆 Quality Score: {data.quality_score:.3f}")
                 else:
-                    print(f"  ❌ 没有数据可导出")
+                    print(f"  ❌ No data available for export")
 
             else:
-                print(f"  ❌ 增强功能不可用")
+                print(f"  ❌ Enhanced features unavailable")
 
         except Exception as e:
-            print(f"  ❌ 导出失败: {e}")
+            print(f"  ❌ Export failed: {e}")
     async def _import_data(self, args): pass
     async def _cleanup_data(self, args): pass
     async def _manage_cache(self, args): pass
@@ -1068,173 +1065,173 @@ class TradingViewCLI:
 
 
 def create_parser():
-    """创建命令行解析器"""
+    """Create command line parser"""
     parser = argparse.ArgumentParser(
-        description="TradingView CLI - 数据源引擎专业命令行工具",
+        description="TradingView CLI - Professional Command Line Interface for TradingView Data Engine",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-示例:
-  # 连接管理
+Examples:
+  # Connection Management
   python -m tradingview.cli connect --symbols BTCUSDT,ETHUSDT --timeframes 15m,1h
   python -m tradingview.cli status --symbols --performance --quality
   python -m tradingview.cli disconnect --graceful --backup-data
 
-  # 数据管理
+  # Data Management
   python -m tradingview.cli data --action fetch --symbol BTCUSDT --timeframe 15m --count 100
   python -m tradingview.cli data --action export --symbol BTCUSDT --output data.json
 
-  # 质量检查
+  # Quality Check
   python -m tradingview.cli quality --check-type comprehensive --symbols BTCUSDT --report
 
-  # 数据同步
+  # Data Sync
   python -m tradingview.cli sync --sync-type incremental --symbols BTCUSDT,ETHUSDT
 
-  # 数据备份
+  # Data Backup
   python -m tradingview.cli backup --backup-type full --compress --encrypt
 
-  # 实时监控
+  # Real-time Monitoring
   python -m tradingview.cli monitor --metrics all --interval 3
 
-  # 单个币种实时流
+  # Real-time Stream for Single Symbol
   python -m tradingview.cli stream --symbols BTCUSDT --timeframe 1m
 
-  # 多个币种实时流
+  # Real-time Stream for Multiple Symbols
   python -m tradingview.cli stream --symbols BTCUSDT,ETHUSDT --timeframe 15m
 
-  # 查看stream命令帮助
+  # View help for stream command
   python -m tradingview.cli stream --help
         """
     )
 
-    # 全局参数
-    parser.add_argument('--verbose', '-v', action='store_true', help='详细输出')
-    parser.add_argument('--debug', action='store_true', help='启用调试模式（显示详细调试信息）')
+    # Global Parameters
+    parser.add_argument('--verbose', '-v', action='store_true', help='Verbose output')
+    parser.add_argument('--debug', action='store_true', help='Enable debug mode')
     parser.add_argument('--log-level', choices=['CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG'],
-                       default='INFO', help='设置日志级别')
-    parser.add_argument('--config-dir', default='tradingview', help='配置目录路径')
-    parser.add_argument('--format', choices=['text', 'json', 'csv'], default='text', help='输出格式')
+                       default='INFO', help='Set log level')
+    parser.add_argument('--config-dir', default='tradingview', help='Configuration directory path')
+    parser.add_argument('--format', choices=['text', 'json', 'csv'], default='text', help='Output format')
 
-    # 子命令
-    subparsers = parser.add_subparsers(dest='command', help='可用命令')
+    # Subcommands
+    subparsers = parser.add_subparsers(dest='command', help='Available commands')
 
-    # connect 命令
-    connect_parser = subparsers.add_parser('connect', help='连接TradingView')
-    connect_parser.add_argument('--symbols', '-s', help='品种列表(逗号分隔)')
-    connect_parser.add_argument('--timeframes', '-t', default='15m', help='时间框架列表(逗号分隔)')
-    connect_parser.add_argument('--real-time', action='store_true', help='启用实时数据')
-    connect_parser.add_argument('--quality-check', action='store_true', default=True, help='启用质量检查')
-    connect_parser.add_argument('--auto-reconnect', action='store_true', default=True, help='自动重连')
-    connect_parser.add_argument('--enable-cache', action='store_true', default=True, help='启用缓存')
-    connect_parser.add_argument('--enable-backup', action='store_true', help='启用备份')
-    connect_parser.add_argument('--test-data', action='store_true', help='测试数据获取')
-    connect_parser.add_argument('--health-monitor', action='store_true', help='启动健康监控')
-    connect_parser.add_argument('--monitor', action='store_true', help='进入监控模式')
+    # connect command
+    connect_parser = subparsers.add_parser('connect', help='Connect to TradingView')
+    connect_parser.add_argument('--symbols', '-s', help='Symbol list (comma separated)')
+    connect_parser.add_argument('--timeframes', '-t', default='15m', help='Timeframe list (comma separated)')
+    connect_parser.add_argument('--real-time', action='store_true', help='Enable real-time data')
+    connect_parser.add_argument('--quality-check', action='store_true', default=True, help='Enable quality check')
+    connect_parser.add_argument('--auto-reconnect', action='store_true', default=True, help='Auto reconnect')
+    connect_parser.add_argument('--enable-cache', action='store_true', default=True, help='Enable cache')
+    connect_parser.add_argument('--enable-backup', action='store_true', help='Enable backup')
+    connect_parser.add_argument('--test-data', action='store_true', help='Test data fetch')
+    connect_parser.add_argument('--health-monitor', action='store_true', help='Start health monitor')
+    connect_parser.add_argument('--monitor', action='store_true', help='Enter monitor mode')
 
-    # disconnect 命令
-    disconnect_parser = subparsers.add_parser('disconnect', help='断开连接')
-    disconnect_parser.add_argument('--graceful', action='store_true', default=True, help='优雅断开')
-    disconnect_parser.add_argument('--save-cache', action='store_true', default=True, help='保存缓存')
-    disconnect_parser.add_argument('--backup-data', action='store_true', help='备份数据')
+    # disconnect command
+    disconnect_parser = subparsers.add_parser('disconnect', help='Disconnect from TradingView')
+    disconnect_parser.add_argument('--graceful', action='store_true', default=True, help='Graceful disconnect')
+    disconnect_parser.add_argument('--save-cache', action='store_true', default=True, help='Save cache')
+    disconnect_parser.add_argument('--backup-data', action='store_true', help='Backup data')
 
-    # status 命令
-    status_parser = subparsers.add_parser('status', help='查看状态')
-    status_parser.add_argument('--symbols', action='store_true', help='显示品种状态')
-    status_parser.add_argument('--performance', action='store_true', help='显示性能指标')
-    status_parser.add_argument('--quality', action='store_true', help='显示质量指标')
-    status_parser.add_argument('--detailed', action='store_true', help='详细状态信息')
+    # status command
+    status_parser = subparsers.add_parser('status', help='View status')
+    status_parser.add_argument('--symbols', action='store_true', help='Show symbol status')
+    status_parser.add_argument('--performance', action='store_true', help='Show performance metrics')
+    status_parser.add_argument('--quality', action='store_true', help='Show quality metrics')
+    status_parser.add_argument('--detailed', action='store_true', help='Show detailed status')
 
-    # data 命令
-    data_parser = subparsers.add_parser('data', help='数据管理')
+    # data command
+    data_parser = subparsers.add_parser('data', help='Data Management')
     data_parser.add_argument('--action', required=True,
                             choices=['fetch', 'list', 'export', 'import', 'cleanup', 'cache'],
-                            help='数据操作')
-    data_parser.add_argument('--symbol', '-s', help='交易品种')
-    data_parser.add_argument('--timeframe', '-t', default='15m', help='时间框架')
-    data_parser.add_argument('--count', type=int, default=100, help='数据数量')
-    data_parser.add_argument('--from-date', help='开始日期')
-    data_parser.add_argument('--to-date', help='结束日期')
-    data_parser.add_argument('--show-sample', action='store_true', help='显示数据样本')
-    data_parser.add_argument('--save', action='store_true', help='保存数据')
-    data_parser.add_argument('--output', '-o', help='输出文件路径')
+                            help='Data operation action')
+    data_parser.add_argument('--symbol', '-s', help='Trading symbol')
+    data_parser.add_argument('--timeframe', '-t', default='15m', help='Timeframe')
+    data_parser.add_argument('--count', type=int, default=100, help='Record count')
+    data_parser.add_argument('--from-date', help='Start date')
+    data_parser.add_argument('--to-date', help='End date')
+    data_parser.add_argument('--show-sample', action='store_true', help='Show data sample')
+    data_parser.add_argument('--save', action='store_true', help='Save data')
+    data_parser.add_argument('--output', '-o', help='Output file path')
 
-    # quality 命令
-    quality_parser = subparsers.add_parser('quality', help='数据质量检查')
+    # quality command
+    quality_parser = subparsers.add_parser('quality', help='Data quality check')
     quality_parser.add_argument('--check-type', choices=['basic', 'comprehensive', 'realtime'],
-                               default='basic', help='检查类型')
-    quality_parser.add_argument('--symbols', '-s', help='品种列表(逗号分隔)')
-    quality_parser.add_argument('--timeframes', '-t', help='时间框架列表(逗号分隔)')
-    quality_parser.add_argument('--time-range', default='1d', help='检查时间范围')
-    quality_parser.add_argument('--report', action='store_true', help='生成质量报告')
-    quality_parser.add_argument('--auto-fix', action='store_true', help='自动修复问题')
-    quality_parser.add_argument('--threshold', type=float, default=0.8, help='质量阈值')
+                               default='basic', help='Check type')
+    quality_parser.add_argument('--symbols', '-s', help='Symbol list (comma separated)')
+    quality_parser.add_argument('--timeframes', '-t', help='Timeframe list (comma separated)')
+    quality_parser.add_argument('--time-range', default='1d', help='Check time range')
+    quality_parser.add_argument('--report', action='store_true', help='Generate quality report')
+    quality_parser.add_argument('--auto-fix', action='store_true', help='Auto fix issues')
+    quality_parser.add_argument('--threshold', type=float, default=0.8, help='Quality threshold')
 
-    # sync 命令
-    sync_parser = subparsers.add_parser('sync', help='数据同步')
+    # sync command
+    sync_parser = subparsers.add_parser('sync', help='Data Synchronization')
     sync_parser.add_argument('--sync-type', choices=['full', 'incremental', 'realtime'],
-                            default='incremental', help='同步类型')
-    sync_parser.add_argument('--symbols', '-s', help='品种列表(逗号分隔)')
-    sync_parser.add_argument('--timeframes', '-t', help='时间框架列表(逗号分隔)')
-    sync_parser.add_argument('--time-range', default='1d', help='同步时间范围')
-    sync_parser.add_argument('--batch-size', type=int, default=1000, help='批处理大小')
-    sync_parser.add_argument('--parallel', action='store_true', help='并行同步')
-    sync_parser.add_argument('--force', action='store_true', help='强制同步')
-    sync_parser.add_argument('--monitor', action='store_true', help='监控同步进度')
+                            default='incremental', help='Sync type')
+    sync_parser.add_argument('--symbols', '-s', help='Symbol list (comma separated)')
+    sync_parser.add_argument('--timeframes', '-t', help='Timeframe list (comma separated)')
+    sync_parser.add_argument('--time-range', default='1d', help='Sync time range')
+    sync_parser.add_argument('--batch-size', type=int, default=1000, help='Batch size')
+    sync_parser.add_argument('--parallel', action='store_true', help='Parallel sync')
+    sync_parser.add_argument('--force', action='store_true', help='Force sync')
+    sync_parser.add_argument('--monitor', action='store_true', help='Monitor sync progress')
 
-    # backup 命令
-    backup_parser = subparsers.add_parser('backup', help='数据备份')
+    # backup command
+    backup_parser = subparsers.add_parser('backup', help='Data Backup')
     backup_parser.add_argument('--backup-type', choices=['full', 'incremental', 'differential'],
-                              default='incremental', help='备份类型')
-    backup_parser.add_argument('--symbols', '-s', help='品种列表(逗号分隔)')
-    backup_parser.add_argument('--timeframes', '-t', help='时间框架列表(逗号分隔)')
-    backup_parser.add_argument('--output', '-o', help='备份输出路径')
-    backup_parser.add_argument('--compress', action='store_true', help='压缩备份')
-    backup_parser.add_argument('--encrypt', action='store_true', help='加密备份')
-    backup_parser.add_argument('--verify', action='store_true', help='验证备份')
+                              default='incremental', help='Backup type')
+    backup_parser.add_argument('--symbols', '-s', help='Symbol list (comma separated)')
+    backup_parser.add_argument('--timeframes', '-t', help='Timeframe list (comma separated)')
+    backup_parser.add_argument('--output', '-o', help='Backup output path')
+    backup_parser.add_argument('--compress', action='store_true', help='Compress backup')
+    backup_parser.add_argument('--encrypt', action='store_true', help='Encrypt backup')
+    backup_parser.add_argument('--verify', action='store_true', help='Verify backup')
 
-    # monitor 命令
-    monitor_parser = subparsers.add_parser('monitor', help='实时监控')
+    # monitor command
+    monitor_parser = subparsers.add_parser('monitor', help='Real-time Monitoring')
     monitor_parser.add_argument('--metrics', default='all',
-                               help='监控指标(connection,data_flow,quality,performance)')
-    monitor_parser.add_argument('--interval', type=int, default=5, help='刷新间隔(秒)')
-    monitor_parser.add_argument('--no-clear', action='store_true', help='不清屏')
-    monitor_parser.add_argument('--save-log', help='保存监控日志')
-    monitor_parser.add_argument('--alert-threshold', type=float, default=0.8, help='告警阈值')
+                               help='Metrics to monitor (connection,data_flow,quality,performance)')
+    monitor_parser.add_argument('--interval', type=int, default=5, help='Refresh interval (s)')
+    monitor_parser.add_argument('--no-clear', action='store_true', help='No clear screen')
+    monitor_parser.add_argument('--save-log', help='Save monitor log')
+    monitor_parser.add_argument('--alert-threshold', type=float, default=0.8, help='Alert threshold')
 
-    # stream 命令 - 实时数据流监控
-    stream_parser = subparsers.add_parser('stream', help='持续实时数据流监控')
+    # stream command - real-time data flow monitor
+    stream_parser = subparsers.add_parser('stream', help='Continuous real-time data stream monitoring')
     stream_parser.add_argument('--symbols', '-s', required=True,
-                              help='币种列表(逗号分隔), 例如: BTCUSDT,ETHUSDT')
+                              help='Symbol list (comma separated), e.g., BTCUSDT,ETHUSDT')
     stream_parser.add_argument('--timeframe', '-t', default='1m',
-                              help='时间框架, 例如: 1m, 5m, 15m, 1h, 4h, 1d')
-    stream_parser.add_argument('--output', '-o', help='保存数据流到文件')
+                              help='Timeframe, e.g., 1m, 5m, 15m, 1h, 4h, 1d')
+    stream_parser.add_argument('--output', '-o', help='Save data stream to file')
     stream_parser.add_argument('--format', choices=['table', 'json', 'csv'],
-                              default='table', help='输出格式')
+                              default='table', help='Output format')
 
     return parser
 
 
 def setup_logging(args):
-    """设置日志配置"""
-    # 根据参数设置日志级别
+    """Setup logging configuration"""
+    # Set log level
     if args.debug:
         log_level = logging.DEBUG
     else:
         log_level = getattr(logging, args.log_level.upper(), logging.INFO)
 
-    # 设置详细的日志格式
+    # Set log format
     if args.debug or args.verbose:
         log_format = '%(asctime)s - %(name)s - [%(filename)s:%(funcName)s():%(lineno)d:%(threadName)s] - %(levelname)s - %(message)s'
     else:
         log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 
-    # 重新配置根日志记录器
+    # Reconfigure root logger
     logging.basicConfig(
         level=log_level,
         format=log_format,
-        force=True  # 强制重新配置
+        force=True
     )
 
-    # 设置特定模块的日志级别
+    # Set specific log levels
     if args.debug:
         logging.getLogger('tradingview').setLevel(logging.DEBUG)
         logging.getLogger('websockets').setLevel(logging.DEBUG)
@@ -1242,29 +1239,29 @@ def setup_logging(args):
 
     logger = logging.getLogger(__name__)
     if args.debug:
-        logger.debug(f"🐛 调试模式已启用 - 日志级别: {log_level}")
-        logger.debug(f"🐛 命令行参数: {vars(args)}")
+        logger.debug(f"🐛 Debug mode enabled - Log Level: {log_level}")
+        logger.debug(f"🐛 Command Arguments: {vars(args)}")
 
     return logger
 
 async def main():
-    """主函数"""
+    """Main Function"""
     parser = create_parser()
     args = parser.parse_args()
 
-    # 设置日志配置
+    # Setup logging
     logger = setup_logging(args)
 
     if not args.command:
         parser.print_help()
         return
 
-    print("📡 TradingView CLI - 数据源引擎专业命令行工具")
+    print("📡 TradingView CLI - Professional Command Line Interface")
     print("=" * 60)
 
     if args.debug:
-        print(f"🐛 调试模式已启用 - 日志级别: {args.log_level}")
-        print(f"🐛 详细输出: {args.verbose}")
+        print(f"🐛 Debug mode enabled - Log Level: {args.log_level}")
+        print(f"🐛 Verbose output: {args.verbose}")
         print("-" * 60)
 
     cli = TradingViewCLI()
@@ -1289,13 +1286,13 @@ async def main():
         elif args.command == 'stream':
             await cli.stream_command(args)
         else:
-            print(f"❌ 未知命令: {args.command}")
+            print(f"❌ Unknown command: {args.command}")
             parser.print_help()
 
     except KeyboardInterrupt:
-        print("\n⏹️ 用户中断操作")
+        print("\n⏹️ User interrupted operation")
     except Exception as e:
-        print(f"❌ 执行失败: {e}")
+        print(f"❌ Execution failed: {e}")
         if args.verbose:
             import traceback
             traceback.print_exc()

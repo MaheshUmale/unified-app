@@ -1,430 +1,210 @@
-#!/usr/bin/env python3
-"""
-高级历史K线数据获取工具
-支持命令行参数、自定义时间范围和多种数据导出格式
-
-使用示例：
-python advanced_historical_klines.py --symbol=BINANCE:BTCUSDT --timeframe=60 --days=30
-python advanced_historical_klines.py --symbol=NASDAQ:AAPL --timeframe=D --from=2023-01-01 --to=2023-12-31
-
-
-python -m tradingview.examples.advanced_historical_klines --symbol=BINANCE:BTCUSDT --timeframe=60 --days=7 --debug
-"""
-import asyncio
-import argparse
-import json
-import csv
 import os
 import sys
+import asyncio
 import time
+import json
 from datetime import datetime
-from pprint import pprint
-
-# 添加项目根目录到系统路径 - 必须在导入tradingview之前
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
-
-# 导入dotenv并加载环境变量
 from dotenv import load_dotenv
-load_dotenv()
-print('正在从 .env 加载配置...')
 
-# 导入tradingview模块
-from tradingview import Client, get_indicator
+# Add project root to path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
-# 调试模式
-DEBUG = True
+from tradingview.client import TradingViewClient
 
-def debug_print(*args):
-    """调试打印函数"""
-    if DEBUG:
-        print("[调试]", *args)
+# Configuration
+config = {
+    'symbol': 'BINANCE:BTCUSDT',  # Symbol
+    'timeframe': '60',           # Timeframe ('1', '5', '15', '60', 'D', etc.)
+    'range': 300,                # Number of K-lines
+    'format': 'json',            # Output format: 'json' or 'csv'
+    'output': 'btc_data.json',   # Output file
+    'indicators': True,          # Whether to add indicators
+    'debug': True                # Whether to enable debug output
+}
 
-# 解析命令行参数
-def parse_args():
-    """解析命令行参数"""
-    parser = argparse.ArgumentParser(description='高级历史K线数据获取工具')
-    parser.add_argument('--symbol', type=str, default='BINANCE:BTCUSDT', help='交易对 (例如: BINANCE:BTCUSDT)')
-    parser.add_argument('--timeframe', type=str, default='60', help='时间框架 (例如: 60为1小时, D为日线)')
-    parser.add_argument('--range', type=int, default=500, help='获取的K线数量')
-    parser.add_argument('--output', type=str, default='data', help='输出目录')
-    parser.add_argument('--format', type=str, default='json', choices=['json', 'csv'], help='输出格式')
-    parser.add_argument('--file', type=str, help='输出文件名 (不包含扩展名)')
-    parser.add_argument('--indicators', type=str, default='false', choices=['true', 'false'], help='是否包含指标数据')
-    parser.add_argument('--days', type=int, help='获取最近多少天的数据')
-    parser.add_argument('--from', dest='from_date', type=str, help='开始日期 (YYYY-MM-DD)')
-    parser.add_argument('--to', dest='to_date', type=str, help='结束日期 (YYYY-MM-DD)')
-    parser.add_argument('--token', type=str, help='TradingView会话ID')
-    parser.add_argument('--signature', type=str, help='TradingView签名')
-    parser.add_argument('--debug', action='store_true', help='启用调试模式')
-
-    return parser.parse_args()
-
-# 处理日期参数
-def process_date_params(args):
-    """处理日期相关参数"""
-    config = {}
-
-    # 如果指定了天数
-    if args.days:
-        config['to'] = int(time.time())
-        config['from'] = config['to'] - (args.days * 86400)
-    else:
-        # 如果指定了具体的开始/结束日期
-        if args.from_date:
-            config['from'] = int(datetime.strptime(args.from_date, '%Y-%m-%d').timestamp())
-
-        if args.to_date:
-            config['to'] = int(datetime.strptime(args.to_date, '%Y-%m-%d').timestamp())
-        else:
-            config['to'] = int(time.time())
-
-    return config
+def debug_print(msg):
+    if config['debug']:
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
 
 async def main():
-    """主函数"""
-    # 解析命令行参数
-    args = parse_args()
+    """Main function"""
+    load_dotenv()
 
-    # 设置调试模式
-    global DEBUG
-    DEBUG = args.debug
+    # Credentials
+    session = os.getenv('TV_SESSION')
+    signature = os.getenv('TV_SIGNATURE')
 
-    # 处理日期参数
-    date_config = process_date_params(args)
-
-    # 合并所有配置
-    config = {
-        'symbol': args.symbol,
-        'timeframe': args.timeframe,
-        'range': args.range,
-        'output_dir': args.output,
-        'format': args.format,
-        'include_indicators': args.indicators.lower() == 'true',
-        'file_name': args.file,
-        'token': args.token,
-        'signature': args.signature,
-        **date_config
-    }
-
-    # 如果未指定文件名，生成一个默认文件名
-    if not config['file_name']:
-        symbol = config['symbol'].replace(':', '_')
-        timeframe = config['timeframe']
-        date_str = datetime.now().strftime('%Y-%m-%d')
-        config['file_name'] = f"{symbol}_{timeframe}_{date_str}"
-
-    # 确保输出目录存在
-    os.makedirs(config['output_dir'], exist_ok=True)
-
-    # 显示配置信息
-    print('=== 历史K线数据获取工具 ===')
-    print('配置信息:')
-    print(f"交易对: {config['symbol']}")
-    print(f"时间框架: {config['timeframe']}")
-    if 'from' in config:
-        print(f"开始时间: {datetime.fromtimestamp(config['from']).strftime('%Y-%m-%d %H:%M:%S')}")
-    if 'to' in config:
-        print(f"结束时间: {datetime.fromtimestamp(config['to']).strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"输出格式: {config['format']}")
-    print(f"输出文件: {os.path.join(config['output_dir'], config['file_name'] + '.' + config['format'])}")
-    print('============================')
-
-    # 从环境变量或参数获取认证信息
-    session = os.environ.get('TV_SESSION')
-    signature = os.environ.get('TV_SIGNATURE')
-
-    # 如果环境变量中没有，则使用命令行参数
-    if not session and config['token']:
-        session = config['token']
-    if not signature and config['signature']:
-        signature = config['signature']
-
-    # 检查是否有足够的认证信息
     if not session or not signature:
-        print("错误: 需要提供TradingView的认证信息。")
-        print("请设置环境变量TV_SESSION和TV_SIGNATURE，或者使用--token和--signature参数。")
+        print("Error: TradingView credentials required.")
+        print("Please set environment variables TV_SESSION and TV_SIGNATURE.")
         return
 
-    print(f"使用Token: {session}")
-    print(f"使用Signature: {signature}")
+    debug_print(f"Using Token: {session[:10]}...")
+    debug_print(f"Using Signature: {signature[:10]}...")
 
     try:
-        # 创建客户端 - 修改为使用命名参数
-        debug_print("正在创建TradingView客户端...")
-        client = Client(
-            token=session,
-            signature=signature,
-            DEBUG=DEBUG
-        )
+        # Create client
+        debug_print("Creating TradingView client...")
+        client = TradingViewClient()
 
-        # 连接到TradingView
-        debug_print("正在连接到TradingView服务器...")
-        await client.connect()
-        debug_print("连接成功！")
+        # Connect
+        debug_print("Connecting to TradingView server...")
+        await client.connect(session=session, signature=signature)
+        debug_print("Connection successful!")
 
-        # 创建Chart会话
-        debug_print("创建Chart会话...")
-        chart = client.Session.Chart()
+        # Create Chart session
+        debug_print("Creating Chart session...")
+        chart = client.new_chart()
 
-        # 指标数据存储
+        # Indicator data storage
         indicators_data = {}
 
-        # 处理错误
-        def on_error(*err):
-            print('错误:', *err)
-            asyncio.create_task(client.end())
+        # Event for data loaded
+        data_loaded = asyncio.Event()
 
-        chart.on_error(on_error)
+        # Handle errors
+        @chart.on_error
+        async def on_error(*err):
+            print('Error:', *err)
+            data_loaded.set()
 
-        # 设置超时任务 - 减少超时时间以便更快发现问题
-        timeout_task = asyncio.create_task(
-            asyncio.sleep(90)  # 减少超时时间为90秒
-        )
+        # Timeout task
+        async def timeout_task():
+            await asyncio.sleep(90)
+            if not data_loaded.is_set():
+                print("Operation timed out, maybe symbol doesn't exist or network issue")
+                data_loaded.set()
 
-        # 确保WebSocket连接已经建立
-        debug_print("等待WebSocket连接稳定...")
-        await asyncio.sleep(2)
+        asyncio.create_task(timeout_task())
 
-        # 设置市场
-        market_params = {
-            'timeframe': config['timeframe'],
-            'range': config['range']
-        }
-
-        # 添加时间范围参数
-        if 'to' in config:
-            market_params['to'] = config['to']
-        if 'from' in config:
-            market_params['from'] = config['from']
-
-        debug_print(f"设置市场参数: {market_params}")
-
-        # 使用set_market方法 - 修改为使用market_params
-        debug_print(f"设置交易对: {config['symbol']}")
-        chart.set_market(config['symbol'], market_params)
-
-        # 确保有足够的时间给set_market创建异步任务
+        # Ensure WebSocket connection is established
+        debug_print("Waiting for WebSocket connection to stabilize...")
         await asyncio.sleep(1)
 
-        # 数据加载完成标记
-        data_loaded = False
+        # Set market
+        debug_print(f"Setting market: {config['symbol']}")
+        chart.set_market(config['symbol'], timeframe=config['timeframe'], range=config['range'])
 
-        # 当交易对成功加载时
-        def on_symbol_loaded():
-            debug_print("交易对加载成功！")
-            print(f"交易对 \"{chart.infos.description}\" 数据加载中...")
+        # When symbol is loaded
+        @chart.on_symbol_loaded
+        async def on_symbol_loaded():
+            debug_print("Symbol loaded successfully!")
+            print(f"Symbol \"{chart.infos.description}\" loading data...")
 
-            # 如果需要添加指标
-            if config['include_indicators']:
-                asyncio.create_task(add_indicators())
+            # Add indicators if needed
+            if config['indicators']:
+                await add_indicators(chart, indicators_data)
 
-        chart.on_symbol_loaded(on_symbol_loaded)
-
-        # 当数据更新时
-        def on_update():
-            nonlocal data_loaded
-            if data_loaded:
+        # When data updates
+        @chart.on_update
+        async def on_update():
+            # Check data validity
+            if not chart.periods:
+                debug_print("Waiting for data...")
                 return
 
-            # 检查数据有效性
-            if not hasattr(chart, 'periods') or not chart.periods:
-                debug_print("等待数据...")
-                return
+            print(f"Fetched {len(chart.periods)} K-line records")
 
-            print(f"获取到 {len(chart.periods)} 条K线数据")
-
-            try:
-                # 处理数据，增加异常处理
-                kline_data = []
-                for period in chart.periods:
-                    try:
-                        # 确保所有必要属性存在
-                        candle = {
-                            'time': getattr(period, 'time', 0),
-                            'datetime': datetime.fromtimestamp(getattr(period, 'time', 0)).strftime('%Y-%m-%d %H:%M:%S'),
-                            'open': getattr(period, 'open', 0),
-                            'high': getattr(period, 'max', 0),
-                            'low': getattr(period, 'min', 0),
-                            'close': getattr(period, 'close', 0),
-                            'volume': getattr(period, 'volume', 0)
-                        }
-                        kline_data.append(candle)
-                    except Exception as e:
-                        print(f"处理K线数据时出错: {e}")
-                        continue
-
-                # 如果没有有效数据，返回
-                if not kline_data:
-                    print("没有获取到有效数据，继续等待...")
-                    return
-
-                # 按时间排序（从早到晚）
-                kline_data.sort(key=lambda x: x['time'])
-
-                # 显示第一条和最后条数据的时间范围
-                if kline_data:
-                    print(f"数据时间范围: {kline_data[0]['datetime']} 至 {kline_data[-1]['datetime']}")
-
-                # 如果有指标数据，合并到K线数据中
-                if indicators_data:
-                    for candle in kline_data:
-                        for indicator_name, indicator_values in indicators_data.items():
-                            # 查找对应时间点的指标数据
-                            for ind_data in indicator_values:
-                                if ind_data['time'] == candle['time']:
-                                    candle[indicator_name] = ind_data['value']
-                                    break
-
-                # 导出数据
-                export_data(kline_data)
-
-                # 标记数据已加载
-                data_loaded = True
-
-                # 取消超时任务
+            if len(chart.periods) >= config['range']:
                 try:
-                    timeout_task.cancel()
-                except Exception:
-                    pass
+                    # Process data
+                    kline_data = []
+                    for p in chart.periods:
+                        try:
+                            item = {
+                                'time': p['time'],
+                                'datetime': datetime.fromtimestamp(p['time']).strftime('%Y-%m-%d %H:%M:%S'),
+                                'open': p['open'],
+                                'high': p['high'],
+                                'low': p['low'],
+                                'close': p['close'],
+                                'volume': p['volume']
+                            }
+                            kline_data.append(item)
+                        except Exception as e:
+                            print(f"Error processing K-line data: {e}")
 
-                # 关闭连接
-                print('数据获取完成，关闭连接...')
-                asyncio.create_task(close_connection())
-            except Exception as e:
-                print(f"处理更新时出错: {e}")
-                import traceback
-                traceback.print_exc()
-
-        chart.on_update(on_update)
-
-        async def close_connection():
-            """关闭连接"""
-            print("正在关闭连接...")
-            await asyncio.sleep(1)
-            # 使用异步方法删除chart
-            if hasattr(chart, 'remove'):
-                await chart.remove()
-            elif hasattr(chart, 'delete'):
-                chart.delete()
-            else:
-                print("警告：无法找到chart的删除方法")
-
-            await client.end()
-            print("连接已关闭")
-
-        # 导出数据到文件
-        def export_data(data):
-            """导出数据到文件"""
-            file_path = os.path.join(config['output_dir'], config['file_name'] + '.' + config['format'])
-
-            try:
-                if config['format'] == 'json':
-                    with open(file_path, 'w', encoding='utf-8') as f:
-                        json.dump(data, f, indent=2)
-                elif config['format'] == 'csv':
-                    # 创建CSV内容
-                    if not data:
+                    if not kline_data:
+                        print("No valid data fetched, continuing wait...")
                         return
 
-                    with open(file_path, 'w', newline='', encoding='utf-8') as f:
-                        # 获取所有字段名
-                        headers = list(data[0].keys())
-                        writer = csv.DictWriter(f, fieldnames=headers)
-                        writer.writeheader()
-                        writer.writerows(data)
-                else:
-                    raise ValueError(f"不支持的输出格式: {config['format']}")
+                    # Sort by time
+                    kline_data.sort(key=lambda x: x['time'])
 
-                print(f"数据已保存到: {file_path}")
-            except Exception as e:
-                print('保存数据出错:', e)
+                    # Display range
+                    print(f"Data time range: {kline_data[0]['datetime']} to {kline_data[-1]['datetime']}")
 
-        # 添加技术指标
-        async def add_indicators():
-            """添加技术指标"""
-            print('添加技术指标...')
+                    # Export data
+                    await export_data(kline_data, indicators_data)
 
-            try:
-                # 添加移动平均线指标
-                indicators = [
-                    {'name': 'EMA20', 'type': 'STD;EMA', 'options': {'Length': 20}},
-                    {'name': 'SMA50', 'type': 'STD;SMA', 'options': {'Length': 50}},
-                    {'name': 'RSI14', 'type': 'STD;RSI', 'options': {'Length': 14}}
-                ]
+                    # Mark as loaded
+                    data_loaded.set()
 
-                for indicator in indicators:
-                    indic = await get_indicator(indicator['type'])
+                except Exception as e:
+                    print(f"Error in on_update: {e}")
 
-                    # 设置指标参数
-                    for option_name, option_value in indicator['options'].items():
-                        indic.set_option(option_name, option_value)
+        # Wait for data or timeout
+        await data_loaded.wait()
 
-                    # 创建指标研究
-                    study = chart.Study(indic)
-
-                    # 初始化指标数据存储
-                    indicators_data[indicator['name']] = []
-
-                    # 监听指标更新
-                    def create_update_handler(indicator_name):
-                        def on_indicator_update():
-                            nonlocal study
-                            if not study.periods:
-                                return
-
-                            # 存储指标数据
-                            indicators_data[indicator_name] = [
-                                {'time': period.time, 'value': period.plot_0}
-                                for period in study.periods
-                            ]
-
-                            print(f"{indicator_name} 指标数据已更新, 共 {len(indicators_data[indicator_name])} 条")
-
-                        return on_indicator_update
-
-                    study.on_update(create_update_handler(indicator['name']))
-
-                    # 等待study创建完成
-                    await asyncio.sleep(0.5)
-
-            except Exception as e:
-                print('添加指标失败:', e)
-                import traceback
-                traceback.print_exc()
-
-        # 添加定期状态检查
-        async def status_check():
-            """定期检查连接状态和数据加载进度"""
-            while not data_loaded:
-                debug_print(f"连接状态: {'已连接' if client.is_open else '未连接'}, 登录状态: {'已登录' if client.is_logged else '未登录'}")
-                if hasattr(chart, 'periods') and chart.periods:
-                    debug_print(f"已加载K线数据: {len(chart.periods)}条")
-                else:
-                    debug_print("尚未收到K线数据")
-                await asyncio.sleep(5)
-
-        # 启动状态检查
-        status_check_task = asyncio.create_task(status_check())
-
-        try:
-            # 等待数据加载或超时
-            await timeout_task
-            print("操作超时，可能是交易对不存在或网络问题")
-            status_check_task.cancel()  # 取消状态检查任务
-            await client.end()
-        except asyncio.CancelledError:
-            # 超时任务被取消，说明数据已加载完成
-            status_check_task.cancel()  # 取消状态检查任务
+        # Close connection
+        print('Data fetch complete, closing connection...')
+        await client.close()
+        print("Connection closed")
 
     except Exception as e:
-        print(f"程序出现异常: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
+        print(f"Program exception: {str(e)}")
+    except KeyboardInterrupt:
+        print('\nProgram interrupted')
+
+async def add_indicators(chart, indicators_data):
+    """Add technical indicators"""
+    print('Adding technical indicators...')
+    try:
+        # Example: Add EMA
+        results = await chart.client.search_indicator('EMA')
+        if results:
+            indic = results[0]
+            indicator_name = 'EMA'
+
+            # Create study
+            study = chart.new_study(indic)
+            study.set_option('Length', 14)
+
+            @study.on_update
+            async def on_study_update(s=study):
+                if s.periods:
+                    indicators_data[indicator_name] = s.periods
+                    print(f"{indicator_name} data updated, total {len(indicators_data[indicator_name])} records")
+
+    except Exception as e:
+        print('Failed to add indicator:', e)
+
+async def export_data(kline_data, indicators_data):
+    """Export data to file"""
+    file_path = config['output']
+    try:
+        if config['format'] == 'json':
+            # Combine indicators if needed (simplified for this example)
+            output_data = {
+                'klines': kline_data,
+                'indicators': indicators_data
+            }
+            with open(file_path, 'w') as f:
+                json.dump(output_data, f, indent=4)
+        elif config['format'] == 'csv':
+            # Create CSV content
+            import csv
+            with open(file_path, 'w', newline='') as f:
+                if kline_data:
+                    writer = csv.DictWriter(f, fieldnames=kline_data[0].keys())
+                    writer.writeheader()
+                    writer.writerows(kline_data)
+        else:
+            raise ValueError(f"Unsupported output format: {config['format']}")
+
+        print(f"Data saved to: {file_path}")
+    except Exception as e:
+        print('Error saving data:', e)
 
 if __name__ == '__main__':
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print('\n程序被中断')
-        sys.exit(0)
+    asyncio.run(main())

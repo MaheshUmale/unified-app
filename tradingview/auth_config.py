@@ -288,6 +288,10 @@ class TradingViewAuthManager:
                 signature = next((c['value'] for c in raw_cookies if c['name'] == 'sessionid_sign'), None)
 
                 if session_token and signature:
+                    # Update environment variables for global access
+                    os.environ['TV_SESSION'] = session_token
+                    os.environ['TV_SIGNATURE'] = signature
+
                     self._browser_config_cache = TradingViewAccount(
                         name="brave_browser",
                         session_token=session_token,
@@ -296,7 +300,7 @@ class TradingViewAuthManager:
                         description="Configuration extracted from Brave browser",
                         is_active=True
                     )
-                    logger.info("Successfully extracted TradingView session from Brave browser")
+                    logger.info("Successfully extracted TradingView session from Brave browser and updated environment")
                     return self._browser_config_cache
         except Exception as e:
             logger.debug(f"Failed to extract session from browser: {e}")

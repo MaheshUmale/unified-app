@@ -1,89 +1,80 @@
-#!/usr/bin/env python3
-"""
-此示例同步获取3个指标的数据
-"""
-import asyncio
 import os
+import sys
+import asyncio
+from dotenv import load_dotenv
 
-from ...tradingview import Client, get_indicator
+# Add project root to path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+
+from tradingview.client import TradingViewClient
 
 async def main():
-    """主函数"""
-    # 检查环境变量
-    session = os.environ.get('TV_SESSION')
-    signature = os.environ.get('TV_SIGNATURE')
+    """Main function"""
+    load_dotenv()
+
+    # Check credentials
+    session = os.getenv('TV_SESSION')
+    signature = os.getenv('TV_SIGNATURE')
 
     if not session or not signature:
-        raise ValueError('请设置TV_SESSION和TV_SIGNATURE环境变量')
+        raise ValueError('Please set TV_SESSION and TV_SIGNATURE environment variables')
 
-    # 创建客户端
-    client = Client(
-        token=session,
-        signature=signature
-    )
+    # Create client
+    client = TradingViewClient()
+    await client.connect(session=session, signature=signature)
 
-    # 连接到TradingView
-    await client.connect()
+    async def fetch_indicator_data(client, indic_id, symbol="BINANCE:BTCUSDT"):
+        """Fetch indicator data"""
+        # Create chart
+        chart = client.new_chart()
+        chart.set_market(symbol, timeframe='60')
 
-    # 获取指标数据的函数
-    async def get_indicator_data(indicator):
-        """获取指标数据"""
-        # 创建图表
-        chart = client.Session.Chart()
-        chart.set_market('BINANCE:DOTUSDT')
+        # Search for indicator
+        results = await client.search_indicator(indic_id)
+        if not results:
+            return None
 
-        # 创建指标研究
-        study = chart.Study(indicator)
+        indic = results[0]
+        # Create study
+        study = chart.new_study(indic)
+        print(f'Fetching "{indic.name}" data...')
 
-        print(f'获取 "{indicator.description}" 数据...')
+        # Wait for data
+        data_ready = asyncio.Future()
 
-        # 使用Future等待指标更新
-        future = asyncio.Future()
+        @study.on_update
+        async def on_update(s=study):
+            if s.periods and not data_ready.done():
+                print(f'"{s.name}" completed!')
+                data_ready.set_result(s.periods)
 
-        def on_update():
-            if not future.done():
-                future.set_result(study.periods)
-                print(f'"{indicator.description}" 已完成!')
+        # Wait for update
+        return await asyncio.wait_for(data_ready, timeout=30)
 
-        study.on_update(on_update)
+    # Main logic
+    print('Fetching all indicators...')
+    indicator_ids = ["RSI", "MACD", "EMA"]
 
-        # 等待指标数据更新
-        return await future
-
-    # 主程序
-    print('获取所有指标...')
-
-    # 定义要获取的指标ID
-    indicator_ids = [
-        'PUB;3lEKXjKWycY5fFZRYYujEy8fxzRRUyF3',
-        'PUB;5nawr3gCESvSHQfOhrLPqQqT4zM23w3X',
-        'PUB;vrOJcNRPULteowIsuP6iHn3GIxBJdXwT'
-    ]
-
-    # 获取指标数据
-    indicators = []
+    tasks = []
     for indic_id in indicator_ids:
-        try:
-            # 获取指标定义
-            indicator = await get_indicator(indic_id)
-            indicators.append(indicator)
-        except Exception as e:
-            print(f'获取指标 {indic_id} 失败: {e}')
+        tasks.append(fetch_indicator_data(client, indic_id))
 
-    # 同步获取所有指标数据
-    indic_data = await asyncio.gather(*[get_indicator_data(indicator) for indicator in indicators])
+    # Run all tasks concurrently
+    results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    # 显示结果
-    print('指标数据:')
-    for i, data in enumerate(indic_data):
-        print(f'指标 {i+1}: {len(data)} 条数据')
-        if data:
-            print(f'示例数据: {data[0]}')
+    # Show results
+    print('\nIndicator Data Results:')
+    for i, data in enumerate(results):
+        if isinstance(data, Exception):
+            print(f'Indicator {indicator_ids[i]} failed: {data}')
+        elif data:
+            print(f'Indicator {indicator_ids[i]}: {len(data)} records')
+            print(f'Sample record: {data[0]}')
+        else:
+            print(f'Indicator {indicator_ids[i]}: No data found')
 
-    print('全部完成!')
-
-    # 关闭客户端
-    await client.end()
+    print('All complete!')
+    await client.close()
 
 if __name__ == '__main__':
     asyncio.run(main())
