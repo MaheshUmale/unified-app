@@ -31,27 +31,6 @@ from brain.nse_confluence_scalper import scalper
 from external.tv_api import tv_api
 from external.tv_scanner import search_options
 from db.local_db import db
-from config import LOGGING_CONFIG,TV_COOKIE
-
-
-# Configure Logging
-dictConfig(LOGGING_CONFIG)
-logger = logging.getLogger(__name__)
-import logging
-import sys
-
-# When adding your handler, specify the encoding
-handler = logging.StreamHandler(sys.stdout)
-handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-handler.terminator = '\n'
-# This is the magic line:
-handler.stream = open(sys.stdout.fileno(), mode='w', encoding='utf-8', buffering=1)
-
-logging.getLogger().addHandler(handler)
-
-print(TV_COOKIE)
-logger.info(TV_COOKIE)
-
 
 # Import TradingView Enhanced Manager
 import sys
@@ -67,6 +46,9 @@ except ImportError as e:
     logger.error(f"Failed to import TradingView Enhanced Manager: {e}")
     tv_manager = None
 
+# Configure Logging
+dictConfig(LOGGING_CONFIG)
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -1011,12 +993,6 @@ async def serve_tick_chart(request: Request, path: Optional[str] = None):
 async def serve_renko_chart(request: Request, path: Optional[str] = None):
     """Serves the separate Renko chart page."""
     return templates.TemplateResponse("renko_chart.html", {"request": request})
-
-
-@fastapi_app.get("/tv-chart")
-async def serve_tv_advanced_chart(request: Request):
-    """Serves the advanced TradingView widget chart page."""
-    return templates.TemplateResponse("tv_widget.html", {"request": request})
 
 
 # ==================== STATIC FILES & TEMPLATES ====================

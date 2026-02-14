@@ -41,6 +41,11 @@ A minimal, high-performance trading terminal featuring TradingView charting, rea
   - **Analysis Center Sidebar**: Integrated panel showing OiGenie predictions (institutional control), OI Buildup Pulse, and real-time Scalper metrics.
   - **Synchronized Replay**: Historical replay mode now fully synchronizes with historical OI and PCR data, simulating the exact market state for strategy refinement.
 - **Efficient Backend**: Built with FastAPI and DuckDB for low-latency data handling and persistence.
+- **Enhanced Data Engine**: Integrated enterprise-grade TradingView module featuring:
+  - **Intelligent Caching**: Multi-layered cache for historical and real-time data.
+  - **Connection Monitoring**: Real-time tracking of latency, stability, and protocol health.
+  - **Fault Recovery**: Automatic data source failover and exponential backoff reconnection.
+  - **Data Quality Engine**: Automated validation of OHLC logic and sequence continuity.
 - **DuckDB Viewer**: A dedicated SQL-based viewer at `/db-viewer` that shares the application's database connection, allowing real-time table inspection and custom queries without file-locking issues.
 - **Options Analysis Dashboard**:
   - A specialized dashboard at `/options` for deep-dive options analysis.
@@ -49,6 +54,7 @@ A minimal, high-performance trading terminal featuring TradingView charting, rea
   - **Institutional Control**: OiGenie Market Control pulse and institutional range detection.
   - **OI Buildup Pulse**: Real-time census of Long/Short buildup and covering across all strikes.
   - **NSE Confluence Scalper**: Automated option buying engine using price action and OI confluence.
+  - **System Monitoring**: Dedicated "System" tab for real-time tracking of the TradingView engine's health score, cache hits, and request latency.
   - **Automated Data Management**: Background backfilling and periodic snapshots (every 5 minutes).
 - **Specialized Tick-Based Charts**:
   - **Tick Chart**: A dedicated chart at `/tick` that aggregates raw ticks into OHLC candles based on a customizable "ticks per candle" setting.
