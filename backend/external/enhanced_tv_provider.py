@@ -53,6 +53,19 @@ class EnhancedTradingViewProvider(ILiveStreamProvider, IHistoricalDataProvider):
     def is_connected(self) -> bool:
         return self.client.is_connected
 
+    def _map_symbol(self, symbol: str) -> str:
+        """Maps internal symbol names to TradingView compatible symbols."""
+        s = symbol.upper()
+        mapping = {
+            'NSE:FINNIFTY': 'NSE:CNXFINANCE',
+            'FINNIFTY': 'NSE:CNXFINANCE',
+            'NSE:NIFTY': 'NSE:NIFTY',
+            'NSE:BANKNIFTY': 'NSE:BANKNIFTY',
+            'NSE:INDIAVIX': 'NSE:INDIAVIX',
+            'NSE:INDIA VIX': 'NSE:INDIAVIX'
+        }
+        return mapping.get(s, symbol)
+
     def subscribe(self, symbols: List[str], interval: str = "1"):
         for symbol in symbols:
             self._subscriptions[symbol] = interval
@@ -64,9 +77,10 @@ class EnhancedTradingViewProvider(ILiveStreamProvider, IHistoricalDataProvider):
             if symbol in self._active_sessions:
                 self._active_sessions[symbol].delete()
 
+            tv_symbol = self._map_symbol(symbol)
             chart = self.client.Session.Chart()
             self._active_sessions[symbol] = chart
-            chart.set_market(symbol, {'timeframe': interval})
+            chart.set_market(tv_symbol, {'timeframe': interval})
 
             def on_update():
                 if chart.periods and self.callback:
@@ -104,9 +118,10 @@ class EnhancedTradingViewProvider(ILiveStreamProvider, IHistoricalDataProvider):
         """Fetch historical candles using the enhanced client."""
         chart = None
         try:
+            tv_symbol = self._map_symbol(symbol)
             chart = self.client.Session.Chart()
             # ChartSession has a get_historical_data convenience method
-            klines = await chart.get_historical_data(symbol, interval, count)
+            klines = await chart.get_historical_data(tv_symbol, interval, count)
             # Format: [ts, o, h, l, c, v]
             return [[k['time'], k['open'], k['high'], k['low'], k['close'], k['volume']] for k in klines]
         except Exception as e:
@@ -123,6 +138,7 @@ class EnhancedTradingViewProvider(ILiveStreamProvider, IHistoricalDataProvider):
         """
         chart = None
         try:
+            tv_symbol = self._map_symbol(symbol)
             from tradingview import get_indicator
             ind = await get_indicator(indicator_id)
             if options:
@@ -131,7 +147,7 @@ class EnhancedTradingViewProvider(ILiveStreamProvider, IHistoricalDataProvider):
 
             chart = self.client.Session.Chart()
             # Wait for symbol loading and chart data
-            chart.set_market(symbol, {'timeframe': interval})
+            chart.set_market(tv_symbol, {'timeframe': interval})
             study = chart.Study(ind)
 
             # Create an event to wait for the first data update
