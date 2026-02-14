@@ -1013,6 +1013,12 @@ async def serve_renko_chart(request: Request, path: Optional[str] = None):
     return templates.TemplateResponse("renko_chart.html", {"request": request})
 
 
+@fastapi_app.get("/tv-chart")
+async def serve_tv_advanced_chart(request: Request):
+    """Serves the advanced TradingView widget chart page."""
+    return templates.TemplateResponse("tv_widget.html", {"request": request})
+
+
 # ==================== STATIC FILES & TEMPLATES ====================
 
 templates = Jinja2Templates(directory="backend/templates")

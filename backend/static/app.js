@@ -33,6 +33,7 @@ class ChartInstance {
         this.oiData = null;
         this.showOiProfile = document.getElementById('oiProfileToggle')?.checked || false;
         this.lastUpdatedTime = 0;
+        this.isWidgetMode = true; // Default to TradingView Widget mode
 
         // Replay State
         this.isReplayMode = false;
@@ -51,93 +52,38 @@ class ChartInstance {
         const container = document.getElementById(this.containerId);
         if (!container) return;
 
-        this.chart = LightweightCharts.createChart(container, {
-            layout: { background: { type: 'solid', color: '#ffffff' }, textColor: '#191919' },
-            grid: { vertLines: { color: '#f0f3fa' }, horzLines: { color: '#f0f3fa' } },
-            crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-            localization: {
-                locale: 'en-IN',
-                timeFormatter: (ts) => {
-                    return new Intl.DateTimeFormat('en-IN', {
-                        timeZone: 'Asia/Kolkata',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        second: '2-digit',
-                        hour12: false
-                    }).format(new Date(ts * 1000));
-                }
-            },
-            rightPriceScale: { borderColor: '#f0f3fa', autoScale: true, scaleMargins: { top: 0.2, bottom: 0.2 } },
-            timeScale: {
-                borderColor: '#f0f3fa',
-                timeVisible: true,
-                secondsVisible: false,
-                rightOffset: 10,
-                tickMarkFormatter: (time, tickMarkType, locale) => {
-                    const date = new Date(time * 1000);
-                    const options = { timeZone: 'Asia/Kolkata', hour12: false };
-                    if (tickMarkType >= 3) {
-                        options.hour = '2-digit';
-                        options.minute = '2-digit';
-                    } else if (tickMarkType === 2) {
-                        options.day = '2-digit';
-                        options.month = 'short';
-                    } else if (tickMarkType === 1) {
-                        options.month = 'short';
-                    } else {
-                        options.year = 'numeric';
-                    }
-                    return new Intl.DateTimeFormat('en-IN', options).format(date);
-                }
-            }
-        });
+        // Implementation of COMPLETE TRADINGVIEW UI (Advanced Widget)
+        // This replaces LightweightCharts implementation
+        const theme = localStorage.getItem('theme') || 'light';
 
-        this.setChartType(this.chartType);
+        container.innerHTML = '';
+        const widgetId = `tv_widget_${this.index}`;
+        const widgetDiv = document.createElement('div');
+        widgetDiv.id = widgetId;
+        widgetDiv.style.height = '100%';
+        widgetDiv.style.width = '100%';
+        container.appendChild(widgetDiv);
 
-        this.volumeSeries = this.chart.addHistogramSeries({
-            color: '#3b82f6', priceFormat: { type: 'volume' }, priceScaleId: 'volume',
-            lastValueVisible: false,
-            priceLineVisible: false
-        });
-
-        this.chart.priceScale('volume').applyOptions({
-            scaleMargins: { top: 0.8, bottom: 0 }, visible: false
-        });
-
-        // OI Profile Canvas
-        const wrapper = container.parentElement;
-        this.oiCanvas = document.createElement('canvas');
-        this.oiCanvas.className = 'oi-profile-canvas';
-        wrapper.appendChild(this.oiCanvas);
-        this.syncOiCanvas();
-
-        this.chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
-            if (this.showOiProfile) this.renderOiProfile();
-        });
-
-        this.chart.subscribeClick((param) => {
-            if (this.isReplayMode && param.time && this.replayIndex === -1) {
-                 // Convert Map keys to an Array and find the index of the timestamp
-                const keys = Array.from(this.fullHistory.candles.keys());
-                const idx = keys.indexOf(param.time);
-
-                if (idx !== -1) {
-                    this.replayIndex = idx;
-                    this.stepReplay(0);
-                    updateReplayUI(this);
-                }
+        if (typeof TradingView === 'undefined') {
+            if (!window._tvScriptLoading) {
+                window._tvScriptLoading = true;
+                const script = document.createElement('script');
+                script.src = 'https://s3.tradingview.com/tv.js';
+                script.onload = () => {
+                    window._tvScriptLoading = false;
+                    this.loadWidget(widgetId, theme);
+                    // Also trigger for other charts that might be waiting
+                    window.dispatchEvent(new Event('tv-script-loaded'));
+                };
+                document.head.appendChild(script);
             } else {
-                const price = param.point ? this.mainSeries.coordinateToPrice(param.point.y) : null;
-                if (price) {
-                    const hlineBtn = document.getElementById('drawingToolBtn');
-                    const isHlineActive = hlineBtn && hlineBtn.classList.contains('bg-blue-600');
-                    const isShiftKey = param.sourceEvent && param.sourceEvent.shiftKey;
-                    if (isHlineActive || isShiftKey) {
-                        this.addHorizontalLine(price);
-                    }
-                }
+                window.addEventListener('tv-script-loaded', () => {
+                    this.loadWidget(widgetId, theme);
+                }, { once: true });
             }
-        });
+        } else {
+            this.loadWidget(widgetId, theme);
+        }
 
         // Handle focus
         container.parentElement.addEventListener('mousedown', () => {
@@ -145,8 +91,46 @@ class ChartInstance {
         });
     }
 
+    loadWidget(containerId, theme) {
+        // Ensure symbol is in a format TV likes
+        let tvSymbol = this.symbol;
+        if (tvSymbol.includes(':')) {
+            const [exch, sym] = tvSymbol.split(':');
+            // Mapping for common Indian symbols if needed
+            if (exch === 'NSE' && sym === 'NIFTY') tvSymbol = 'NSE:NIFTY';
+        }
+
+        this.tvWidget = new TradingView.widget({
+            "autosize": true,
+            "symbol": tvSymbol,
+            "interval": this.interval === '1' ? '1' : this.interval,
+            "timezone": "Asia/Kolkata",
+            "theme": theme,
+            "style": "1",
+            "locale": "en",
+            "toolbar_bg": theme === 'dark' ? '#131722' : '#f1f3f6',
+            "enable_publishing": false,
+            "hide_side_toolbar": false,
+            "allow_symbol_change": true,
+            "container_id": containerId,
+            "withdateranges": true,
+            "details": true,
+            "hotlist": true,
+            "calendar": true,
+            "show_popup_button": true,
+            "popup_width": "1000",
+            "popup_height": "650",
+            "studies": [
+                "STD;EMA"
+            ],
+            "support_host": "https://www.tradingview.com"
+        });
+    }
+
     setChartType(type) {
         this.chartType = type;
+        if (this.isWidgetMode) return;
+
         const data = Array.from(this.fullHistory.candles.values()).sort((a,b) => a.time - b.time);
         const markers = this.markers;
 
@@ -187,7 +171,7 @@ class ChartInstance {
     }
 
     syncOiCanvas() {
-        if (!this.oiCanvas) return;
+        if (this.isWidgetMode || !this.oiCanvas) return;
         const container = document.getElementById(this.containerId);
         if (!container) return;
         this.oiCanvas.width = container.clientWidth;
@@ -206,6 +190,7 @@ class ChartInstance {
     }
 
     renderOiProfile() {
+        if (this.isWidgetMode || !this.oiCanvas) return;
         const ctx = this.oiCanvas.getContext('2d');
         ctx.clearRect(0, 0, this.oiCanvas.width, this.oiCanvas.height);
         if (!this.showOiProfile || !this.oiData || this.oiData.length === 0) return;
@@ -244,109 +229,30 @@ class ChartInstance {
     }
 
     async switchSymbol(symbol, interval = null) {
-        const oldSymbol = this.symbol;
-        const oldInterval = this.interval;
-
         if (symbol) this.symbol = symbol.toUpperCase();
         if (interval) this.interval = interval;
 
-        // Unsubscribe from old symbol/interval if changed
-        if (oldSymbol !== this.symbol || oldInterval !== this.interval) {
-            socket.emit('unsubscribe', { instrumentKeys: [oldSymbol], interval: oldInterval });
+        const theme = localStorage.getItem('theme') || 'light';
+        const widgetId = `tv_widget_${this.index}`;
+
+        const container = document.getElementById(this.containerId);
+        if (container) {
+            container.innerHTML = '';
+            const widgetDiv = document.createElement('div');
+            widgetDiv.id = widgetId;
+            widgetDiv.style.height = '100%';
+            widgetDiv.style.width = '100%';
+            container.appendChild(widgetDiv);
+            this.loadWidget(widgetId, theme);
         }
 
-        this.lastCandle = null;
-        this.hrn = '';
-        this.fullHistory = {
-            candles: new Map(),
-            volume: new Map(),
-            indicators: {}
-        };
-
-        this.mainSeries.setData([]);
-        this.volumeSeries.setData([]);
-        this.mainSeries.setMarkers([]);
-        Object.values(this.indicatorSeries).forEach(s => this.chart.removeSeries(s));
-        this.indicatorSeries = {};
-
-        if (this.priceLines) {
-            Object.values(this.priceLines).forEach(l => this.mainSeries.removePriceLine(l));
-            this.priceLines = {};
-        }
-
-        setLoading(true);
-        try {
-            const resData = await fetchIntraday(this.symbol, this.interval);
-            if (resData.hrn) this.hrn = resData.hrn;
-            let candles = resData.candles || [];
-
-            // Filter market hours for NSE
-            if (candles.length > 0 && this.symbol.startsWith('NSE:') && !['D', 'W'].includes(this.interval)) {
-                const todayIST = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', year: 'numeric', month: 'numeric', day: 'numeric' }).format(new Date());
-                candles = candles.filter(c => {
-                    const ts = typeof c.timestamp === 'number' ? c.timestamp : Math.floor(new Date(c.timestamp).getTime() / 1000);
-                    const date = new Date(ts * 1000);
-                    const dateIST = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', year: 'numeric', month: 'numeric', day: 'numeric' }).format(date);
-                    if (dateIST !== todayIST) return true;
-                    const istTime = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: 'numeric', hourCycle: 'h23' }).format(date);
-                    const [h, m] = istTime.split(':').map(Number);
-                    const mins = h * 60 + m;
-                    return mins >= 555 && mins <= 930;
-                });
-            }
-
-            if (candles.length > 0) {
-                const chartData = candles.map(c => ({
-                    time: typeof c.timestamp === 'number' ? c.timestamp : Math.floor(new Date(c.timestamp).getTime() / 1000),
-                    open: Number(c.open), high: Number(c.high), low: Number(c.low), close: Number(c.close), volume: Number(c.volume)
-                })).filter(c => !isNaN(c.open) && c.open > 0).sort((a, b) => a.time - b.time);
-
-                chartData.forEach(c => this.fullHistory.candles.set(c.time, c));
-                this.lastCandle = chartData[chartData.length - 1];
-
-                candles.forEach(c => {
-                    const ts = typeof c.timestamp === 'number' ? c.timestamp : Math.floor(new Date(c.timestamp).getTime() / 1000);
-                    this.fullHistory.volume.set(ts, {
-                        time: ts,
-                        value: Number(c.volume),
-                        color: Number(c.close) >= Number(c.open) ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'
-                    });
-                });
-
-                this.renderData();
-
-                const lastIdx = chartData.length - 1;
-                if (!isNaN(lastIdx) && lastIdx >= 0) {
-                    this.chart.timeScale().setVisibleLogicalRange({ from: lastIdx - 100, to: lastIdx + 10 });
-                }
-            }
-
-            if (resData.indicators) {
-                this.handleChartUpdate({ indicators: resData.indicators });
-                Object.entries(this.indicatorSeries).forEach(([key, s]) => {
-                    s.applyOptions({
-                        visible: this.showIndicators && !this.hiddenPlots.has(key),
-                        lastValueVisible: false,
-                        priceLineVisible: false
-                    });
-                });
-                this.mainSeries.setMarkers(this.showIndicators && !this.hiddenPlots.has('__markers__') ? this.markers : []);
-            }
-
-            if (this.showOiProfile) this.fetchOiProfile();
-
-            socket.emit('subscribe', { instrumentKeys: [this.symbol], interval: this.interval });
-            updateActiveChartLabel();
-        } catch (e) {
-            console.error("Switch symbol failed:", e);
-        } finally {
-            setLoading(false);
-            saveLayout();
-        }
+        if (this.showOiProfile) this.fetchOiProfile();
+        updateActiveChartLabel();
+        saveLayout();
     }
 
     renderData() {
-        if (this.fullHistory.candles.size === 0) return;
+        if (this.isWidgetMode || this.fullHistory.candles.size === 0) return;
         let displayCandles = Array.from(this.fullHistory.candles.values()).sort((a, b) => a.time - b.time);
         if (!displayCandles.some(c => c.hasExplicitColor)) {
             displayCandles = applyRvolColoring(displayCandles);
@@ -371,7 +277,7 @@ class ChartInstance {
     }
 
     updateRealtimeCandle(quote) {
-        if (!this.mainSeries || this.isReplayMode) return;
+        if (this.isWidgetMode || !this.mainSeries || this.isReplayMode) return;
         const intervalMap = { '1': 60, '5': 300, '15': 900, '30': 1800, '60': 3600, 'D': 86400 };
         const duration = intervalMap[this.interval] || 60;
         const tickTime = Math.floor(quote.ts_ms / 1000);
@@ -407,6 +313,8 @@ class ChartInstance {
     }
 
     handleChartUpdate(data) {
+        if (this.isWidgetMode) return;
+
         if (data.ohlcv && data.ohlcv.length > 0) {
             const isTimestamp = data.ohlcv[0][0] > 1e9;
             if (isTimestamp) {
@@ -461,6 +369,7 @@ class ChartInstance {
     }
 
     applyBarColors(barColors) {
+        if (this.isWidgetMode) return;
         barColors.forEach(bc => {
             const time = Math.floor(bc.time);
             const candle = this.fullHistory.candles.get(time);
@@ -473,6 +382,7 @@ class ChartInstance {
     }
 
     applyIndicators(indicators) {
+        if (this.isWidgetMode) return;
         let newlyAdded = false;
         const allMarkers = [];
 
@@ -587,6 +497,7 @@ class ChartInstance {
     }
 
     addPriceLine(id, data) {
+        if (this.isWidgetMode) return;
         if (!this.priceLines) this.priceLines = {};
         if (this.priceLines[id]) {
             this.mainSeries.removePriceLine(this.priceLines[id]);
@@ -631,6 +542,7 @@ class ChartInstance {
     }
 
     stepReplay(delta) {
+        if (this.isWidgetMode) return;
         const newIdx = this.replayIndex + delta;
         const allCandles = Array.from(this.fullHistory.candles.values()).sort((a,b) => a.time - b.time);
         const allVolume = Array.from(this.fullHistory.volume.values()).sort((a,b) => a.time - b.time);
@@ -710,6 +622,7 @@ class ChartInstance {
     }
 
     addHorizontalLine(price, color = '#3b82f6') {
+        if (this.isWidgetMode) return;
         const line = this.mainSeries.createPriceLine({
             price: price, color: color, lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Dotted, axisLabelVisible: false, title: 'HLINE'
         });
@@ -718,6 +631,7 @@ class ChartInstance {
     }
 
     clearDrawings() {
+        if (this.isWidgetMode) return;
         this.drawings.forEach(d => {
             if (d.line) this.mainSeries.removePriceLine(d.line);
         });
@@ -1260,19 +1174,17 @@ function applyTheme(theme) {
         document.getElementById('moonIcon')?.classList.add('hidden');
     }
 
-    const chartBg = isLight ? '#f8fafc' : '#0f172a';
-    const chartText = isLight ? '#191919' : '#d1d5db';
-    const gridColor = isLight ? '#f0f3fa' : 'rgba(255,255,255,0.05)';
-
     charts.forEach(c => {
-        if (c.chart) {
-            c.chart.applyOptions({
-                layout: { background: { color: chartBg }, textColor: chartText },
-                grid: { vertLines: { color: gridColor }, horzLines: { color: gridColor } },
-                rightPriceScale: { borderColor: gridColor },
-                timeScale: { borderColor: gridColor }
-            });
-            if (c.showOiProfile) c.renderOiProfile();
+        const widgetId = `tv_widget_${c.index}`;
+        const container = document.getElementById(c.containerId);
+        if (container) {
+            container.innerHTML = '';
+            const widgetDiv = document.createElement('div');
+            widgetDiv.id = widgetId;
+            widgetDiv.style.height = '100%';
+            widgetDiv.style.width = '100%';
+            container.appendChild(widgetDiv);
+            c.loadWidget(widgetId, theme);
         }
     });
 }
