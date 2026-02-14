@@ -72,7 +72,7 @@ class ChartSession:
         }
 
         # Create chart session
-        self._create_session_task = asyncio.create_task(self._client.send('chart_create_session', [self._session_id]))
+        self._create_session_task = asyncio.create_task(self._client.send('chart_create_session', [self._session_id, ""]))
 
         # Create study factory
         self.Study = lambda indicator: ChartStudy(self, indicator)
@@ -383,7 +383,7 @@ class ChartSession:
                     await self._client.send('replay_add_series', [
                         self._replay_session_id,
                         'req_replay_addseries',
-                        f"={json.dumps(symbol_init)}",
+                        f"={json.dumps(symbol_init, separators=(',', ':'))}",
                         options.get('timeframe', '240'),
                     ])
 
@@ -412,8 +412,14 @@ class ChartSession:
                 await self._client.send('resolve_symbol', [
                     self._session_id,
                     f"ser_{self._current_series}",
-                    f"={json.dumps(chart_init)}",
+                    f"={json.dumps(chart_init, separators=(',', ':'))}",
                 ])
+
+                # Wait for symbol resolution before creating series
+                try:
+                    await asyncio.wait_for(self._symbol_resolved_event.wait(), timeout=10.0)
+                except asyncio.TimeoutError:
+                    logger.warning(f"Timeout waiting for symbol resolution: {symbol}")
 
                 # Set series
                 self.set_series(
@@ -449,18 +455,16 @@ class ChartSession:
         async def setup_series():
             try:
                 command = 'modify_series' if self._series_created else 'create_series'
+                # Standard TV create_series expects 7 params
                 params = [
                     self._session_id,
-                    '$prices',
+                    'sds_1', # Default series ID
                     's1',
                     f"ser_{self._current_series}",
-                    timeframe
+                    timeframe,
+                    calc_range if not self._series_created else "",
+                    "" # Extra param
                 ]
-
-                if not self._series_created:
-                    params.append(calc_range)
-                else:
-                    params.append('')
 
                 await self._client.send(command, params)
                 self._series_created = True

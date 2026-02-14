@@ -291,9 +291,20 @@ class ConnectionManager:
 
     def get_available_connection(self) -> Optional[str]:
         """Get available connection"""
+        # First priority: ACTIVE connections with good health
         for conn_id, status in self.connection_status.items():
-            if status == DataSourceStatus.CONNECTED and self.connection_health[conn_id] > 80:
+            if status == DataSourceStatus.ACTIVE and self.connection_health.get(conn_id, 0) > 80:
                 return conn_id
+
+        # Second priority: Any CONNECTED connection
+        for conn_id, status in self.connection_status.items():
+            if status == DataSourceStatus.CONNECTED:
+                return conn_id
+
+        # Third priority: The default connection if it exists
+        if "default" in self.connections:
+            return "default"
+
         return None
 
     async def check_connections_health(self):
@@ -468,7 +479,8 @@ class EnhancedTradingViewManager:
             "auto_reconnect": True,
             "heartbeat_interval": 30,
             "max_retries": 3,
-            "enable_health_monitoring": True
+            "enable_health_monitoring": True,
+            "DEBUG": True
         })
 
         # Start background tasks

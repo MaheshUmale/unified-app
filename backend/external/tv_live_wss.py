@@ -163,7 +163,7 @@ class TradingViewWSS:
         payloads = [p for p in re.split(r"~m~\d+~m~", message) if p]
         for msg in payloads:
             if msg.startswith("~h~"):
-                try: ws.send(f"~m~{len(msg)}~m~{msg}")
+                try: ws.send(msg)
                 except: pass
                 continue
             try:

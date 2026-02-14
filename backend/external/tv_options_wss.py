@@ -72,6 +72,9 @@ class OptionsWSS(ILiveStreamProvider):
 
     def on_open(self, ws):
         logger.info(f"Options Quote WSS Connection opened for {self.underlying}")
+        # 0) Auth & Locale
+        ws.send(format_message("set_auth_token", ["unauthorized_user_token"]))
+        ws.send(format_message("set_locale", ["en", "US"]))
         # 1) Create QUOTE Session
         ws.send(format_message("quote_create_session", [self.session_id]))
         # 2) Set FIELDS
@@ -108,7 +111,7 @@ class OptionsWSS(ILiveStreamProvider):
 
     def on_message(self, ws, message):
         if message.startswith("~h~"):
-            ws.send(f"~m~{len(message)}~m~{message}")
+            ws.send(message)
             return
 
         try:
