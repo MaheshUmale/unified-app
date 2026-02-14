@@ -1072,6 +1072,7 @@ class OptionsManager:
                 closest_diff = float('inf')
                 for candle in hist:
                     candle_ts = candle[0]
+                    if candle_ts is None: continue
                     diff = abs(candle_ts - unix_ts)
                     if diff < closest_diff:
                         closest_diff = diff

@@ -38,15 +38,27 @@ def set_socketio(sio, loop=None):
 def emit_event(event: str, data: Any, room: Optional[str] = None):
     global socketio_instance, main_event_loop
     if not socketio_instance: return
+
     if isinstance(data, (dict, list)):
         data = json.loads(json.dumps(data, cls=LocalDBJSONEncoder))
+
     try:
         if main_event_loop and main_event_loop.is_running():
-            asyncio.run_coroutine_threadsafe(socketio_instance.emit(event, data, to=room), main_event_loop)
+            # Check if we are in the same loop
+            try:
+                current_loop = asyncio.get_running_loop()
+            except RuntimeError:
+                current_loop = None
+
+            if current_loop == main_event_loop:
+                asyncio.create_task(socketio_instance.emit(event, data, to=room))
+            else:
+                asyncio.run_coroutine_threadsafe(socketio_instance.emit(event, data, to=room), main_event_loop)
+
             if room:
                 logger.info(f"Emitted {event} to room {room}")
     except Exception as e:
-        logger.error(f"Emit Error: {e}")
+        logger.error(f"Emit Error for {event} to room {room}: {e}")
 
 def flush_tick_buffer():
     global tick_buffer

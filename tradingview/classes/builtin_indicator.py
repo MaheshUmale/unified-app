@@ -114,9 +114,14 @@ class BuiltInIndicator:
                 # Type check
                 required_type = type(default_value)
                 if not isinstance(value, required_type):
-                    raise TypeError(f"Wrong '{key}' value type '{type(value).__name__}' (must be '{required_type.__name__}')")
+                    try:
+                        value = required_type(value)
+                    except (ValueError, TypeError):
+                        raise TypeError(f"Wrong '{key}' value type '{type(value).__name__}' (must be '{required_type.__name__}')")
 
             elif not force:
-                raise KeyError(f"Option '{key}' is denied with '{self._type}' indicator")
+                # Allow 'in_X' style keys for any built-in indicator
+                if not key.startswith('in_'):
+                    raise KeyError(f"Option '{key}' is denied with '{self._type}' indicator")
 
         self._options[key] = value

@@ -69,6 +69,12 @@ async def lifespan(app: FastAPI):
     # Initialize Data Providers
     initialize_default_providers()
 
+    # Link Manager to Enhanced Provider
+    from core.provider_registry import historical_data_registry
+    provider = historical_data_registry.get_provider("enhanced_tv")
+    if provider and hasattr(provider, 'set_manager'):
+        provider.set_manager(tv_manager)
+
     try:
         main_loop = asyncio.get_running_loop()
     except RuntimeError:
@@ -324,48 +330,16 @@ async def get_intraday(instrument_key: str, interval: str = '1'):
         
         valid_indicators = []
 
-        # Add high-fidelity indicators from Enhanced TV if available
-        if hasattr(provider, 'get_indicators') and tv_candles:
-            try:
-                # Example: Fetch RSI and Bollinger Bands from TV
-                # Note: This is an example of the "full range of features"
-                # Fetch RSI
-                rsi_data = await provider.get_indicators(clean_key, interval, 'STD;RSI', {'length': 14})
-                if rsi_data:
-                    valid_indicators.append({
-                        "id": "tv_rsi",
-                        "title": "RSI (14)",
-                        "type": "line",
-                        "style": {"color": "#a855f7", "lineWidth": 1},
-                        "data": [{"time": d['time'], "value": d['plot_0']} for d in rsi_data if d.get('plot_0') is not None]
-                    })
-
-                # Fetch Bollinger Bands
-                bb_data = await provider.get_indicators(clean_key, interval, 'STD;BB', {'length': 20, 'mult': 2})
-                if bb_data:
-                    # Plot 0: Basis, Plot 1: Upper, Plot 2: Lower
-                    valid_indicators.append({
-                        "id": "tv_bb_basis", "title": "BB Basis", "type": "line",
-                        "style": {"color": "#fbbf24", "lineWidth": 1, "lineStyle": 2},
-                        "data": [{"time": d['time'], "value": d['plot_0']} for d in bb_data if d.get('plot_0') is not None]
-                    })
-                    valid_indicators.append({
-                        "id": "tv_bb_upper", "title": "BB Upper", "type": "line",
-                        "style": {"color": "#3b82f6", "lineWidth": 1},
-                        "data": [{"time": d['time'], "value": d['plot_1']} for d in bb_data if d.get('plot_1') is not None]
-                    })
-                    valid_indicators.append({
-                        "id": "tv_bb_lower", "title": "BB Lower", "type": "line",
-                        "style": {"color": "#3b82f6", "lineWidth": 1},
-                        "data": [{"time": d['time'], "value": d['plot_2']} for d in bb_data if d.get('plot_2') is not None]
-                    })
-            except Exception as e:
-                logger.error(f"Error fetching TV indicators: {e}")
+        # TV indicators disabled for now due to argument complexity
 
         if tv_candles:
             try:
                 import pandas as pd
-                analyzer_candles = sorted(tv_candles, key=lambda x: x[0])
+                # Filter out None timestamps and sort
+                analyzer_candles = sorted([c for c in tv_candles if c[0] is not None], key=lambda x: x[0])
+                if not analyzer_candles:
+                    raise ValueError("No valid candles after filtering")
+
                 df = pd.DataFrame(analyzer_candles, columns=['ts', 'o', 'h', 'l', 'c', 'v'])
                 
                 # EMA 9

@@ -22,9 +22,15 @@ class EnhancedTradingViewProvider(ILiveStreamProvider, IHistoricalDataProvider):
     def __init__(self, callback: Callable = None):
         self.client = EnhancedTradingViewClient()
         self.callback = callback
+        self.manager = None # Optional: EnhancedTradingViewManager
         self._is_started = False
         self._subscriptions = {} # symbol -> interval
         self._active_sessions = {} # symbol -> chart_session
+
+    def set_manager(self, manager):
+        """Link the enterprise-grade TradingView manager."""
+        self.manager = manager
+        logger.info("Enhanced TV Provider linked to enterprise manager")
 
     def set_callback(self, callback: Callable[[Dict[str, Any]], None]):
         self.callback = callback
@@ -53,6 +59,19 @@ class EnhancedTradingViewProvider(ILiveStreamProvider, IHistoricalDataProvider):
     def is_connected(self) -> bool:
         return self.client.is_connected
 
+    def _map_symbol(self, symbol: str) -> str:
+        """Maps internal symbol names to TradingView compatible symbols."""
+        s = symbol.upper()
+        mapping = {
+            'NSE:FINNIFTY': 'NSE:CNXFINANCE',
+            'FINNIFTY': 'NSE:CNXFINANCE',
+            'NSE:NIFTY': 'NSE:NIFTY',
+            'NSE:BANKNIFTY': 'NSE:BANKNIFTY',
+            'NSE:INDIAVIX': 'NSE:INDIAVIX',
+            'NSE:INDIA VIX': 'NSE:INDIAVIX'
+        }
+        return mapping.get(s, symbol)
+
     def subscribe(self, symbols: List[str], interval: str = "1"):
         for symbol in symbols:
             self._subscriptions[symbol] = interval
@@ -64,9 +83,10 @@ class EnhancedTradingViewProvider(ILiveStreamProvider, IHistoricalDataProvider):
             if symbol in self._active_sessions:
                 self._active_sessions[symbol].delete()
 
+            tv_symbol = self._map_symbol(symbol)
             chart = self.client.Session.Chart()
             self._active_sessions[symbol] = chart
-            chart.set_market(symbol, {'timeframe': interval})
+            chart.set_market(tv_symbol, {'timeframe': interval})
 
             def on_update():
                 if chart.periods and self.callback:
@@ -101,14 +121,70 @@ class EnhancedTradingViewProvider(ILiveStreamProvider, IHistoricalDataProvider):
                 logger.error(f"Error deleting session for {symbol}: {e}")
 
     async def get_hist_candles(self, symbol: str, interval: str, count: int) -> List[List]:
-        """Fetch historical candles using the enhanced client."""
+        """Fetch historical candles using the manager or enhanced client."""
+        tv_symbol = self._map_symbol(symbol)
+
+        # 1. Try via manager (preferred for caching/reliability)
+        if self.manager:
+            try:
+                from tradingview.enhanced_tradingview_manager import DataQualityLevel
+                market_data = await self.manager.get_historical_data(
+                    tv_symbol, interval, count, DataQualityLevel.PRODUCTION
+                )
+                if market_data and market_data.data:
+                    # Format: [ts, o, h, l, c, v]
+                    # Robust access for both dict and object
+                    res = []
+                    for k in market_data.data:
+                        try:
+                            if isinstance(k, dict):
+                                ts = k.get('timestamp') or k.get('time')
+                                o, h, l, c = k.get('open'), k.get('high'), k.get('low'), k.get('close')
+                                v = k.get('volume', 0)
+                            else:
+                                ts = getattr(k, 'timestamp', getattr(k, 'time', 0))
+                                o = getattr(k, 'open', 0)
+                                h = getattr(k, 'high', 0)
+                                l = getattr(k, 'low', 0)
+                                c = getattr(k, 'close', 0)
+                                v = getattr(k, 'volume', 0)
+
+                            if ts and ts > 0:
+                                res.append([ts, o, h, l, c, v])
+                        except: continue
+                    return res
+            except Exception as e:
+                logger.warning(f"Manager hist fetch failed for {symbol}, falling back to raw client: {e}")
+
+        # 2. Fallback to raw client
         chart = None
         try:
+            if not self.is_connected:
+                await self.client.connect()
+
             chart = self.client.Session.Chart()
             # ChartSession has a get_historical_data convenience method
-            klines = await chart.get_historical_data(symbol, interval, count)
+            klines = await chart.get_historical_data(tv_symbol, interval, count)
             # Format: [ts, o, h, l, c, v]
-            return [[k['time'], k['open'], k['high'], k['low'], k['close'], k['volume']] for k in klines]
+            res = []
+            for k in klines:
+                try:
+                    if isinstance(k, dict):
+                        ts = k.get('timestamp') or k.get('time')
+                        o, h, l, c = k.get('open'), k.get('high'), k.get('low'), k.get('close')
+                        v = k.get('volume', 0)
+                    else:
+                        ts = getattr(k, 'timestamp', getattr(k, 'time', 0))
+                        o = getattr(k, 'open', 0)
+                        h = getattr(k, 'high', 0)
+                        l = getattr(k, 'low', 0)
+                        c = getattr(k, 'close', 0)
+                        v = getattr(k, 'volume', 0)
+
+                    if ts and ts > 0:
+                        res.append([ts, o, h, l, c, v])
+                except: continue
+            return res
         except Exception as e:
             logger.error(f"Error fetching historical candles from Enhanced TV for {symbol}: {e}")
             return []
@@ -123,6 +199,7 @@ class EnhancedTradingViewProvider(ILiveStreamProvider, IHistoricalDataProvider):
         """
         chart = None
         try:
+            tv_symbol = self._map_symbol(symbol)
             from tradingview import get_indicator
             ind = await get_indicator(indicator_id)
             if options:
@@ -131,7 +208,7 @@ class EnhancedTradingViewProvider(ILiveStreamProvider, IHistoricalDataProvider):
 
             chart = self.client.Session.Chart()
             # Wait for symbol loading and chart data
-            chart.set_market(symbol, {'timeframe': interval})
+            chart.set_market(tv_symbol, {'timeframe': interval})
             study = chart.Study(ind)
 
             # Create an event to wait for the first data update

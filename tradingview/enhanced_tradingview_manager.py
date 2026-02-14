@@ -590,11 +590,14 @@ class EnhancedTradingViewManager:
             )
 
             # Cache data
-            self.cache_manager.set_cached_data(symbol, timeframe, count, {
-                "data": standard_data,
-                "metadata": result.metadata,
-                "quality_score": quality_score
-            })
+            if standard_data:
+                self.cache_manager.set_cached_data(symbol, timeframe, count, {
+                    "data": standard_data,
+                    "metadata": result.metadata,
+                    "quality_score": quality_score
+                })
+            else:
+                self.logger.warning(f"Not caching empty data for {symbol} {timeframe}")
 
             # Record request
             self._record_request(request_id, symbol, timeframe, "historical", quality_score,
