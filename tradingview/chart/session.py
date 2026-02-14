@@ -87,11 +87,17 @@ class ChartSession:
         if self._deleted:
             return
 
+        logger.debug(f"Session {self._session_id} received packet type: {packet.get('type')}")
+
         try:
             # Handle study data
             if isinstance(packet['data'], list) and len(packet['data']) > 1 and isinstance(packet['data'][1], str) and packet['data'][1] in self._study_listeners:
                 study_id = packet['data'][1]
-                self._study_listeners[study_id](packet)
+                callback = self._study_listeners[study_id]
+                if asyncio.iscoroutinefunction(callback):
+                    asyncio.create_task(callback(packet))
+                else:
+                    callback(packet)
                 return
 
             # Handle symbol resolution
@@ -143,7 +149,11 @@ class ChartSession:
                             continue
 
                         if k in self._study_listeners:
-                            self._study_listeners[k](packet)
+                            callback = self._study_listeners[k]
+                            if asyncio.iscoroutinefunction(callback):
+                                asyncio.create_task(callback(packet))
+                            else:
+                                callback(packet)
 
                     self._handle_event('update', changes)
                     return

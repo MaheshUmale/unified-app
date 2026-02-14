@@ -381,7 +381,7 @@ class EnhancedTradingViewClient(Client):
                 await self._start_enhanced_features()
 
                 self._notify_connection_state_change(ConnectionState.CONNECTED)
-                logger.info("✅ TradingView Enhanced Client connected successfully")
+                logger.info(f"✅ TradingView Enhanced Client ({id(self)}) connected successfully")
                 return True
             else:
                 self.monitor.state = ConnectionState.FAILED
