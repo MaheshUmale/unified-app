@@ -45,7 +45,9 @@ The `ProviderRegistry` (`backend/core/provider_registry.py`) manages these imple
 
 | Interface | Provider Name | Source |
 |-----------|---------------|--------|
-| `ILiveStreamProvider` | `tradingview` | TradingView WebSocket |
+| `ILiveStreamProvider` | `tradingview` | Standard TradingView WebSocket |
+| `ILiveStreamProvider` | `enhanced_tv` | Integrated Enterprise-grade Module |
 | `IOptionsDataProvider` | `trendlyne` | Trendlyne API |
 | `IOptionsDataProvider` | `nse` | Direct NSE India API |
-| `IHistoricalDataProvider` | `tradingview` | TradingView API / Scraper |
+| `IHistoricalDataProvider` | `tradingview` | Standard TradingView API |
+| `IHistoricalDataProvider` | `enhanced_tv` | Integrated Module with Caching |

@@ -115,6 +115,7 @@ This document outlines the comprehensive enhancements made to the NSE Options Tr
   - **Analysis Overview**: Spot-PCR Confluence, OI Distribution, and Merged Trend charts.
   - **Strategies**: Payoff charts and risk/reward metrics for multi-leg positions.
   - **Scalper**: Real-time confluence tracking and automated execution logs.
+  - **System**: Real-time TradingView data engine health, cache metrics, and latency monitoring.
 
 ## Database Schema Updates
 

@@ -5,10 +5,6 @@
 TradingView Account Configuration Manager
 Supports environment variable priority and persistent configuration file storage.
 """
-import rookiepy
-from typing import Optional
-from dataclasses import dataclass
-from datetime import datetime
 
 import os
 import json
@@ -317,26 +313,6 @@ class TradingViewAuthManager:
         Returns:
             TradingViewAccount: Found configuration. Priority: Env > Explicit Name > Browser > Default
         """
-        
-
-        cookies = rookiepy.brave(['.tradingview.com'])
-        if cookies:
-            # Map cookies to your class fields
-            session_token = next((c['value'] for c in cookies if c['name'] == 'sessionid'), "")
-            # TradingView signatures usually start with 'v3:'
-            signature = next((c['value'] for c in cookies if c['name'] == 'sessionid_sign'), "")
-            
-            tv_acct= TradingViewAccount(
-                name=account_name,
-                session_token=session_token,
-                signature=signature,
-                created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            )
-            
-            self._env_config_cache =tv_acct
-
-
-
         # 1. Environment variable priority
         env_config = self._get_env_config()
         if env_config:
