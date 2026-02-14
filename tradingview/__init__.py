@@ -1,24 +1,24 @@
 """
-TradingView API Client 主模块
+TradingView API Client Main Module
 
-这个模块提供对TradingView API的访问，可以获取市场数据、图表数据和技术指标。
+This module provides access to the TradingView API for market data, chart data, and technical indicators.
 """
 
-# 客户端核心
+# Client core
 from .client import Client
 
-# 图表模块
+# Chart modules
 from .chart import ChartSession, Study
 
-# 行情模块
+# Quote modules
 from .quote import QuoteSession, QuoteMarket
 
-# 指标和技术分析
+# Indicators and technical analysis
 from .classes.builtin_indicator import BuiltInIndicator
 from .classes.pine_indicator import PineIndicator
 from .classes.pine_perm_manager import PinePermManager
 
-# 工具和辅助函数
+# Tools and helper functions
 from .misc_requests import (
     fetch_scan_data,
     get_ta,
@@ -32,12 +32,12 @@ from .misc_requests import (
     get_drawings
 )
 
-# 工具模块
+# Utility modules
 from . import utils
 from . import protocol
 from . import tradingview_types as types
 
-# 版本信息
+# Version info
 __version__ = '1.0.0'
 
 __all__ = [

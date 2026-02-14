@@ -1,5 +1,5 @@
 """
-Pine权限管理器类
+Pine Permission Manager Module
 """
 import aiohttp
 from datetime import datetime
@@ -8,23 +8,23 @@ from ..utils import gen_auth_cookies
 
 class PinePermManager:
     """
-    Pine权限管理器类
+    Class for managing Pine Script indicator permissions.
     """
     def __init__(self, session_id: str, signature: str, pine_id: str):
         """
-        初始化Pine权限管理器
+        Initialize Pine permission manager.
 
         Args:
             session_id: SessionID
-            signature: 签名
-            pine_id: Pine指标ID
+            signature: Signature
+            pine_id: Pine indicator ID
         """
         if not session_id:
-            raise ValueError("请提供会话ID")
+            raise ValueError("Please provide session ID")
         if not signature:
-            raise ValueError("请提供签名")
+            raise ValueError("Please provide signature")
         if not pine_id:
-            raise ValueError("请提供Pine ID")
+            raise ValueError("Please provide Pine ID")
 
         self.session_id = session_id
         self.signature = signature
@@ -32,14 +32,14 @@ class PinePermManager:
 
     async def get_users(self, limit: int = 10, order: str = '-created') -> List[Dict[str, Any]]:
         """
-        获取授权用户列表
+        Get list of authorized users.
 
         Args:
-            limit: 获取数量限制
-            order: 排序方式
+            limit: Limit of records to fetch
+            order: Sorting order
 
         Returns:
-            List[Dict]: 用户列表
+            List[Dict]: User list
         """
         async with aiohttp.ClientSession() as session:
             async with session.post(
@@ -53,21 +53,21 @@ class PinePermManager:
             ) as resp:
                 if resp.status >= 400:
                     error_data = await resp.json()
-                    raise ValueError(error_data.get('detail', '凭证或Pine ID错误'))
+                    raise ValueError(error_data.get('detail', 'Invalid credentials or Pine ID'))
 
                 data = await resp.json()
                 return data.get('results', [])
 
     async def add_user(self, username: str, expiration: Optional[datetime] = None) -> str:
         """
-        添加授权用户
+        Add an authorized user.
 
         Args:
-            username: 用户名
-            expiration: 过期时间
+            username: Username to add
+            expiration: Expiration date
 
         Returns:
-            str: 状态
+            str: Status
         """
         data = f"pine_id={self.pine_id.replace(';', '%3B')}&username_recip={username}"
         if expiration:
@@ -85,21 +85,21 @@ class PinePermManager:
             ) as resp:
                 if resp.status >= 400:
                     error_data = await resp.json()
-                    raise ValueError(error_data.get('detail', '凭证或Pine ID错误'))
+                    raise ValueError(error_data.get('detail', 'Invalid credentials or Pine ID'))
 
                 data = await resp.json()
                 return data.get('status', None)
 
     async def modify_expiration(self, username: str, expiration: Optional[datetime] = None) -> str:
         """
-        修改授权过期时间
+        Modify authorization expiration.
 
         Args:
-            username: 用户名
-            expiration: 新的过期时间
+            username: Username
+            expiration: New expiration date
 
         Returns:
-            str: 状态
+            str: Status
         """
         data = f"pine_id={self.pine_id.replace(';', '%3B')}&username_recip={username}"
         if expiration:
@@ -117,20 +117,20 @@ class PinePermManager:
             ) as resp:
                 if resp.status >= 400:
                     error_data = await resp.json()
-                    raise ValueError(error_data.get('detail', '凭证或Pine ID错误'))
+                    raise ValueError(error_data.get('detail', 'Invalid credentials or Pine ID'))
 
                 data = await resp.json()
                 return data.get('status', None)
 
     async def remove_user(self, username: str) -> str:
         """
-        移除授权用户
+        Remove an authorized user.
 
         Args:
-            username: 用户名
+            username: Username to remove
 
         Returns:
-            str: 状态
+            str: Status
         """
         async with aiohttp.ClientSession() as session:
             async with session.post(
@@ -144,7 +144,7 @@ class PinePermManager:
             ) as resp:
                 if resp.status >= 400:
                     error_data = await resp.json()
-                    raise ValueError(error_data.get('detail', '凭证或Pine ID错误'))
+                    raise ValueError(error_data.get('detail', 'Invalid credentials or Pine ID'))
 
                 data = await resp.json()
                 return data.get('status', None)

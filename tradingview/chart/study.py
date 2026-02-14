@@ -55,17 +55,37 @@ class ChartStudy:
         # Register listener
         self._study_listeners[self._study_id] = self._handle_study_data
 
-        # Dispatch creation request
-        self._create_study_task = asyncio.create_task(
-            chart_session._client.send('create_study', [
-                chart_session._session_id,
-                self._study_id,
-                'st1',
-                '$prices',
-                self.instance.type,
-                self._get_inputs(self.instance),
-            ])
-        )
+        # Dispatch creation request - Wait for session and symbol resolution
+        async def create_study_async():
+            try:
+                # Wait for session creation task
+                if hasattr(chart_session, '_create_session_task'):
+                    await chart_session._create_session_task
+
+                # Wait for symbol resolution - Crucial for create_study to succeed
+                if hasattr(chart_session, '_symbol_resolved_event'):
+                    try:
+                        await asyncio.wait_for(chart_session._symbol_resolved_event.wait(), timeout=10.0)
+                    except asyncio.TimeoutError:
+                        logger.warning(f"Timeout waiting for symbol resolution before creating study {self._study_id}")
+
+                # Check if session ID is valid
+                if not chart_session._session_id:
+                    self._handle_error("Chart session ID is missing")
+                    return
+
+                await chart_session._client.send('create_study', [
+                    chart_session._session_id,
+                    self._study_id,
+                    'st1',
+                    '$prices',
+                    self.instance.type,
+                    self._get_inputs(self.instance),
+                ])
+            except Exception as e:
+                self._handle_error(f"Failed to dispatch create_study: {str(e)}")
+
+        self._create_study_task = asyncio.create_task(create_study_async())
 
     def _get_inputs(self, options):
         """

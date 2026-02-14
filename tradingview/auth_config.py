@@ -161,6 +161,9 @@ class TradingViewAuthManager:
         # Env config cache
         self._env_config_cache: Optional[TradingViewAccount] = None
 
+        # Browser config cache
+        self._browser_config_cache: Optional[TradingViewAccount] = None
+
         # Load config
         self._load_config()
 
@@ -272,6 +275,34 @@ class TradingViewAuthManager:
 
         return None
 
+    def _get_browser_config(self) -> Optional[TradingViewAccount]:
+        """Retrieve configuration from Brave browser using rookiepy"""
+        if self._browser_config_cache:
+            return self._browser_config_cache
+
+        try:
+            import rookiepy
+            raw_cookies = rookiepy.brave(['.tradingview.com'])
+            if raw_cookies:
+                session_token = next((c['value'] for c in raw_cookies if c['name'] == 'sessionid'), None)
+                signature = next((c['value'] for c in raw_cookies if c['name'] == 'sessionid_sign'), None)
+
+                if session_token and signature:
+                    self._browser_config_cache = TradingViewAccount(
+                        name="brave_browser",
+                        session_token=session_token,
+                        signature=signature,
+                        server="data",
+                        description="Configuration extracted from Brave browser",
+                        is_active=True
+                    )
+                    logger.info("Successfully extracted TradingView session from Brave browser")
+                    return self._browser_config_cache
+        except Exception as e:
+            logger.debug(f"Failed to extract session from browser: {e}")
+
+        return None
+
     def get_account(self, account_name: Optional[str] = None) -> Optional[TradingViewAccount]:
         """
         Get account configuration.
@@ -280,7 +311,7 @@ class TradingViewAuthManager:
             account_name: Account name (None for default)
 
         Returns:
-            TradingViewAccount: Found configuration. Priority: Env > Explicit Name > Default
+            TradingViewAccount: Found configuration. Priority: Env > Explicit Name > Browser > Default
         """
         # 1. Environment variable priority
         env_config = self._get_env_config()
@@ -288,33 +319,32 @@ class TradingViewAuthManager:
             env_config.update_last_used()
             return env_config
 
-        # 2. Check config file
-        if not self.auth_config or not self.auth_config.accounts:
-            logger.warning("No TradingView account configurations available")
-            return None
-
-        # 3. Find specific account
-        if account_name:
+        # 2. Find specific account in config file
+        if account_name and self.auth_config:
             for account in self.auth_config.accounts:
                 if account.name == account_name and account.is_active:
                     account.update_last_used()
                     return account
 
-            logger.warning(f"Specified account not found: {account_name}")
-            return None
+        # 3. Check Brave browser fallback
+        browser_config = self._get_browser_config()
+        if browser_config:
+            browser_config.update_last_used()
+            return browser_config
 
-        # 4. Use default account
-        if self.auth_config.default_account:
+        # 4. Use default account from config file
+        if self.auth_config:
+            if self.auth_config.default_account:
+                for account in self.auth_config.accounts:
+                    if account.name == self.auth_config.default_account and account.is_active:
+                        account.update_last_used()
+                        return account
+
+            # 5. Fallback to first active account in config file
             for account in self.auth_config.accounts:
-                if account.name == self.auth_config.default_account and account.is_active:
+                if account.is_active:
                     account.update_last_used()
                     return account
-
-        # 5. Fallback to first active account
-        for account in self.auth_config.accounts:
-            if account.is_active:
-                account.update_last_used()
-                return account
 
         logger.warning("No active accounts found")
         return None
@@ -437,6 +467,18 @@ class TradingViewAuthManager:
                 'is_active': env_config.is_active,
                 'source': 'environment',
                 'is_default': True
+            })
+
+        # Browser config
+        browser_config = self._get_browser_config()
+        if browser_config:
+            accounts_info.append({
+                'name': browser_config.name,
+                'server': browser_config.server,
+                'description': browser_config.description,
+                'is_active': browser_config.is_active,
+                'source': 'browser',
+                'is_default': False
             })
 
         # Config file accounts

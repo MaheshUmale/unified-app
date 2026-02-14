@@ -1,5 +1,5 @@
 """
-杂项请求模块
+Miscellaneous Requests Module
 """
 import os
 import re
@@ -15,20 +15,20 @@ from .classes import PineIndicator, BuiltInIndicator
 from tradingview.utils import get_logger
 logger = get_logger(__name__)
 
-# 全局变量
+# Global variables
 indicators = ['Recommend.Other', 'Recommend.All', 'Recommend.MA']
 built_in_indic_list = []
 
 async def fetch_scan_data(tickers=None, columns=None):
     """
-    获取扫描数据
+    Fetch scanning data.
 
     Args:
-        tickers: 交易对列表
-        columns: 列字段列表
+        tickers: List of symbols
+        columns: List of column fields
 
     Returns:
-        dict: 扫描结果数据
+        dict: Scan results
     """
     if tickers is None:
         tickers = []
@@ -44,34 +44,34 @@ async def fetch_scan_data(tickers=None, columns=None):
             }
         ) as resp:
             if resp.status >= 500:
-                raise ValueError(f"服务器错误: {resp.status}")
+                raise ValueError(f"Server error: {resp.status}")
 
             return await resp.json()
 
 async def get_ta(symbol_id):
     """
-    获取技术分析数据
+    Fetch technical analysis data.
 
     Args:
-        symbol_id: 市场ID (例如: 'COINBASE:BTCEUR')
+        symbol_id: Market ID (e.g., 'COINBASE:BTCEUR')
 
     Returns:
-        dict: 技术分析结果
+        dict: TA results
     """
     advice = {}
 
-    # 创建列字段
+    # Create columns
     cols = []
     for t in ['1', '5', '15', '60', '240', '1D', '1W', '1M']:
         for i in indicators:
             cols.append(f"{i}|{t}" if t != '1D' else i)
 
-    # 获取数据
+    # Fetch data
     result = await fetch_scan_data([symbol_id], cols)
     if not result.get('data') or not result['data'][0]:
         return False
 
-    # 处理数据
+    # Process data
     for i, val in enumerate(result['data'][0]['d']):
         name, period = cols[i].split('|') if '|' in cols[i] else (cols[i], '1D')
         period_name = period
@@ -84,13 +84,13 @@ async def get_ta(symbol_id):
     return advice
 
 class SearchMarketResult:
-    """市场搜索结果类"""
+    """Market search result class"""
     def __init__(self, data):
         """
-        初始化市场搜索结果
+        Initialize market search result.
 
         Args:
-            data: 市场数据
+            data: Market data
         """
         self.exchange = data['exchange']
         self.fullExchange = data['fullExchange']
@@ -101,25 +101,16 @@ class SearchMarketResult:
 
     async def get_ta(self):
         """
-        获取该市场的技术分析数据
+        Get TA data for this market.
 
         Returns:
-            dict: 技术分析数据
+            dict: TA data
         """
         return await get_ta(self.id)
 
 async def search_market(search, filter=''):
     """
-    查找交易对 (已弃用)
-
-    Args:
-        search: 关键词
-        filter: 分类过滤
-
-    Returns:
-        list: 搜索结果列表
-
-    已弃用: 请使用 search_market_v3 代替
+    Search for market (deprecated).
     """
     async with aiohttp.ClientSession() as session:
         async with session.get(
@@ -133,7 +124,7 @@ async def search_market(search, filter=''):
             }
         ) as resp:
             if resp.status >= 500:
-                raise ValueError(f"服务器错误: {resp.status}")
+                raise ValueError(f"Server error: {resp.status}")
 
             data = await resp.json()
 
@@ -155,16 +146,8 @@ async def search_market(search, filter=''):
 
 async def search_market_v3(search, filter=''):
     """
-    查找交易对 (V3)
-
-    Args:
-        search: 关键词
-        filter: 分类过滤
-
-    Returns:
-        list: 搜索结果列表
+    Search for market (V3).
     """
-    # 处理搜索文本
     splitted_search = search.upper().replace(' ', '+').split(':')
 
     params = {
@@ -184,12 +167,10 @@ async def search_market_v3(search, filter=''):
             }
         ) as resp:
             if resp.status >= 500:
-                raise ValueError(f"服务器错误: {resp.status}")
+                raise ValueError(f"Server error: {resp.status}")
 
             data = await resp.json()
 
-            # print("symbol-search: ",data)
-            # {'symbols_remaining': 0, 'symbols': [{'symbol': 'XAUUSD', 'description': 'Gold', 'type': 'commodity', 'exchange': 'OANDA', 'currency_code': 'USD', 'currency-logoid': 'country/US', 'logoid': 'metal/gold', 'provider_id': 'oanda', 'source2': {'id': 'OANDA', 'name': 'OANDA', 'description': 'OANDA'}, 'source_id': 'OANDA', 'typespecs': ['cfd']}]}
             results = []
             for s in data.get('symbols', []):
                 exchange = s['exchange'].split(' ')[0]
@@ -207,13 +188,13 @@ async def search_market_v3(search, filter=''):
             return results
 
 class SearchIndicatorResult:
-    """指标搜索结果类"""
+    """Indicator search result class"""
     def __init__(self, data):
         """
-        初始化指标搜索结果
+        Initialize indicator search result.
 
         Args:
-            data: 指标数据
+            data: Indicator data
         """
         self.id = data['id']
         self.version = data['version']
@@ -228,10 +209,10 @@ class SearchIndicatorResult:
 
     async def get(self):
         """
-        获取完整指标信息
+        Get full indicator information.
 
         Returns:
-            PineIndicator: 指标对象
+            PineIndicator: Indicator object
         """
         return await get_indicator(
             self.id,
@@ -242,17 +223,11 @@ class SearchIndicatorResult:
 
 async def search_indicator(search=''):
     """
-    查找指标
-
-    Args:
-        search: 搜索关键词
-
-    Returns:
-        list: 指标搜索结果列表
+    Search for indicators.
     """
     global built_in_indic_list
 
-    # 如果内置指标列表为空，先获取内置指标
+    # Fetch built-in list if empty
     if not built_in_indic_list:
         for indicator_type in ['standard', 'candlestick', 'fundamental']:
             try:
@@ -260,25 +235,23 @@ async def search_indicator(search=''):
                     async with session.get(
                         'https://pine-facade.tradingview.com/pine-facade/list',
                         params={'filter': indicator_type},
-                        headers={'Accept': 'application/json'} # 显式请求JSON格式
+                        headers={'Accept': 'application/json'}
                     ) as resp:
                         if resp.status < 500:
                             try:
-                                # 首先尝试获取文本内容
                                 text_content = await resp.text()
                                 try:
-                                    # 然后尝试将文本解析为JSON
                                     data = json.loads(text_content)
                                     if isinstance(data, list):
                                         built_in_indic_list.extend(data)
                                 except json.JSONDecodeError:
-                                    logger.error(f"解析内置指标列表失败: {indicator_type}")
+                                    logger.error(f"Failed to parse built-in indicators: {indicator_type}")
                             except Exception as e:
-                                logger.error(f"获取内置指标列表出错: {str(e)}")
+                                logger.error(f"Error fetching built-in indicators: {str(e)}")
             except Exception as e:
-                print(f"连接指标API失败: {str(e)}")
+                print(f"Failed to connect to indicator API: {str(e)}")
 
-    # 获取公共脚本
+    # Fetch public scripts
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
@@ -287,26 +260,23 @@ async def search_indicator(search=''):
                 headers={'Accept': 'application/json'}
             ) as resp:
                 if resp.status >= 500:
-                    raise ValueError(f"服务器错误: {resp.status}")
+                    raise ValueError(f"Server error: {resp.status}")
 
                 try:
-                    # 首先获取文本内容
                     text_content = await resp.text()
-                    # 然后解析为JSON
                     public_data = json.loads(text_content)
                 except json.JSONDecodeError:
-                    # 如果无法解析，使用空结果
-                    print("解析公共脚本列表失败")
+                    print("Failed to parse public scripts")
                     public_data = {"results": []}
     except Exception as e:
-        print(f"获取公共脚本列表失败: {str(e)}")
+        print(f"Failed to fetch public scripts: {str(e)}")
         public_data = {"results": []}
 
-    # 标准化搜索文本函数
+    # Standardize search text
     def norm(s=''):
         return ''.join(c for c in s.upper() if c.isalpha())
 
-    # 处理内置指标
+    # Process built-in
     built_in_indicators = []
     for ind in built_in_indic_list:
         if (norm(ind.get('scriptName', '')).find(norm(search)) != -1 or
@@ -325,7 +295,7 @@ async def search_indicator(search=''):
                 'type': ind.get('extra', {}).get('kind', 'study')
             }))
 
-    # 处理公共指标
+    # Process public
     public_indicators = []
     for ind in public_data.get('results', []):
         public_indicators.append(SearchIndicatorResult({
@@ -342,34 +312,22 @@ async def search_indicator(search=''):
             'type': ind.get('extra', {}).get('kind', 'study')
         }))
 
-    # 合并结果
     return built_in_indicators + public_indicators
 
 async def get_indicator(indicator_id, version='last', session='', signature=''):
     """
-    获取指标数据
-
-    Args:
-        indicator_id: 指标ID
-        version: 指标版本
-        session: 会话ID
-        signature: 签名
-
-    Returns:
-        PineIndicator 或 BuiltInIndicator: 指标对象
+    Get indicator data.
     """
-    # 检查内置指标类型
+    # Check built-in types
     if indicator_id.startswith('STD;'):
-        # 内置指标处理
         indicator_type = indicator_id.replace('STD;', '')
 
-        # 内置指标映射表
         std_indicators = {
             'RSI': 'RSI@tv-basicstudies-241',
             'SMA': 'MASimple@tv-basicstudies-241',
             'EMA': 'MAExp@tv-basicstudies-241',
             'MACD': 'MACD@tv-basicstudies-241',
-            'BB': 'BB@tv-basicstudies-241',  # 布林带
+            'BB': 'BB@tv-basicstudies-241',
             'VOLUME': 'Volume@tv-basicstudies-241',
             'STOCH': 'Stochastic@tv-basicstudies-241',
             'STOCHRSI': 'StochasticRSI@tv-basicstudies-241',
@@ -378,26 +336,20 @@ async def get_indicator(indicator_id, version='last', session='', signature=''):
             'OBV': 'OBV@tv-basicstudies-241',
         }
 
-        # 获取指标类型
         if indicator_type in std_indicators:
             indicator_full_type = std_indicators[indicator_type]
             try:
-                # 创建内置指标
                 return BuiltInIndicator(indicator_full_type)
             except ValueError as e:
-                raise ValueError(f"创建内置指标 '{indicator_type}' 失败: {str(e)}")
+                raise ValueError(f"Failed to create built-in indicator '{indicator_type}': {str(e)}")
         else:
-            raise ValueError(f"不支持的内置指标类型: '{indicator_type}'")
+            raise ValueError(f"Unsupported built-in indicator: '{indicator_type}'")
 
-    # Pine指标处理
+    # Pine indicators
     if indicator_id.startswith('PUB;') or indicator_id.startswith('PRIV;'):
-        # 检查版本
         version = 'last' if version == 'last' else str(version)
-
-        # 构建请求URL
         url = f"https://pine-facade.tradingview.com/pine-facade/get-study-source/{indicator_id.replace(';', '%3B')}/={version}"
 
-        # 添加认证信息
         headers = {
             'origin': 'https://www.tradingview.com',
             'Content-Type': 'application/x-www-form-urlencoded',
@@ -406,26 +358,22 @@ async def get_indicator(indicator_id, version='last', session='', signature=''):
         if session and signature:
             headers['cookie'] = gen_auth_cookies(session, signature)
 
-        # 请求指标数据
         try:
             async with aiohttp.ClientSession() as aio_session:
                 async with aio_session.get(url, headers=headers) as resp:
                     if resp.status != 200:
-                        raise ValueError(f"获取指标失败: HTTP {resp.status}")
+                        raise ValueError(f"Failed to get indicator: HTTP {resp.status}")
 
                     data = await resp.json()
 
                     if 'error' in data:
-                        raise ValueError(f"获取指标失败: {data['error']}")
+                        raise ValueError(f"Failed to get indicator: {data['error']}")
 
-                    # 处理特殊字符
                     inputs = {}
                     plots = {}
 
-                    # 处理输入
                     for inp in data.get('inputs', []):
                         input_id = inp.get('id', '')
-
                         inputs[input_id] = {
                             'name': inp.get('name', ''),
                             'inline': inp.get('inline', ''),
@@ -436,17 +384,13 @@ async def get_indicator(indicator_id, version='last', session='', signature=''):
                             'isHidden': inp.get('isHidden', False),
                             'isFake': inp.get('isFake', False),
                         }
-
-                        # 处理选项
                         if 'options' in inp:
                             inputs[input_id]['options'] = inp['options']
 
-                    # 处理输出
                     for plot in data.get('plots', []):
                         if 'id' in plot and 'target' in plot:
                             plots[plot['id']] = plot['target']
 
-                    # 创建指标对象
                     return PineIndicator({
                         'pineId': data.get('pineId', ''),
                         'pineVersion': data.get('pineVersion', ''),
@@ -457,28 +401,22 @@ async def get_indicator(indicator_id, version='last', session='', signature=''):
                         'script': data.get('source', ''),
                     })
         except Exception as e:
-            raise ValueError(f"获取指标失败: {str(e)}")
+            raise ValueError(f"Failed to get indicator: {str(e)}")
 
-    # 普通Pine脚本处理
+    # Generic Pine script
     return PineIndicator({
         'pineId': '',
         'pineVersion': '',
-        'description': '自定义脚本',
-        'shortDescription': '自定义',
+        'description': 'Custom Script',
+        'shortDescription': 'Custom',
         'inputs': {},
         'plots': {},
         'script': indicator_id,
     })
 
 class User:
-    """用户类"""
+    """User class"""
     def __init__(self, data):
-        """
-        初始化用户对象
-
-        Args:
-            data: 用户数据
-        """
         self.id = data.get('id')
         self.username = data.get('username')
         self.first_name = data.get('firstName')
@@ -496,21 +434,11 @@ class User:
 
 async def login_user(username, password, remember=True, ua=None):
     """
-    通过用户名/邮箱和密码登录
-
-    Args:
-        username: 用户名/邮箱
-        password: 密码
-        remember: 是否记住会话 (默认: True)
-        ua: 自定义User-Agent
-
-    Returns:
-        User: 用户对象
+    Login via username/email and password.
     """
     if ua is None:
         ua = 'TWAPI/3.0'
 
-    # 构建User Agent
     platform_info = f"{platform.version()}; {platform.platform()}; {platform.machine()}"
     user_agent = f"{ua} ({platform_info})"
 
@@ -525,14 +453,13 @@ async def login_user(username, password, remember=True, ua=None):
             }
         ) as resp:
             if resp.status >= 500:
-                raise ValueError(f"服务器错误: {resp.status}")
+                raise ValueError(f"Server error: {resp.status}")
 
             data = await resp.json()
 
             if data.get('error'):
                 raise ValueError(data['error'])
 
-            # 获取Cookie
             cookies = resp.headers.getall('Set-Cookie', [])
             session_cookie = next((c for c in cookies if 'sessionid=' in c), '')
             session_id = re.search(r'sessionid=(.*?);', session_cookie)
@@ -542,7 +469,6 @@ async def login_user(username, password, remember=True, ua=None):
             signature = re.search(r'sessionid_sign=(.*?);', sign_cookie)
             signature = signature.group(1) if signature else None
 
-            # 创建用户对象
             return User({
                 'id': data['user']['id'],
                 'username': data['user']['username'],
@@ -562,15 +488,7 @@ async def login_user(username, password, remember=True, ua=None):
 
 async def get_user(session, signature='', location='https://www.tradingview.com/'):
     """
-    通过会话ID获取用户信息
-
-    Args:
-        session: 会话ID
-        signature: 会话签名
-        location: 授权页面位置
-
-    Returns:
-        User: 用户对象
+    Get user info via session ID.
     """
     async with aiohttp.ClientSession() as client:
         async with client.get(
@@ -581,18 +499,15 @@ async def get_user(session, signature='', location='https://www.tradingview.com/
             allow_redirects=False
         ) as resp:
             if resp.status >= 500:
-                raise ValueError(f"服务器错误: {resp.status}")
+                raise ValueError(f"Server error: {resp.status}")
 
-            # 如果有重定向，则跟随重定向
             if resp.status in (301, 302, 303, 307, 308) and 'location' in resp.headers:
                 if resp.headers['location'] != location:
                     return await get_user(session, signature, resp.headers['location'])
 
             data = await resp.text()
 
-            # 检查是否有认证令牌
             if 'auth_token' in data:
-                # 使用正则表达式提取用户信息
                 user_id = re.search(r'"id":([0-9]{1,10}),', data)
                 username = re.search(r'"username":"(.*?)"', data)
                 first_name = re.search(r'"first_name":"(.*?)"', data)
@@ -632,18 +547,11 @@ async def get_user(session, signature='', location='https://www.tradingview.com/
                     'joinDate': join_date,
                 })
 
-            raise ValueError('无效或过期的会话ID/签名')
+            raise ValueError('Invalid or expired session/signature')
 
 async def get_private_indicators(session, signature=''):
     """
-    获取用户私有指标
-
-    Args:
-        session: 会话ID
-        signature: 会话签名
-
-    Returns:
-        list: 指标搜索结果列表
+    Get user's private indicators.
     """
     async with aiohttp.ClientSession() as client:
         async with client.get(
@@ -656,7 +564,7 @@ async def get_private_indicators(session, signature=''):
             }
         ) as resp:
             if resp.status >= 500:
-                raise ValueError(f"服务器错误: {resp.status}")
+                raise ValueError(f"Server error: {resp.status}")
 
             data = await resp.json()
 
@@ -682,19 +590,11 @@ async def get_private_indicators(session, signature=''):
 
 async def get_chart_token(layout, credentials=None):
     """
-    获取图表Token
-
-    Args:
-        layout: 图表布局ID
-        credentials: 用户凭证 (id, session, signature)
-
-    Returns:
-        str: Token
+    Get chart Token.
     """
     if credentials is None:
         credentials = {}
 
-    # 提取用户凭证
     user_id = credentials.get('id', -1)
     session = credentials.get('session')
     signature = credentials.get('signature')
@@ -711,29 +611,19 @@ async def get_chart_token(layout, credentials=None):
             }
         ) as resp:
             if resp.status >= 500:
-                raise ValueError(f"服务器错误: {resp.status}")
+                raise ValueError(f"Server error: {resp.status}")
 
             data = await resp.json()
 
             if not data.get('token'):
-                raise ValueError('无效的布局或凭证')
+                raise ValueError('Invalid layout or credentials')
 
             return data['token']
 
 async def get_drawings(layout, symbol='', credentials=None, chart_id='_shared'):
     """
-    获取图形绘制
-
-    Args:
-        layout: 图表布局ID
-        symbol: 市场过滤
-        credentials: 用户凭证
-        chart_id: 图表ID
-
-    Returns:
-        list: 绘制列表
+    Get chart drawings.
     """
-    # 获取图表Token
     chart_token = await get_chart_token(layout, credentials)
 
     async with aiohttp.ClientSession() as client:
@@ -746,17 +636,15 @@ async def get_drawings(layout, symbol='', credentials=None, chart_id='_shared'):
             }
         ) as resp:
             if resp.status >= 500:
-                raise ValueError(f"服务器错误: {resp.status}")
+                raise ValueError(f"Server error: {resp.status}")
 
             data = await resp.json()
 
             if not data.get('payload'):
-                raise ValueError('无效的布局、用户凭证或图表ID')
+                raise ValueError('Invalid layout, credentials or chart ID')
 
-            # 处理绘制数据
             drawings = []
             for drawing in data['payload'].get('sources', {}).values():
-                # 合并状态数据
                 drawing_with_state = {**drawing, **drawing.get('state', {})}
                 drawings.append(drawing_with_state)
 

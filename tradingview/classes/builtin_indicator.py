@@ -1,9 +1,9 @@
 """
-内置指标类
+Built-in Indicator Module
 """
 from typing import Dict, Any, Optional
 
-# 默认值配置
+# Default value configurations
 DEFAULT_VALUES = {
     'Volume@tv-basicstudies-241': {
         'length': 20,
@@ -69,14 +69,14 @@ DEFAULT_VALUES = {
 
 class BuiltInIndicator:
     """
-    内置指标类
+    Class representing a built-in indicator.
     """
     def __init__(self, type: str = ''):
         """
-        初始化内置指标
+        Initialize built-in indicator.
 
         Args:
-            type: 指标类型
+            type: Indicator type
         """
         if not type:
             raise ValueError(f"Wrong built-in indicator type '{type}'.")
@@ -86,22 +86,22 @@ class BuiltInIndicator:
 
     @property
     def type(self) -> str:
-        """获取指标类型"""
+        """Get indicator type"""
         return self._type
 
     @property
     def options(self) -> Dict[str, Any]:
-        """获取指标选项"""
+        """Get indicator options"""
         return self._options
 
     def set_option(self, key: str, value: Any, force: bool = False) -> None:
         """
-        设置指标选项
+        Set indicator option.
 
         Args:
-            key: 选项键
-            value: 选项值
-            force: 是否强制设置
+            key: Option key
+            value: Option value
+            force: Whether to force set
         """
         if force:
             self._options[key] = value
@@ -111,7 +111,7 @@ class BuiltInIndicator:
             default_value = DEFAULT_VALUES[self._type].get(key)
 
             if default_value is not None:
-                # 类型检查
+                # Type check
                 required_type = type(default_value)
                 if not isinstance(value, required_type):
                     raise TypeError(f"Wrong '{key}' value type '{type(value).__name__}' (must be '{required_type.__name__}')")

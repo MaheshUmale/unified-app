@@ -102,6 +102,7 @@ class EnhancedTradingViewProvider(ILiveStreamProvider, IHistoricalDataProvider):
 
     async def get_hist_candles(self, symbol: str, interval: str, count: int) -> List[List]:
         """Fetch historical candles using the enhanced client."""
+        chart = None
         try:
             chart = self.client.Session.Chart()
             # ChartSession has a get_historical_data convenience method
@@ -109,14 +110,18 @@ class EnhancedTradingViewProvider(ILiveStreamProvider, IHistoricalDataProvider):
             # Format: [ts, o, h, l, c, v]
             return [[k['time'], k['open'], k['high'], k['low'], k['close'], k['volume']] for k in klines]
         except Exception as e:
-            logger.error(f"Error fetching historical candles from Enhanced TV: {e}")
+            logger.error(f"Error fetching historical candles from Enhanced TV for {symbol}: {e}")
             return []
+        finally:
+            if chart:
+                chart.delete()
 
     async def get_indicators(self, symbol: str, interval: str, indicator_id: str, options: Dict = None) -> List[Dict]:
         """
         Specialized method for the enhanced provider to get indicator data.
         Uses an event-driven approach to wait for data instead of hardcoded sleep.
         """
+        chart = None
         try:
             from tradingview import get_indicator
             ind = await get_indicator(indicator_id)
@@ -125,6 +130,7 @@ class EnhancedTradingViewProvider(ILiveStreamProvider, IHistoricalDataProvider):
                     ind.set_option(k, v)
 
             chart = self.client.Session.Chart()
+            # Wait for symbol loading and chart data
             chart.set_market(symbol, {'timeframe': interval})
             study = chart.Study(ind)
 
@@ -139,15 +145,16 @@ class EnhancedTradingViewProvider(ILiveStreamProvider, IHistoricalDataProvider):
 
             # Wait with a timeout
             try:
-                await asyncio.wait_for(data_event.wait(), timeout=10.0)
+                await asyncio.wait_for(data_event.wait(), timeout=15.0)
                 return [p.__dict__ for p in study.periods]
             except asyncio.TimeoutError:
                 logger.warning(f"Timeout waiting for indicator data: {indicator_id} for {symbol}")
                 return [p.__dict__ for p in study.periods] if study.periods else []
-            finally:
-                # Cleanup temporary session
-                chart.delete()
 
         except Exception as e:
             logger.error(f"Error fetching indicators from Enhanced TV: {e}")
             return []
+        finally:
+            # Cleanup temporary session
+            if chart:
+                chart.delete()

@@ -1,5 +1,5 @@
 """
-图表模块导出
+Chart Module Exports
 """
 from .chart.session import ChartSession
 from .chart.study import ChartStudy
