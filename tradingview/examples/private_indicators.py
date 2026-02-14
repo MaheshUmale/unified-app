@@ -1,101 +1,98 @@
-#!/usr/bin/env python3
-"""
-此示例创建一个图表并使用用户的所有私有指标
-"""
-import asyncio
 import os
 import sys
+import asyncio
+from dotenv import load_dotenv
 
-from ...tradingview import Client, get_private_indicators
+# Add project root to path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+
+from tradingview.client import TradingViewClient
+
+# Load environment variables
+load_dotenv()
 
 async def main():
-    """主函数"""
-    # 检查是否设置了会话ID和签名
-    session = os.environ.get('TV_SESSION')
-    signature = os.environ.get('TV_SIGNATURE')
+    # Credentials
+    session = os.getenv('TV_SESSION')
+    signature = os.getenv('TV_SIGNATURE')
 
     if not session or not signature:
-        raise ValueError('请设置TV_SESSION和TV_SIGNATURE环境变量')
-
-    # 创建客户端并连接
-    client = Client(token=session, signature=signature)
-    await client.connect()
-
-    # 创建图表
-    chart = client.Session.Chart()
-
-    # 设置市场
-    chart.set_market('BINANCE:BTCEUR', {
-        'timeframe': 'D',
-    })
-
-    # 获取所有私有指标
-    print('获取私有指标...')
-    indic_list = await get_private_indicators(session, signature)
-
-    if not indic_list:
-        print('您的账户中没有私有指标')
-        await client.end()
+        print('Please set TV_SESSION and TV_SIGNATURE environment variables')
         return
 
-    print(f'找到 {len(indic_list)} 个私有指标')
+    # Create client
+    client = TradingViewClient()
 
-    # 用于跟踪已加载的指标数量
-    loaded_indicators = 0
-    total_indicators = len(indic_list)
+    # List of private indicators to test
+    # Note: These should be indicators that the user has access to
+    indicator_names = [
+        "Indicator Name 1",
+        "Indicator Name 2"
+    ]
 
-    # 处理每个指标
-    for indic in indic_list:
+    try:
+        # Connect
+        await client.connect(session=session, signature=signature)
+
+        # Create chart
+        chart = client.new_chart()
+        chart.set_market('BINANCE:BTCUSDT', timeframe='60')
+
+        indicators_ready = asyncio.Event()
+        loaded_count = 0
+
+        # Handle each indicator
+        for name in indicator_names:
+            try:
+                # Search for indicator
+                results = await client.search_indicator(name)
+                if not results:
+                    print(f'Indicator not found: {name}')
+                    continue
+
+                # Get full indicator info
+                indic = results[0]
+                print(f'Loading indicator: {indic.name}...')
+
+                # Create indicator study
+                study = chart.new_study(indic)
+
+                # When indicator is ready
+                @study.on_ready
+                async def on_study_ready(indicator=study):
+                    nonlocal loaded_count
+                    print(f'Indicator {indicator.name} loaded!')
+                    loaded_count += 1
+                    if loaded_count == len(indicator_names):
+                        indicators_ready.set()
+
+                # When indicator data updates
+                @study.on_update
+                async def on_study_update(indicator=study):
+                    # Check if there's data
+                    if indicator.periods:
+                        print(f'Indicator {indicator.name} plot values:', indicator.periods[0])
+                        # Show strategy report if available
+                        if indicator.strategy_report:
+                            print(f'Indicator {indicator.name} strategy report:', indicator.strategy_report)
+
+            except Exception as e:
+                print(f'Error loading indicator {name}: {e}')
+
+        # Exit if no indicators or loading failed
+        if not indicator_names:
+            await client.close()
+            return
+
+        # Wait for up to 60 seconds
         try:
-            # 获取完整指标信息
-            print(f'正在加载指标: {indic.name}...')
-            private_indic = await indic.get()
+            await asyncio.wait_for(indicators_ready.wait(), timeout=60)
+            print('All indicators loaded, closing...')
+        except asyncio.TimeoutError:
+            print('Wait timeout, exiting...')
 
-            # 创建指标研究
-            indicator = chart.Study(private_indic)
-
-            # 当指标准备好时
-            def on_ready():
-                nonlocal loaded_indicators
-                print(f'指标 {indic.name} 已加载!')
-                loaded_indicators += 1
-
-                # 当所有指标都加载完成时，退出程序
-                if loaded_indicators == total_indicators:
-                    print('所有指标已加载，正在关闭...')
-                    asyncio.create_task(client.end())
-
-            indicator.on_ready(on_ready)
-
-            # 当指标数据更新时
-            def on_update():
-                # 检查是否有数据
-                if not indicator.periods:
-                    return
-
-                print(f'指标 {indic.name} 的绘图值:', indicator.periods[0] if indicator.periods else None)
-
-                # 显示策略报告（如果有）
-                if indicator.strategy_report:
-                    print(f'指标 {indic.name} 的策略报告:', indicator.strategy_report)
-
-            indicator.on_update(on_update)
-
-        except Exception as e:
-            print(f'加载指标 {indic.name} 时出错: {e}')
-            loaded_indicators += 1
-
-    # 如果没有指标或加载失败，直接退出
-    if loaded_indicators == total_indicators:
-        await client.end()
-    else:
-        # 等待最多60秒
-        try:
-            await asyncio.wait_for(asyncio.sleep(60), timeout=60)
-            print('等待超时，正在退出...')
-            await client.end()
-        except asyncio.CancelledError:
-            pass
+    finally:
+        await client.close()
 
 if __name__ == '__main__':
     asyncio.run(main())

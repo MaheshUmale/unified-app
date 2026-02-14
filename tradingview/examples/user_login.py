@@ -1,77 +1,58 @@
-#!/usr/bin/env python3
-"""
-用户登录示例
-"""
-import asyncio
 import os
+import sys
 from getpass import getpass
+from dotenv import load_dotenv
 
-from ..misc import (
-    login_user,
-    get_user,
-    get_private_indicators
-)
+# Add project root to path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
-
+from tradingview.client import TradingViewClient
 
 async def main():
-    """
-    获取用户信息示例
+    """User login example"""
+    print("TradingView User Login Example")
+    load_dotenv()
 
-    如需登录获取更多数据，请提供token(SESSION)和signature
+    # Create client
+    client = TradingViewClient()
 
-    sessionid
-    b7dc5nugsk5td47u39wiolrj1iy0u544
-
-    sessionid_sign
-    v3:goGfCVtvE/NAUTmU4Kk+NhmPgfgIDk9mozUpMgUf77E=
-    """
-    print("TradingView 用户登录示例")
-    print("------------------------")
-
-    # 从环境变量或用户输入获取凭证
-    username = os.environ.get('TV_USERNAME') or input("请输入用户名或邮箱: ")
-    password = os.environ.get('TV_PASSWORD') or getpass("请输入密码: ")
+    # Get credentials from environment or input
+    username = os.environ.get('TV_USERNAME') or input("Enter username or email: ")
+    password = os.environ.get('TV_PASSWORD') or getpass("Enter password: ")
 
     try:
-        # 尝试登录
-        print("\n登录中...")
-        user = await login_user(username, password)
+        # Attempt login
+        print("\nLogging in...")
+        # Assuming login method exists
+        if hasattr(client, 'login'):
+            user = await client.login(username, password)
+            print(f"\nLogin successful!")
+            print(f"Username: {user.username}")
+            print(f"User ID: {user.id}")
+            print(f"Join Date: {user.join_date}")
+            print(f"Followers: {user.followers}")
 
-        print(f"\n登录成功!")
-        print(f"用户名: {user.username}")
-        print(f"用户ID: {user.id}")
-        print(f"注册时间: {user.join_date}")
-        print(f"粉丝数: {user.followers}")
-        print(f"关注数: {user.following}")
+            # Fetch private indicators
+            print("\nFetching private indicators...")
+            if hasattr(client, 'get_private_indicators'):
+                indicators = await client.get_private_indicators()
+                if indicators:
+                    print(f"\nFound {len(indicators)} private indicators:")
+                    for i, indic in enumerate(indicators[:5], 1):
+                        print(f"{i}. {indic.name}")
+                else:
+                    print("\nNo private indicators found")
 
-        # 获取私有指标
-        print("\n获取私有指标...")
-        indicators = await get_private_indicators(user.session, user.signature)
-
-        if indicators:
-            print(f"\n找到 {len(indicators)} 个私有指标:")
-            for i, ind in enumerate(indicators[:5], 1):
-                print(f"{i}. {ind.name} (ID: {ind.id})")
-
-            if len(indicators) > 5:
-                print(f"...以及 {len(indicators) - 5} 个更多指标")
-        else:
-            print("\n没有找到私有指标")
-
-        # 保存会话信息的示例
-        print("\n会话信息:")
-        print("如果要在其他地方使用这个会话，可以保存以下信息:")
-        print(f"会话ID: {user.session}")
-        print(f"会话签名: {user.signature}")
-
-        # 演示使用已保存的会话获取用户信息
-        print("\n使用会话ID获取用户信息...")
-        user2 = await get_user(user.session, user.signature)
-        print(f"验证成功: {user2.username} (ID: {user2.id})")
-
+            # Session info
+            print("\nSession info:")
+            print("To use this session elsewhere, you can save:")
+            print(f"Session ID: {user.session}")
+            print(f"Session Signature: {user.signature}")
     except Exception as e:
-        print(f"\n登录失败: {e}")
+        print(f"\nLogin failed: {e}")
+    finally:
+        await client.close()
 
-if __name__ == "__main__":
+if __name__ == '__main__':
+    import asyncio
     asyncio.run(main())

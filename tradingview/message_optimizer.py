@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 
 """
-TradingView消息处理优化器
-实现高效的消息队列、去重、优先级处理和批量操作
+TradingView Message Processing Optimizer
+Implements efficient message queues, deduplication, priority processing, and batching.
 """
 
 import asyncio
@@ -21,7 +21,7 @@ logger = get_logger(__name__)
 
 
 class MessageType(Enum):
-    """消息类型枚举"""
+    """Message type enumeration"""
     KLINE_UPDATE = auto()
     QUOTE_UPDATE = auto()
     SYMBOL_RESOLVED = auto()
@@ -35,7 +35,7 @@ class MessageType(Enum):
 
 @dataclass
 class ProcessedMessage:
-    """处理后的消息"""
+    """Represents a processed message"""
     message_id: str
     message_type: MessageType
     symbol: Optional[str]
@@ -47,7 +47,7 @@ class ProcessedMessage:
 
 
 class MessageDeduplicator:
-    """消息去重器"""
+    """Deduplicates incoming messages"""
 
     def __init__(self, window_size: int = 1000, ttl: float = 300.0):
         self.window_size = window_size
@@ -56,41 +56,41 @@ class MessageDeduplicator:
         self.message_timestamps: Dict[str, float] = {}
 
     def is_duplicate(self, message: Dict[str, Any]) -> bool:
-        """检查消息是否重复"""
+        """Check if message is a duplicate"""
         try:
-            # 生成消息指纹
+            # Generate fingerprint
             fingerprint = self._generate_fingerprint(message)
             current_time = time.time()
 
-            # 清理过期消息
+            # Cleanup expired
             self._cleanup_expired_messages(current_time)
 
-            # 检查是否重复
+            # Check duplicate
             if fingerprint in self.message_timestamps:
-                logger.debug(f"发现重复消息: {fingerprint}")
+                logger.debug(f"Found duplicate message: {fingerprint}")
                 return True
 
-            # 记录新消息
+            # Record new
             self.seen_messages.append(fingerprint)
             self.message_timestamps[fingerprint] = current_time
 
             return False
 
         except Exception as e:
-            logger.error(f"去重检查失败: {e}")
+            logger.error(f"Deduplication check failed: {e}")
             return False
 
     def _generate_fingerprint(self, message: Dict[str, Any]) -> str:
-        """生成消息指纹"""
+        """Generate message fingerprint"""
         try:
-            # 提取关键字段生成指纹
+            # Extract key fields
             key_fields = {
                 'type': message.get('type'),
                 'symbol': message.get('symbol'),
                 'timestamp': message.get('timestamp')
             }
 
-            # 对于数据消息，包含数据摘要
+            # Include data hash for data messages
             if 'data' in message:
                 data_str = json.dumps(message['data'], sort_keys=True)
                 key_fields['data_hash'] = hashlib.md5(data_str.encode()).hexdigest()[:8]
@@ -99,11 +99,11 @@ class MessageDeduplicator:
             return hashlib.sha256(fingerprint_str.encode()).hexdigest()[:16]
 
         except Exception as e:
-            logger.error(f"生成消息指纹失败: {e}")
+            logger.error(f"Failed to generate fingerprint: {e}")
             return str(hash(str(message)))
 
     def _cleanup_expired_messages(self, current_time: float) -> None:
-        """清理过期消息"""
+        """Cleanup expired message fingerprints"""
         try:
             expired_keys = [
                 key for key, timestamp in self.message_timestamps.items()
@@ -114,11 +114,11 @@ class MessageDeduplicator:
                 del self.message_timestamps[key]
 
         except Exception as e:
-            logger.error(f"清理过期消息失败: {e}")
+            logger.error(f"Failed to cleanup expired messages: {e}")
 
 
 class MessageClassifier:
-    """消息分类器"""
+    """Classifies incoming raw messages"""
 
     def __init__(self):
         self.classification_rules = {
@@ -145,18 +145,18 @@ class MessageClassifier:
         }
 
     def classify_message(self, raw_message: Dict[str, Any]) -> ProcessedMessage:
-        """分类消息"""
+        """Classify a raw message"""
         try:
-            # 确定消息类型
+            # Determine type
             message_type = self._determine_type(raw_message)
 
-            # 提取符号
+            # Extract symbol
             symbol = self._extract_symbol(raw_message)
 
-            # 生成消息ID
+            # Generate ID
             message_id = self._generate_message_id(raw_message)
 
-            # 确定优先级
+            # Determine priority
             priority = self.priority_rules.get(message_type, 10)
 
             return ProcessedMessage(
@@ -169,7 +169,7 @@ class MessageClassifier:
             )
 
         except Exception as e:
-            logger.error(f"消息分类失败: {e}")
+            logger.error(f"Message classification failed: {e}")
             return ProcessedMessage(
                 message_id=f"error_{time.time()}",
                 message_type=MessageType.OTHER,
@@ -180,7 +180,7 @@ class MessageClassifier:
             )
 
     def _determine_type(self, message: Dict[str, Any]) -> MessageType:
-        """确定消息类型"""
+        """Determine internal message type"""
         message_method = message.get('type', '').lower()
 
         for pattern, msg_type in self.classification_rules.items():
@@ -190,9 +190,8 @@ class MessageClassifier:
         return MessageType.OTHER
 
     def _extract_symbol(self, message: Dict[str, Any]) -> Optional[str]:
-        """提取交易符号"""
+        """Extract trading symbol from message"""
         try:
-            # 尝试从不同位置提取符号
             if 'symbol' in message:
                 return message['symbol']
 
@@ -207,7 +206,7 @@ class MessageClassifier:
             return None
 
     def _generate_message_id(self, message: Dict[str, Any]) -> str:
-        """生成消息ID"""
+        """Generate a unique message identifier"""
         try:
             timestamp = str(time.time())
             content_hash = hashlib.md5(str(message).encode()).hexdigest()[:8]
@@ -217,7 +216,7 @@ class MessageClassifier:
 
 
 class BatchProcessor:
-    """批量处理器"""
+    """Processes messages in optimized batches"""
 
     def __init__(self,
                  max_batch_size: int = 50,
@@ -235,18 +234,18 @@ class BatchProcessor:
         self.batch_count = 0
 
     async def add_message(self, message: ProcessedMessage) -> None:
-        """添加消息到批处理队列"""
+        """Add message to batching queue"""
         try:
             message_type = message.message_type
 
-            # 添加到对应类型的批次
+            # Add to type-specific batch
             self.pending_batches[message_type].append(message)
 
-            # 设置首次计时器
+            # Start timer if first in batch
             if message_type not in self.batch_timers:
                 self.batch_timers[message_type] = time.time()
 
-            # 检查是否需要立即处理批次
+            # Check if processing triggered
             batch = self.pending_batches[message_type]
             elapsed = time.time() - self.batch_timers[message_type]
 
@@ -254,39 +253,39 @@ class BatchProcessor:
                 await self._process_batch(message_type)
 
         except Exception as e:
-            logger.error(f"添加批处理消息失败: {e}")
+            logger.error(f"Failed to add message to batch: {e}")
 
     async def _process_batch(self, message_type: MessageType) -> None:
-        """处理指定类型的批次"""
+        """Trigger processing for a batch type"""
         try:
             batch = self.pending_batches[message_type]
             if not batch:
                 return
 
-            # 清空当前批次
+            # Clear current batch
             self.pending_batches[message_type] = []
             if message_type in self.batch_timers:
                 del self.batch_timers[message_type]
 
-            # 异步处理批次
+            # Spawn processing task
             asyncio.create_task(self._handle_batch(message_type, batch))
 
         except Exception as e:
-            logger.error(f"处理批次失败: {e}")
+            logger.error(f"Failed to process batch: {e}")
 
     async def _handle_batch(self, message_type: MessageType, batch: List[ProcessedMessage]) -> None:
-        """处理消息批次"""
+        """Logic for batch handling"""
         async with self.processing_semaphore:
             try:
                 start_time = time.time()
 
-                # 按符号分组处理
+                # Group by symbol
                 symbol_groups = defaultdict(list)
                 for message in batch:
                     symbol = message.symbol or 'unknown'
                     symbol_groups[symbol].append(message)
 
-                # 并发处理各符号组
+                # Process symbol groups concurrently
                 tasks = []
                 for symbol, messages in symbol_groups.items():
                     task = asyncio.create_task(
@@ -296,85 +295,78 @@ class BatchProcessor:
 
                 await asyncio.gather(*tasks, return_exceptions=True)
 
-                # 更新统计
+                # Update stats
                 self.processed_count += len(batch)
                 self.batch_count += 1
 
                 processing_time = (time.time() - start_time) * 1000
-                logger.debug(f"批次处理完成: {message_type.name}, "
-                           f"消息数: {len(batch)}, 耗时: {processing_time:.1f}ms")
+                logger.debug(f"Batch processed: {message_type.name}, "
+                           f"Count: {len(batch)}, Duration: {processing_time:.1f}ms")
 
             except Exception as e:
-                logger.error(f"批次处理异常: {e}")
+                logger.error(f"Error handling batch: {e}")
 
     async def _process_symbol_group(self,
                                   message_type: MessageType,
                                   symbol: str,
                                   messages: List[ProcessedMessage]) -> None:
-        """处理单个符号的消息组"""
+        """Process a message group for a single symbol"""
         try:
-            # 这里可以实现特定的业务逻辑
-            # 比如合并K线数据、去重报价更新等
-
             if message_type == MessageType.KLINE_UPDATE:
                 await self._merge_kline_updates(symbol, messages)
             elif message_type == MessageType.QUOTE_UPDATE:
                 await self._merge_quote_updates(symbol, messages)
             else:
-                # 默认处理
                 for message in messages:
                     message.processed = True
 
         except Exception as e:
-            logger.error(f"处理符号组失败 {symbol}: {e}")
+            logger.error(f"Failed to process symbol group {symbol}: {e}")
 
     async def _merge_kline_updates(self, symbol: str, messages: List[ProcessedMessage]) -> None:
-        """合并K线更新"""
+        """Logic for merging K-line updates"""
         try:
-            # 按时间戳排序
+            # Sort by time
             messages.sort(key=lambda m: m.timestamp)
 
-            # 合并逻辑：保留最新的完整数据
+            # Keep latest only
             latest_message = messages[-1]
             latest_message.processed = True
 
-            # 标记其他消息为已处理
             for message in messages[:-1]:
                 message.processed = True
 
-            logger.debug(f"合并 {symbol} K线更新: {len(messages)} -> 1")
+            logger.debug(f"Merged {symbol} K-line updates: {len(messages)} -> 1")
 
         except Exception as e:
-            logger.error(f"合并K线更新失败: {e}")
+            logger.error(f"Failed to merge K-line updates: {e}")
 
     async def _merge_quote_updates(self, symbol: str, messages: List[ProcessedMessage]) -> None:
-        """合并报价更新"""
+        """Logic for merging quote updates"""
         try:
-            # 保留最新报价
             latest_message = messages[-1]
             latest_message.processed = True
 
-            # 标记其他消息为已处理
             for message in messages[:-1]:
                 message.processed = True
 
-            logger.debug(f"合并 {symbol} 报价更新: {len(messages)} -> 1")
+            logger.debug(f"Merged {symbol} quote updates: {len(messages)} -> 1")
 
         except Exception as e:
-            logger.error(f"合并报价更新失败: {e}")
+            logger.error(f"Failed to merge quote updates: {e}")
 
     async def flush_all_batches(self) -> None:
-        """刷新所有待处理批次"""
+        """Flush all remaining batches"""
         try:
             for message_type in list(self.pending_batches.keys()):
                 if self.pending_batches[message_type]:
                     await self._process_batch(message_type)
 
         except Exception as e:
-            logger.error(f"刷新批次失败: {e}")
+            logger.error(f"Failed to flush batches: {e}")
 
     def get_stats(self) -> Dict[str, Any]:
-        """获取批处理统计"""
+        """Summary of batch processing"""
         return {
             'processed_count': self.processed_count,
             'batch_count': self.batch_count,
@@ -387,29 +379,29 @@ class BatchProcessor:
 
 
 class AdvancedMessageOptimizer:
-    """高级消息优化器"""
+    """Advanced message handling optimization engine"""
 
     def __init__(self,
                  enable_deduplication: bool = True,
                  enable_batching: bool = True,
                  max_queue_size: int = 10000):
 
-        # 核心组件
+        # Components
         self.deduplicator = MessageDeduplicator() if enable_deduplication else None
         self.classifier = MessageClassifier()
         self.batch_processor = BatchProcessor() if enable_batching else None
 
-        # 消息队列
+        # Queue
         self.message_queue: asyncio.Queue = asyncio.Queue(maxsize=max_queue_size)
 
-        # 处理器注册
+        # Registries
         self.message_handlers: Dict[MessageType, Callable] = {}
 
-        # 运行状态
+        # Status
         self.is_running = False
         self.processor_task: Optional[asyncio.Task] = None
 
-        # 统计信息
+        # Stats
         self.stats = {
             'total_messages': 0,
             'processed_messages': 0,
@@ -419,16 +411,16 @@ class AdvancedMessageOptimizer:
         }
 
     async def start(self) -> None:
-        """启动消息优化器"""
+        """Start the optimizer"""
         if self.is_running:
             return
 
         self.is_running = True
         self.processor_task = asyncio.create_task(self._process_messages())
-        logger.info("高级消息优化器已启动")
+        logger.info("Advanced Message Optimizer started")
 
     async def stop(self) -> None:
-        """停止消息优化器"""
+        """Shutdown the optimizer"""
         self.is_running = False
 
         if self.processor_task:
@@ -438,21 +430,20 @@ class AdvancedMessageOptimizer:
             except asyncio.CancelledError:
                 pass
 
-        # 刷新剩余批次
+        # Flush batches
         if self.batch_processor:
             await self.batch_processor.flush_all_batches()
 
-        logger.info("高级消息优化器已停止")
+        logger.info("Advanced Message Optimizer stopped")
 
     async def add_message(self, raw_message: Dict[str, Any]) -> bool:
-        """添加原始消息进行处理"""
+        """Enqueue raw message for optimization"""
         try:
             if not self.is_running:
                 return False
 
-            # 检查队列是否已满
             if self.message_queue.full():
-                logger.warning("消息队列已满，丢弃消息")
+                logger.warning("Message queue full, dropping message")
                 return False
 
             await self.message_queue.put(raw_message)
@@ -460,71 +451,68 @@ class AdvancedMessageOptimizer:
             return True
 
         except Exception as e:
-            logger.error(f"添加消息失败: {e}")
+            logger.error(f"Failed to add message: {e}")
             return False
 
     def register_handler(self, message_type: MessageType, handler: Callable) -> None:
-        """注册消息处理器"""
+        """Register a handler for a specific message type"""
         self.message_handlers[message_type] = handler
-        logger.info(f"注册消息处理器: {message_type.name}")
+        logger.info(f"Registered message handler for: {message_type.name}")
 
     async def _process_messages(self) -> None:
-        """消息处理主循环"""
+        """Core message processing loop"""
         while self.is_running:
             try:
-                # 获取原始消息
                 raw_message = await asyncio.wait_for(
                     self.message_queue.get(), timeout=0.1
                 )
 
                 start_time = time.perf_counter()
 
-                # 去重检查
+                # Deduplication
                 if self.deduplicator and self.deduplicator.is_duplicate(raw_message):
                     self.stats['duplicate_messages'] += 1
                     continue
 
-                # 消息分类
+                # Classification
                 processed_message = self.classifier.classify_message(raw_message)
 
-                # 批量处理
+                # Batching vs Single
                 if self.batch_processor:
                     await self.batch_processor.add_message(processed_message)
                 else:
-                    # 直接处理
                     await self._handle_single_message(processed_message)
 
-                # 记录处理时间
+                # Track duration
                 processing_time = (time.perf_counter() - start_time) * 1000
                 self.stats['processing_time_ms'].append(processing_time)
                 self.stats['processed_messages'] += 1
 
             except asyncio.TimeoutError:
-                # 处理批次超时
                 if self.batch_processor:
                     await self.batch_processor.flush_all_batches()
                 continue
             except Exception as e:
-                logger.error(f"消息处理异常: {e}")
+                logger.error(f"Error in message processing loop: {e}")
                 self.stats['error_messages'] += 1
                 await asyncio.sleep(0.01)
 
     async def _handle_single_message(self, message: ProcessedMessage) -> None:
-        """处理单个消息"""
+        """Dispatcher for single message processing"""
         try:
             handler = self.message_handlers.get(message.message_type)
             if handler:
                 await handler(message)
                 message.processed = True
             else:
-                logger.debug(f"未找到 {message.message_type.name} 消息处理器")
+                logger.debug(f"No handler registered for {message.message_type.name}")
 
         except Exception as e:
-            logger.error(f"单个消息处理失败: {e}")
+            logger.error(f"Single message processing failed: {e}")
             message.retry_count += 1
 
     def get_comprehensive_stats(self) -> Dict[str, Any]:
-        """获取综合统计信息"""
+        """Comprehensive statistics report"""
         stats = {
             'optimizer_stats': self.stats.copy(),
             'batch_processor_stats': None,
@@ -532,15 +520,13 @@ class AdvancedMessageOptimizer:
             'message_throughput': 0.0
         }
 
-        # 计算平均处理时间
         if self.stats['processing_time_ms']:
             stats['avg_processing_time_ms'] = sum(self.stats['processing_time_ms']) / len(self.stats['processing_time_ms'])
 
-        # 计算消息吞吐量
         if self.stats['processed_messages'] > 0:
+            # Note: This is an approximation
             stats['message_throughput'] = self.stats['processed_messages'] / max(1, time.time())
 
-        # 批处理统计
         if self.batch_processor:
             stats['batch_processor_stats'] = self.batch_processor.get_stats()
 

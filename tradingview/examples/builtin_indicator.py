@@ -1,78 +1,75 @@
-#!/usr/bin/env python3
 """
-此示例测试内置指标，如基于成交量的指标
+This example tests built-in indicators, such as volume-based indicators
 """
-import asyncio
-import os
-import time
 
-from ...tradingview import Client, BuiltInIndicator
+import os
+import sys
+import asyncio
+from dotenv import load_dotenv
+
+# Add project root to path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+
+from tradingview.client import TradingViewClient
 
 async def main():
-    """主函数"""
-    # 创建成交量分布图指标
-    volume_profile = BuiltInIndicator('VbPFixed@tv-basicstudies-241!')
+    """Main function"""
+    load_dotenv()
 
-    # 检查是否需要认证
-    need_auth = volume_profile.type not in [
-        'VbPFixed@tv-basicstudies-241',
-        'VbPFixed@tv-basicstudies-241!',
-        'Volume@tv-basicstudies-241',
-    ]
+    # Create Volume Profile indicator
+    # Note: Built-in indicator names can be found in TradingView's search
+    indicator_name = "Volume Profile Visible Range"
 
-    if need_auth and (not os.environ.get('TV_SESSION') or not os.environ.get('TV_SIGNATURE')):
-        raise ValueError('请设置您的sessionid和signature环境变量')
+    # Credentials
+    session = os.getenv('TV_SESSION')
+    signature = os.getenv('TV_SIGNATURE')
 
-    # 创建客户端
-    client = Client(
-        token=os.environ.get('TV_SESSION') if need_auth else None,
-        signature=os.environ.get('TV_SIGNATURE') if need_auth else None
-    )
+    if not session or not signature:
+        raise ValueError('Please set your TV_SESSION and TV_SIGNATURE environment variables')
 
-    # 连接到TradingView
-    await client.connect()
+    # Create client
+    client = TradingViewClient()
 
-    # 创建图表
-    chart = client.Session.Chart()
+    finished = asyncio.Event()
 
-    # 设置市场
-    chart.set_market('BINANCE:BTCEUR', {
-        'timeframe': '60',
-        'range': 1,
-    })
+    # Connect
+    await client.connect(session=session, signature=signature)
 
-    # 根据指标类型设置必要的选项
-    volume_profile.set_option('first_bar_time', int(time.time()) - 10**8)
-    # 对于某些指标，可能需要其他选项
-    # volume_profile.set_option('first_visible_bar_time', int(time.time()) - 10**8)
+    # Create chart
+    chart = client.new_chart()
 
-    # 创建研究
-    vol = chart.Study(volume_profile)
+    # Set market
+    chart.set_market('BINANCE:BTCUSDT', timeframe='60')
 
-    # 处理更新
-    def on_update():
-        # 过滤并处理成交量分布图数据
-        horiz_hists = [h for h in vol.graphic.horizHists if h.lastBarTime == 0]
-        horiz_hists.sort(key=lambda h: h.priceHigh, reverse=True)
+    # Search for indicator
+    results = await client.search_indicator(indicator_name)
+    if not results:
+        print(f"Indicator not found: {indicator_name}")
+        await client.close()
+        return
 
-        for h in horiz_hists:
-            # 计算价格中点并显示成交量条形图
-            mid_price = round((h.priceHigh + h.priceLow) / 2)
-            up_vol = '_' * int(h.rate[0] / 3)
-            down_vol = '_' * int(h.rate[1] / 3)
-            print(f"~ {mid_price} € : {up_vol}{down_vol}")
+    indic = results[0]
 
-        # 任务完成，关闭连接
-        asyncio.create_task(client.end())
+    # Create study
+    study = chart.new_study(indic)
 
-    vol.on_update(on_update)
+    # Handle updates
+    @study.on_update
+    async def on_update(indicator=study):
+        # Filter and process Volume Profile data
+        if indicator.periods:
+            print(f"Indicator {indicator.name} updated with {len(indicator.periods)} data points")
+            # Show a sample of the data
+            print("Sample data:", indicator.periods[0])
+            finished.set()
 
-    # 设置超时，防止程序无限等待
+    # Set timeout
     try:
-        await asyncio.wait_for(asyncio.sleep(30), timeout=30)
+        await asyncio.wait_for(finished.wait(), timeout=45)
     except asyncio.TimeoutError:
-        print("操作超时，强制关闭连接")
-        await client.end()
+        print("Operation timed out, forcing connection close")
+    finally:
+        await client.close()
 
 if __name__ == '__main__':
     asyncio.run(main())

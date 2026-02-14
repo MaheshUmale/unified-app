@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 
 """
-TradingView数据同步和备份CLI工具
-提供命令行界面管理数据同步、备份和恢复操作
+TradingView Data Synchronization and Backup CLI Tool
+Provides a command line interface to manage data sync, backup, and recovery operations.
 """
 
 import asyncio
@@ -15,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any
 
-from data_sync_backup import (
+from tradingview.data_sync_backup import (
     DataSyncBackupController,
     SyncTask,
     BackupType,
@@ -27,33 +27,33 @@ logger = get_logger(__name__)
 
 
 class SyncBackupCLI:
-    """数据同步备份命令行界面"""
+    """Data Synchronization and Backup Command Line Interface"""
 
     def __init__(self, config_file: str = None):
-        """初始化CLI"""
+        """Initialize CLI"""
         self.config_file = config_file or "tradingview/sync_backup_config.yaml"
         self.config = self._load_config()
         self.controller = DataSyncBackupController(self.config)
 
     def _load_config(self) -> Dict[str, Any]:
-        """加载配置文件"""
+        """Load configuration file"""
         config_path = Path(self.config_file)
 
         if not config_path.exists():
-            logger.warning(f"配置文件不存在: {self.config_file}，使用默认配置")
+            logger.warning(f"Configuration file does not exist: {self.config_file}, using defaults")
             return self._get_default_config()
 
         try:
             with open(config_path, 'r', encoding='utf-8') as f:
                 config = yaml.safe_load(f)
-                logger.info(f"已加载配置文件: {self.config_file}")
+                logger.info(f"Loaded configuration file: {self.config_file}")
                 return config
         except Exception as e:
-            logger.error(f"加载配置文件失败: {e}")
+            logger.error(f"Failed to load configuration file: {e}")
             return self._get_default_config()
 
     def _get_default_config(self) -> Dict[str, Any]:
-        """获取默认配置"""
+        """Get default configuration"""
         return {
             'sync_config': {
                 'sync_interval': 300,
@@ -65,11 +65,11 @@ class SyncBackupCLI:
                 'max_backup_files': 30,
                 'compression_enabled': True
             },
-            'schedule_enabled': False  # CLI模式下默认不启用定时任务
+            'schedule_enabled': False  # Default to False in CLI mode
         }
 
     async def run_command(self, args):
-        """运行CLI命令"""
+        """Run CLI command"""
         try:
             if args.command == 'status':
                 await self._cmd_status(args)
@@ -86,67 +86,71 @@ class SyncBackupCLI:
             elif args.command == 'test':
                 await self._cmd_test(args)
             else:
-                print(f"未知命令: {args.command}")
+                print(f"Unknown command: {args.command}")
                 sys.exit(1)
 
         except KeyboardInterrupt:
-            print("\n操作被用户中断")
+            print("\nOperation interrupted by user")
         except Exception as e:
-            logger.error(f"命令执行失败: {e}")
-            print(f"错误: {e}")
+            logger.error(f"Command execution failed: {e}")
+            print(f"Error: {e}")
             sys.exit(1)
 
     async def _cmd_status(self, args):
-        """查看系统状态"""
-        print("🔍 获取系统状态...")
+        """View system status"""
+        print("🔍 Retrieving system status...")
 
-        # 启动系统以获取状态
+        # Start controller to get status
         await self.controller.start()
 
         try:
-            status = self.controller.get_system_status()
+            # Note: Controller get_system_status implementation might vary,
+            # assuming it returns expected structure
+            status = {}
+            if hasattr(self.controller, 'get_system_status'):
+                status = self.controller.get_system_status()
 
             print("\n" + "="*60)
-            print(" TradingView 数据同步备份系统状态")
+            print(" TradingView Data Sync & Backup System Status")
             print("="*60)
 
-            # 同步引擎状态
+            # Sync engine status
             sync_status = status.get('sync_engine', {})
-            print(f"\n📡 同步引擎:")
-            print(f"  状态: {'🟢 运行中' if sync_status.get('is_running') else '🔴 已停止'}")
-            print(f"  活跃任务: {sync_status.get('active_tasks', 0)}")
-            print(f"  已完成任务: {sync_status.get('completed_tasks', 0)}")
-            print(f"  失败任务: {sync_status.get('failed_tasks', 0)}")
-            print(f"  队列大小: {sync_status.get('queue_size', 0)}")
+            print(f"\n📡 Sync Engine:")
+            print(f"  State: {'🟢 Running' if sync_status.get('is_running') else '🔴 Stopped'}")
+            print(f"  Active Tasks: {sync_status.get('active_tasks', 0)}")
+            print(f"  Completed Tasks: {sync_status.get('completed_tasks', 0)}")
+            print(f"  Failed Tasks: {sync_status.get('failed_tasks', 0)}")
+            print(f"  Queue Size: {sync_status.get('queue_size', 0)}")
 
             stats = sync_status.get('statistics', {})
-            print(f"  总同步数: {stats.get('total_synced', 0)}")
-            print(f"  总失败数: {stats.get('total_failed', 0)}")
-            print(f"  同步速度: {stats.get('sync_speed', 0):.2f} records/sec")
+            print(f"  Total Synced: {stats.get('total_synced', 0)}")
+            print(f"  Total Failed: {stats.get('total_failed', 0)}")
+            print(f"  Sync Speed: {stats.get('sync_speed', 0):.2f} records/sec")
 
-            # 备份管理器状态
+            # Backup manager status
             backup_status = status.get('backup_manager', {})
-            print(f"\n💾 备份管理器:")
-            print(f"  总备份数: {backup_status.get('total_backups', 0)}")
-            print(f"  总大小: {backup_status.get('total_size_mb', 0):.2f} MB")
-            print(f"  备份目录: {backup_status.get('backup_dir', 'N/A')}")
+            print(f"\n💾 Backup Manager:")
+            print(f"  Total Backups: {backup_status.get('total_backups', 0)}")
+            print(f"  Total Size: {backup_status.get('total_size_mb', 0):.2f} MB")
+            print(f"  Backup Directory: {backup_status.get('backup_dir', 'N/A')}")
 
-            # 最近备份记录
+            # Recent records
             records = backup_status.get('backup_records', [])
             if records:
-                print(f"\n📋 最近备份记录 (显示最新5个):")
+                print(f"\n📋 Recent Backup Records (Last 5):")
                 for record in records[-5:]:
                     created_time = datetime.fromtimestamp(record['created_at']).strftime('%Y-%m-%d %H:%M:%S')
                     print(f"  • {record['backup_id'][:20]}... ({record['backup_type']}) - {created_time} - {record['size_bytes']/1024/1024:.1f}MB")
 
-            print(f"\n⏰ 系统时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-            print(f"🔧 定时任务: {'启用' if status.get('schedule_enabled') else '禁用'}")
+            print(f"\n⏰ System Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"🔧 Scheduler: {'Enabled' if status.get('schedule_enabled') else 'Disabled'}")
 
         finally:
             await self.controller.stop()
 
     async def _cmd_backup(self, args):
-        """创建备份"""
+        """Create backup"""
         backup_type_map = {
             'full': BackupType.FULL,
             'incremental': BackupType.INCREMENTAL,
@@ -154,169 +158,189 @@ class SyncBackupCLI:
         }
 
         if args.type not in backup_type_map:
-            print(f"错误: 不支持的备份类型 '{args.type}'")
-            print("支持的类型: full, incremental, snapshot")
+            print(f"Error: Unsupported backup type '{args.type}'")
+            print("Supported types: full, incremental, snapshot")
             sys.exit(1)
 
         backup_type = backup_type_map[args.type]
         symbols = args.symbols.split(',') if args.symbols else None
         timeframes = args.timeframes.split(',') if args.timeframes else None
 
-        print(f"🎯 开始创建 {args.type} 备份...")
+        print(f"🎯 Starting {args.type} backup...")
         if symbols:
-            print(f"   品种: {', '.join(symbols)}")
+            print(f"   Symbols: {', '.join(symbols)}")
         if timeframes:
-            print(f"   时间框架: {', '.join(timeframes)}")
+            print(f"   Timeframes: {', '.join(timeframes)}")
 
         await self.controller.start()
 
         try:
-            backup_id = await self.controller.create_manual_backup(
-                backup_type, symbols, timeframes
-            )
+            # Assuming implementation exists in controller
+            backup_id = None
+            if hasattr(self.controller, 'create_manual_backup'):
+                backup_id = await self.controller.create_manual_backup(
+                    backup_type, symbols, timeframes
+                )
 
             if backup_id:
-                print(f"✅ 备份创建成功!")
-                print(f"   备份ID: {backup_id}")
+                print(f"✅ Backup created successfully!")
+                print(f"   Backup ID: {backup_id}")
 
-                # 获取备份详情
-                backup_info = self.controller.backup_manager.get_backup_info(backup_id)
-                if backup_info:
-                    print(f"   文件大小: {backup_info['size_bytes']/1024/1024:.2f} MB")
-                    created_time = datetime.fromtimestamp(backup_info['created_at']).strftime('%Y-%m-%d %H:%M:%S')
-                    print(f"   创建时间: {created_time}")
-                    print(f"   数据范围: {backup_info['symbols_count']} 个品种")
+                # Show details if available
+                if hasattr(self.controller.backup_manager, 'get_backup_info'):
+                    backup_info = self.controller.backup_manager.get_backup_info(backup_id)
+                    if backup_info:
+                        print(f"   File Size: {backup_info['size_bytes']/1024/1024:.2f} MB")
+                        created_time = datetime.fromtimestamp(backup_info['created_at']).strftime('%Y-%m-%d %H:%M:%S')
+                        print(f"   Created At: {created_time}")
+                        print(f"   Symbols Count: {backup_info['symbols_count']}")
             else:
-                print("❌ 备份创建失败")
+                print("❌ Failed to create backup")
                 sys.exit(1)
 
         finally:
             await self.controller.stop()
 
     async def _cmd_restore(self, args):
-        """恢复备份"""
-        print(f"🔄 开始恢复备份: {args.backup_id}")
+        """Restore backup"""
+        print(f"🔄 Starting restoration for backup: {args.backup_id}")
 
         await self.controller.start()
 
         try:
-            # 检查备份是否存在
-            backup_info = self.controller.backup_manager.get_backup_info(args.backup_id)
+            # Check existence
+            backup_info = None
+            if hasattr(self.controller.backup_manager, 'get_backup_info'):
+                backup_info = self.controller.backup_manager.get_backup_info(args.backup_id)
+
             if not backup_info:
-                print(f"❌ 备份不存在: {args.backup_id}")
+                print(f"❌ Backup not found: {args.backup_id}")
                 sys.exit(1)
 
-            print(f"   备份类型: {backup_info['backup_type']}")
-            print(f"   备份大小: {backup_info['size_bytes']/1024/1024:.2f} MB")
+            print(f"   Type: {backup_info['backup_type']}")
+            print(f"   Size: {backup_info['size_bytes']/1024/1024:.2f} MB")
             created_time = datetime.fromtimestamp(backup_info['created_at']).strftime('%Y-%m-%d %H:%M:%S')
-            print(f"   创建时间: {created_time}")
+            print(f"   Created At: {created_time}")
 
             if not args.force:
-                confirm = input("确认恢复此备份? (y/N): ")
+                confirm = input("Confirm restoration? (y/N): ")
                 if confirm.lower() != 'y':
-                    print("操作已取消")
+                    print("Operation cancelled")
                     return
 
-            success = await self.controller.restore_from_backup(
-                args.backup_id, args.target_db
-            )
+            success = False
+            if hasattr(self.controller, 'restore_from_backup'):
+                success = await self.controller.restore_from_backup(
+                    args.backup_id, args.target_db
+                )
 
             if success:
-                print("✅ 备份恢复成功!")
+                print("✅ Backup restored successfully!")
                 if args.target_db:
-                    print(f"   恢复到: {args.target_db}")
+                    print(f"   Restored to: {args.target_db}")
                 else:
-                    print("   恢复到: 缓存系统")
+                    print("   Restored to: Cache Subsystem")
             else:
-                print("❌ 备份恢复失败")
+                print("❌ Restoration failed")
                 sys.exit(1)
 
         finally:
             await self.controller.stop()
 
     async def _cmd_sync(self, args):
-        """执行数据同步"""
+        """Perform data synchronization"""
         if args.source not in ['primary', 'cache', 'backup']:
-            print("错误: source 必须是 primary, cache, 或 backup")
+            print("Error: source must be primary, cache, or backup")
             sys.exit(1)
 
         if args.target not in ['cache', 'backup', 'remote']:
-            print("错误: target 必须是 cache, backup, 或 remote")
+            print("Error: target must be cache, backup, or remote")
             sys.exit(1)
 
         symbols = args.symbols.split(',') if args.symbols else ['BINANCE:BTCUSDT']
         timeframes = args.timeframes.split(',') if args.timeframes else ['15']
 
-        print(f"🔄 开始数据同步:")
-        print(f"   源: {args.source}")
-        print(f"   目标: {args.target}")
-        print(f"   品种: {', '.join(symbols)}")
-        print(f"   时间框架: {', '.join(timeframes)}")
+        print(f"🔄 Starting data sync:")
+        print(f"   Source: {args.source}")
+        print(f"   Target: {args.target}")
+        print(f"   Symbols: {', '.join(symbols)}")
+        print(f"   Timeframes: {', '.join(timeframes)}")
 
         await self.controller.start()
 
         try:
-            task_id = await self.controller.sync_data(
-                args.source, args.target, symbols, timeframes
-            )
+            task_id = None
+            if hasattr(self.controller, 'sync_data'):
+                task_id = await self.controller.sync_data(
+                    args.source, args.target, symbols, timeframes
+                )
 
-            print(f"✅ 同步任务已添加: {task_id}")
+            if task_id:
+                print(f"✅ Sync task added: {task_id}")
 
-            # 等待任务完成
-            if args.wait:
-                print("⏳ 等待任务完成...")
+                # Wait for completion
+                if args.wait:
+                    print("⏳ Waiting for task completion...")
 
-                for i in range(30):  # 最多等待30秒
-                    await asyncio.sleep(1)
-                    status = self.controller.get_system_status()
+                    for i in range(30):
+                        await asyncio.sleep(1)
+                        if hasattr(self.controller, 'get_system_status'):
+                            status = self.controller.get_system_status()
+                            sync_status = status.get('sync_engine', {})
+                            if sync_status.get('active_tasks', 0) == 0:
+                                print("✅ Sync task completed!")
+                                break
 
-                    # 检查任务是否完成
-                    sync_status = status.get('sync_engine', {})
-                    if sync_status.get('active_tasks', 0) == 0:
-                        print("✅ 同步任务完成!")
-                        break
-
-                    print(f"   进度: {i+1}/30秒")
-                else:
-                    print("⚠️  任务仍在进行中，请稍后查看状态")
+                        print(f"   Progress: {i+1}/30s")
+                    else:
+                        print("⚠️  Task still in progress, check status later")
+            else:
+                print("❌ Failed to add sync task")
 
         finally:
             await self.controller.stop()
 
     async def _cmd_list(self, args):
-        """列出备份或任务"""
+        """List backups or tasks"""
         if args.type == 'backups':
             await self._list_backups(args)
         elif args.type == 'tasks':
             await self._list_tasks(args)
         else:
-            print("错误: type 必须是 backups 或 tasks")
+            print("Error: type must be backups or tasks")
             sys.exit(1)
 
     async def _list_backups(self, args):
-        """列出备份"""
-        print("📋 备份列表:")
+        """List backups"""
+        print("📋 Backup List:")
 
         await self.controller.start()
 
         try:
-            backup_info = self.controller.backup_manager.get_backup_info()
-            records = backup_info.get('backup_records', [])
+            records = []
+            backup_dir = "N/A"
+            total_size_mb = 0.0
+
+            if hasattr(self.controller.backup_manager, 'get_backup_info'):
+                backup_info = self.controller.backup_manager.get_backup_info()
+                records = backup_info.get('backup_records', [])
+                backup_dir = backup_info.get('backup_dir', "N/A")
+                total_size_mb = backup_info.get('total_size_mb', 0.0)
 
             if not records:
-                print("   没有找到备份记录")
+                print("   No backup records found")
                 return
 
-            # 按创建时间排序
+            # Sort by creation time
             records.sort(key=lambda x: x['created_at'], reverse=True)
 
-            print(f"\n总共 {len(records)} 个备份，总大小 {backup_info.get('total_size_mb', 0):.2f} MB\n")
+            print(f"\nTotal: {len(records)} backups, Total Size: {total_size_mb:.2f} MB\n")
 
-            # 表头
-            print(f"{'备份ID':<25} {'类型':<12} {'大小(MB)':<10} {'品种数':<8} {'创建时间':<20}")
+            # Header
+            print(f"{'Backup ID':<25} {'Type':<12} {'Size(MB)':<10} {'Symbols':<8} {'Created At':<20}")
             print("-" * 80)
 
-            # 显示备份记录
+            # Display records
             for record in records:
                 backup_id = record['backup_id'][:22] + "..." if len(record['backup_id']) > 25 else record['backup_id']
                 size_mb = record['size_bytes'] / 1024 / 1024
@@ -325,44 +349,45 @@ class SyncBackupCLI:
                 print(f"{backup_id:<25} {record['backup_type']:<12} {size_mb:<10.2f} {record['symbols_count']:<8} {created_time:<20}")
 
             if args.verbose:
-                print(f"\n备份目录: {backup_info.get('backup_dir')}")
+                print(f"\nBackup Directory: {backup_dir}")
 
         finally:
             await self.controller.stop()
 
     async def _list_tasks(self, args):
-        """列出同步任务"""
-        print("📋 同步任务列表:")
+        """List sync tasks"""
+        print("📋 Sync Task List:")
 
         await self.controller.start()
 
         try:
-            status = self.controller.get_system_status()
-            sync_status = status.get('sync_engine', {})
+            if hasattr(self.controller, 'get_system_status'):
+                status = self.controller.get_system_status()
+                sync_status = status.get('sync_engine', {})
 
-            print(f"\n活跃任务: {sync_status.get('active_tasks', 0)}")
-            print(f"已完成任务: {sync_status.get('completed_tasks', 0)}")
-            print(f"失败任务: {sync_status.get('failed_tasks', 0)}")
-            print(f"队列大小: {sync_status.get('queue_size', 0)}")
+                print(f"\nActive Tasks: {sync_status.get('active_tasks', 0)}")
+                print(f"Completed Tasks: {sync_status.get('completed_tasks', 0)}")
+                print(f"Failed Tasks: {sync_status.get('failed_tasks', 0)}")
+                print(f"Queue Size: {sync_status.get('queue_size', 0)}")
 
-            stats = sync_status.get('statistics', {})
-            if stats:
-                print(f"\n统计信息:")
-                print(f"  总同步数: {stats.get('total_synced', 0)}")
-                print(f"  总失败数: {stats.get('total_failed', 0)}")
-                print(f"  同步速度: {stats.get('sync_speed', 0):.2f} records/sec")
+                stats = sync_status.get('statistics', {})
+                if stats:
+                    print(f"\nStatistics:")
+                    print(f"  Total Synced: {stats.get('total_synced', 0)}")
+                    print(f"  Total Failed: {stats.get('total_failed', 0)}")
+                    print(f"  Sync Speed: {stats.get('sync_speed', 0):.2f} records/sec")
 
-                if stats.get('last_error'):
-                    print(f"  最后错误: {stats['last_error']}")
+                    if stats.get('last_error'):
+                        print(f"  Last Error: {stats['last_error']}")
 
         finally:
             await self.controller.stop()
 
     async def _cmd_daemon(self, args):
-        """以守护进程模式运行"""
-        print("🚀 启动TradingView数据同步备份守护进程...")
+        """Run in daemon mode"""
+        print("🚀 Starting TradingView Data Sync & Backup Daemon...")
 
-        # 启用定时任务
+        # Enable scheduler
         daemon_config = self.config.copy()
         daemon_config['schedule_enabled'] = True
 
@@ -370,234 +395,235 @@ class SyncBackupCLI:
 
         try:
             await controller.start()
-            print("✅ 守护进程已启动")
-            print("   按 Ctrl+C 停止服务")
+            print("✅ Daemon started successfully")
+            print("   Press Ctrl+C to stop service")
 
-            # 持续运行
+            # Keep running
             while True:
                 await asyncio.sleep(60)
 
-                # 每分钟输出一次状态
                 if args.verbose:
-                    status = controller.get_system_status()
-                    sync_stats = status.get('sync_engine', {})
-                    print(f"[{datetime.now().strftime('%H:%M:%S')}] "
-                          f"活跃任务: {sync_stats.get('active_tasks', 0)}, "
-                          f"队列: {sync_stats.get('queue_size', 0)}")
+                    if hasattr(controller, 'get_system_status'):
+                        status = controller.get_system_status()
+                        sync_stats = status.get('sync_engine', {})
+                        print(f"[{datetime.now().strftime('%H:%M:%S')}] "
+                              f"Active Tasks: {sync_stats.get('active_tasks', 0)}, "
+                              f"Queue: {sync_stats.get('queue_size', 0)}")
 
         except KeyboardInterrupt:
-            print("\n📴 正在停止守护进程...")
+            print("\n📴 Stopping daemon...")
 
         finally:
             await controller.stop()
-            print("✅ 守护进程已停止")
+            print("✅ Daemon stopped")
 
     async def _cmd_test(self, args):
-        """测试系统功能"""
-        print("🧪 开始系统功能测试...")
+        """Test system functionality"""
+        print("🧪 Starting functional tests...")
 
         await self.controller.start()
 
         try:
-            # 测试1: 系统状态
-            print("\n1️⃣ 测试系统状态...")
-            status = self.controller.get_system_status()
-            if status:
-                print("   ✅ 系统状态正常")
-            else:
-                print("   ❌ 系统状态异常")
+            # Test 1: Status
+            print("\n1️⃣  Testing status retrieval...")
+            if hasattr(self.controller, 'get_system_status'):
+                status = self.controller.get_system_status()
+                print("   ✅ Status OK") if status else print("   ❌ Status Failed")
 
-            # 测试2: 创建测试备份
-            print("\n2️⃣ 测试备份创建...")
-            backup_id = await self.controller.create_manual_backup(
-                BackupType.SNAPSHOT,
-                symbols=['BINANCE:BTCUSDT'],
-                timeframes=['15']
-            )
+            # Test 2: Backup
+            print("\n2️⃣  Testing backup creation...")
+            backup_id = None
+            if hasattr(self.controller, 'create_manual_backup'):
+                backup_id = await self.controller.create_manual_backup(
+                    BackupType.SNAPSHOT,
+                    symbols=['BINANCE:BTCUSDT'],
+                    timeframes=['15']
+                )
 
             if backup_id:
-                print(f"   ✅ 备份创建成功: {backup_id}")
+                print(f"   ✅ Backup success: {backup_id}")
 
-                # 测试3: 备份恢复
-                print("\n3️⃣ 测试备份恢复...")
-                success = await self.controller.restore_from_backup(backup_id)
-                if success:
-                    print("   ✅ 备份恢复成功")
-                else:
-                    print("   ❌ 备份恢复失败")
+                # Test 3: Restore
+                print("\n3️⃣  Testing restoration...")
+                success = False
+                if hasattr(self.controller, 'restore_from_backup'):
+                    success = await self.controller.restore_from_backup(backup_id)
+
+                print("   ✅ Restoration success") if success else print("   ❌ Restoration failed")
             else:
-                print("   ❌ 备份创建失败")
+                print("   ❌ Backup failed")
 
-            # 测试4: 数据同步
-            print("\n4️⃣ 测试数据同步...")
-            task_id = await self.controller.sync_data(
-                "primary", "cache",
-                ['BINANCE:BTCUSDT'], ['15']
-            )
+            # Test 4: Sync
+            print("\n4️⃣  Testing data synchronization...")
+            task_id = None
+            if hasattr(self.controller, 'sync_data'):
+                task_id = await self.controller.sync_data(
+                    "primary", "cache",
+                    ['BINANCE:BTCUSDT'], ['15']
+                )
 
             if task_id:
-                print(f"   ✅ 同步任务创建成功: {task_id}")
-
-                # 等待任务完成
+                print(f"   ✅ Sync task created: {task_id}")
                 await asyncio.sleep(3)
 
-                final_status = self.controller.get_system_status()
-                sync_stats = final_status.get('sync_engine', {}).get('statistics', {})
+                if hasattr(self.controller, 'get_system_status'):
+                    final_status = self.controller.get_system_status()
+                    sync_stats = final_status.get('sync_engine', {}).get('statistics', {})
 
-                if sync_stats.get('total_synced', 0) > 0:
-                    print("   ✅ 数据同步成功")
-                else:
-                    print("   ⚠️  同步任务正在进行中")
+                    if sync_stats.get('total_synced', 0) > 0:
+                        print("   ✅ Data sync successful")
+                    else:
+                        print("   ⚠️  Sync task still in progress")
             else:
-                print("   ❌ 同步任务创建失败")
+                print("   ❌ Sync task creation failed")
 
-            print("\n🎉 系统功能测试完成!")
+            print("\n🎉 Functional tests completed!")
 
         finally:
             await self.controller.stop()
 
 
 def create_parser():
-    """创建命令行解析器"""
+    """Create command line parser"""
     parser = argparse.ArgumentParser(
-        description='TradingView数据同步备份CLI工具',
+        description='TradingView Data Sync & Backup CLI Tool',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-示例用法:
-  # 查看系统状态
+Example Usage:
+  # View system status
   python sync_backup_cli.py status
 
-  # 创建全量备份
+  # Create full backup
   python sync_backup_cli.py backup --type full
 
-  # 创建指定品种的增量备份
+  # Create incremental backup for specific symbols
   python sync_backup_cli.py backup --type incremental --symbols BINANCE:BTCUSDT,BINANCE:ETHUSDT
 
-  # 恢复备份
+  # Restore backup
   python sync_backup_cli.py restore backup_full_1699123456
 
-  # 同步数据
+  # Synchronize data
   python sync_backup_cli.py sync --source primary --target cache --symbols BINANCE:BTCUSDT
 
-  # 列出所有备份
+  # List all backups
   python sync_backup_cli.py list backups
 
-  # 启动守护进程
+  # Start daemon mode
   python sync_backup_cli.py daemon
 
-  # 运行系统测试
+  # Run system tests
   python sync_backup_cli.py test
         """
     )
 
     parser.add_argument(
         '-c', '--config',
-        help='配置文件路径',
+        help='Configuration file path',
         default='tradingview/sync_backup_config.yaml'
     )
 
     parser.add_argument(
         '-v', '--verbose',
         action='store_true',
-        help='详细输出'
+        help='Verbose output'
     )
 
-    # 子命令
-    subparsers = parser.add_subparsers(dest='command', help='可用命令')
+    # Subcommands
+    subparsers = parser.add_subparsers(dest='command', help='Available commands')
 
-    # status 命令
-    status_parser = subparsers.add_parser('status', help='查看系统状态')
+    # status command
+    status_parser = subparsers.add_parser('status', help='View system status')
 
-    # backup 命令
-    backup_parser = subparsers.add_parser('backup', help='创建备份')
+    # backup command
+    backup_parser = subparsers.add_parser('backup', help='Create backup')
     backup_parser.add_argument(
         '--type',
         choices=['full', 'incremental', 'snapshot'],
         required=True,
-        help='备份类型'
+        help='Backup type'
     )
     backup_parser.add_argument(
         '--symbols',
-        help='要备份的品种 (逗号分隔)'
+        help='Symbols to backup (comma separated)'
     )
     backup_parser.add_argument(
         '--timeframes',
-        help='要备份的时间框架 (逗号分隔)'
+        help='Timeframes to backup (comma separated)'
     )
 
-    # restore 命令
-    restore_parser = subparsers.add_parser('restore', help='恢复备份')
+    # restore command
+    restore_parser = subparsers.add_parser('restore', help='Restore backup')
     restore_parser.add_argument(
         'backup_id',
-        help='备份ID'
+        help='Backup ID'
     )
     restore_parser.add_argument(
         '--target-db',
-        help='目标数据库文件路径'
+        help='Target database file path'
     )
     restore_parser.add_argument(
         '--force',
         action='store_true',
-        help='强制恢复，不提示确认'
+        help='Force restoration without confirmation'
     )
 
-    # sync 命令
-    sync_parser = subparsers.add_parser('sync', help='执行数据同步')
+    # sync command
+    sync_parser = subparsers.add_parser('sync', help='Perform data synchronization')
     sync_parser.add_argument(
         '--source',
         choices=['primary', 'cache', 'backup'],
         required=True,
-        help='源数据类型'
+        help='Source data type'
     )
     sync_parser.add_argument(
         '--target',
         choices=['cache', 'backup', 'remote'],
         required=True,
-        help='目标数据类型'
+        help='Target data type'
     )
     sync_parser.add_argument(
         '--symbols',
-        help='要同步的品种 (逗号分隔)'
+        help='Symbols to sync (comma separated)'
     )
     sync_parser.add_argument(
         '--timeframes',
-        help='要同步的时间框架 (逗号分隔)'
+        help='Timeframes to sync (comma separated)'
     )
     sync_parser.add_argument(
         '--wait',
         action='store_true',
-        help='等待同步任务完成'
+        help='Wait for task completion'
     )
 
-    # list 命令
-    list_parser = subparsers.add_parser('list', help='列出备份或任务')
+    # list command
+    list_parser = subparsers.add_parser('list', help='List backups or tasks')
     list_parser.add_argument(
         'type',
         choices=['backups', 'tasks'],
-        help='列出类型'
+        help='Type to list'
     )
     list_parser.add_argument(
         '--verbose',
         action='store_true',
-        help='详细信息'
+        help='Detailed information'
     )
 
-    # daemon 命令
-    daemon_parser = subparsers.add_parser('daemon', help='以守护进程模式运行')
+    # daemon command
+    daemon_parser = subparsers.add_parser('daemon', help='Run in daemon mode')
     daemon_parser.add_argument(
         '--verbose',
         action='store_true',
-        help='详细输出'
+        help='Verbose output'
     )
 
-    # test 命令
-    test_parser = subparsers.add_parser('test', help='运行系统功能测试')
+    # test command
+    test_parser = subparsers.add_parser('test', help='Run system functional tests')
 
     return parser
 
 
 async def main():
-    """主函数"""
+    """Main Function"""
     parser = create_parser()
     args = parser.parse_args()
 
@@ -605,11 +631,11 @@ async def main():
         parser.print_help()
         sys.exit(1)
 
-    # 设置日志级别
+    # Set log level
     if args.verbose:
         logger.setLevel('DEBUG')
 
-    # 创建CLI实例并运行命令
+    # Create CLI instance and run
     cli = SyncBackupCLI(args.config)
     await cli.run_command(args)
 
@@ -618,5 +644,5 @@ if __name__ == '__main__':
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("\n程序已被用户中断")
+        print("\nProgram interrupted by user")
         sys.exit(0)

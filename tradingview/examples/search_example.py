@@ -1,105 +1,102 @@
-#!/usr/bin/env python3
-"""
-此示例测试搜索功能，如搜索市场和指标
-"""
-import asyncio
-import json
+import os
 import sys
-from pprint import pprint
+import asyncio
+from dotenv import load_dotenv
 
-from .. import search_market_v3, search_indicator
+# Add project root to path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+
+from tradingview.client import TradingViewClient
 
 async def main():
-    """主函数"""
-    print("===== 测试搜索功能 =====")
+    """Main function"""
+    load_dotenv()
 
-    # 搜索市场
-    print("\n搜索市场: BINANCE:")
+    # Create client
+    client = TradingViewClient()
+
+    print("===== Testing Search Functionality =====")
+
     try:
-        markets = await search_market_v3('BINANCE:')
-        print(f"找到 {len(markets)} 个市场:")
-
-        # 显示前5个结果
-        for i, market in enumerate(markets[:5], 1):
-            print(f"{i}. {market.id} - {market.description} ({market.type})")
-
-        if len(markets) > 5:
-            print(f"...以及更多 {len(markets) - 5} 个市场")
-
-        # 搜索特定交易对
+        # Search for markets
+        print("\nSearching market: BINANCE:")
+        markets = await client.search_market("BINANCE:")
         if markets:
-            market_name = 'BTCUSDT'
-            print(f"\n搜索特定交易对: {market_name}")
+            print(f"Found {len(markets)} markets:")
+            for i, market in enumerate(markets[:5], 1):
+                print(f"{i}. {market.id} - {market.description} ({market.exchange})")
 
+            if len(markets) > 5:
+                print(f"... and {len(markets) - 5} more markets")
+
+            # Search for a specific pair
+            market_name = "BINANCE:BTCUSDT"
             try:
-                btc_markets = await search_market_v3(f'BINANCE:{market_name}')
+                print(f"\nSearching specific pair: {market_name}")
+                specific_markets = await client.search_market(market_name)
+                if specific_markets:
+                    market = specific_markets[0]
+                    print(f"Found pair: {market.id}")
+                    print(f"Description: {market.description}")
+                    print(f"Exchange: {market.exchange}")
+                    print(f"Type: {market.type}")
 
-                if btc_markets:
-                    market = btc_markets[0]
-                    print(f"找到交易对: {market.id}")
-                    print(f"描述: {market.description}")
-                    print(f"交易所: {market.exchange}")
-                    print(f"类型: {market.type}")
-
-                    # 获取技术分析数据
-                    print("\n获取技术分析数据...")
+                    # Fetch technical analysis data
+                    print("\nFetching technical analysis data...")
                     try:
-                        ta_data = await market.get_ta()
-                        if ta_data:
-                            print("技术分析结果:")
-                            pprint(ta_data)
-                        else:
-                            print("无法获取技术分析数据")
+                        # Assuming get_ta method exists
+                        if hasattr(client, 'get_ta'):
+                            ta_data = await client.get_ta(market.exchange, market.id.split(':')[-1])
+                            if ta_data:
+                                print("Technical Analysis results:")
+                                print(ta_data)
+                            else:
+                                print("Unable to fetch TA data")
                     except Exception as e:
-                        print(f"获取技术分析数据时出错: {str(e)}")
+                        print(f"Error fetching TA data: {str(e)}")
                 else:
-                    print(f"未找到匹配的交易对: {market_name}")
+                    print(f"No matching pair found: {market_name}")
             except Exception as e:
-                print(f"搜索特定交易对时出错: {str(e)}")
+                print(f"Error searching specific pair: {str(e)}")
+        else:
+            print("No markets found")
+
+        # Search for indicators
+        print("\nSearching indicator: RSI")
+        indicators = await client.search_indicator("RSI")
+        if indicators:
+            print(f"Found {len(indicators)} indicators:")
+            for i, indicator in enumerate(indicators[:5], 1):
+                print(f"{i}. {indicator.name} - Author: {indicator.author['username']} - Type: {indicator.type}")
+
+            if len(indicators) > 5:
+                print(f"... and {len(indicators) - 5} more indicators")
+
+        # Search for other types of indicators
+        print("\nSearching indicator: MACD")
+        macd_indicators = await client.search_indicator("MACD")
+        if macd_indicators:
+            print(f"Found {len(macd_indicators)} MACD related indicators")
+
+            # Built-in vs Custom
+            builtin_count = sum(1 for x in macd_indicators if x.type == 'builtin')
+            custom_count = sum(1 for x in macd_indicators if x.type != 'builtin')
+
+            print("\nIndicator categories:")
+            print(f"Built-in indicators: {builtin_count}")
+            print(f"Custom indicators: {custom_count}")
+
     except Exception as e:
-        print(f"搜索市场时出错: {str(e)}")
+        print(f"Search error: {str(e)}")
+        print(f"Error type: {type(e)}")
 
-    # 搜索指标
-    print("\n搜索指标: RSI")
-    try:
-        indicators = await search_indicator('RSI')
-        print(f"找到 {len(indicators)} 个指标:")
-
-        # 显示前5个结果
-        for i, indicator in enumerate(indicators[:5], 1):
-            print(f"{i}. {indicator.name} - 作者: {indicator.author['username']} - 类型: {indicator.type}")
-
-        if len(indicators) > 5:
-            print(f"...以及更多 {len(indicators) - 5} 个指标")
-
-        # 搜索其他类型的指标
-        print("\n搜索指标: MACD")
-        try:
-            macd_indicators = await search_indicator('MACD')
-            print(f"找到 {len(macd_indicators)} 个MACD相关指标")
-
-            # 展示内置指标和自定义指标的区别
-            print("\n指标分类:")
-            builtin_count = sum(1 for ind in indicators if ind.author['username'] == '@TRADINGVIEW@')
-            custom_count = len(indicators) - builtin_count
-            print(f"内置指标: {builtin_count}")
-            print(f"自定义指标: {custom_count}")
-        except Exception as e:
-            print(f"搜索MACD指标时出错: {str(e)}")
-    except Exception as e:
-        print(f"搜索RSI指标时出错: {str(e)}")
-        print(f"错误类型: {type(e)}")
-        import traceback
-        traceback.print_exc()
+    finally:
+        await client.close()
 
 if __name__ == '__main__':
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print('\n程序被中断')
-        sys.exit(0)
+        print('\nProgram interrupted')
     except Exception as e:
-        print(f"程序执行出错: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
+        print(f"Program execution error: {str(e)}")

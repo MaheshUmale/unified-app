@@ -1,95 +1,69 @@
-"""
-类型定义模块
-"""
-from enum import Enum
-from typing import List, Dict, Any, Union, Callable, Optional
+from typing import List, Dict, Union, Any, Optional
 
-# 市场符号类型
-MarketSymbol = str  # 'BTCEUR' 或 'KRAKEN:BTCEUR'
+# Market Symbol Type
+MarketSymbol = str  # 'BTCEUR' or 'KRAKEN:BTCEUR'
 
-# 时区类型
-Timezone = str  # 'Etc/UTC', 'exchange', 'Europe/Moscow' 等
+# Timezone Type
+Timezone = str  # 'Etc/UTC', 'exchange', 'Europe/Moscow', etc.
 
-# 时间周期常量
-VALID_TIMEFRAMES = {
-    "1", "3", "5", "15", "30", "45",
-    "60", "120", "180", "240",
+# Timeframe Constants
+VALID_TIMEFRAMES = [
+    "1", "3", "5", "15", "30", "45", "60", "120", "180", "240",
     "1D", "1W", "1M", "D", "W", "M"
-}
+]
 
-# 时间周期类型，仍定义为字符串
-TimeFrame = str  # 但应该是VALID_TIMEFRAMES中的一个值
+# Timeframe Type
+TimeFrame = str  # Should be one of VALID_TIMEFRAMES
 
-def validate_timeframe(timeframe: TimeFrame) -> bool:
-    """验证给定的时间周期是否有效"""
-    return timeframe in VALID_TIMEFRAMES
+def is_valid_timeframe(tf: str) -> bool:
+    """Validate if given timeframe is valid"""
+    return tf in VALID_TIMEFRAMES
 
-class TimeFrame(str, Enum):
-    """时间周期枚举类型"""
-    MIN_1 = "1"      # 1分钟
-    MIN_3 = "3"      # 3分钟
-    MIN_5 = "5"      # 5分钟
-    MIN_15 = "15"    # 15分钟
-    MIN_30 = "30"    # 30分钟
-    MIN_45 = "45"    # 45分钟
-    MIN_60 = "60"    # 1小时
-    MIN_120 = "120"  # 2小时
-    MIN_180 = "180"  # 3小时
-    MIN_240 = "240"  # 4小时
-    DAY = "1D"       # 日线
-    WEEK = "1W"      # 周线
-    MONTH = "1M"     # 月线
-    DAY_ALT = "D"    # 日线(替代表示)
-    WEEK_ALT = "W"   # 周线(替代表示)
-    MONTH_ALT = "M"  # 月线(替代表示)
+class TimeFrameEnum:
+    """Timeframe enumeration type"""
+    MIN_1 = "1"      # 1 minute
+    MIN_3 = "3"      # 3 minutes
+    MIN_5 = "5"      # 5 minutes
+    MIN_15 = "15"    # 15 minutes
+    MIN_30 = "30"    # 30 minutes
+    MIN_45 = "45"    # 45 minutes
+    MIN_60 = "60"    # 1 hour
+    MIN_120 = "120"  # 2 hours
+    MIN_180 = "180"  # 3 hours
+    MIN_240 = "240"  # 4 hours
+    DAY = "1D"       # Daily
+    WEEK = "1W"      # Weekly
+    MONTH = "1M"     # Monthly
+    DAY_ALT = "D"    # Daily (alternative)
+    WEEK_ALT = "W"   # Weekly (alternative)
+    MONTH_ALT = "M"  # Monthly (alternative)
 
-# 时间周期类型
-TimeFrame = str  # '1', '5', '15', '30', '60', '240', '1D', '1W', '1M'
+# Indicator Type
+# Built-in Indicator Type
+BuiltInIndicatorType = str  # 'Volume@tv-basicstudies-241', etc.
 
-# 指标类型
-IndicatorType = str  # 'Script@tv-scripting-101!', 'StrategyScript@tv-scripting-101!'
+# Built-in Indicator Option
+BuiltInIndicatorOption = str  # 'rowsLayout', 'rows', 'volume', etc.
 
-# 内置指标类型
-BuiltInIndicatorType = str  # 'Volume@tv-basicstudies-241', 等
+# Graphics Extension Type
+# Y-axis Positioning Type
+# Label Style Type
+LabelStyleValue = str  # 'none', 'xcross', 'cross', etc.
 
-# 内置指标选项类型
-BuiltInIndicatorOption = str  # 'rowsLayout', 'rows', 'volume', 等
+# Line Style Type
+LineStyleValue = str  # 'solid', 'dotted', 'dashed', etc.
 
-# 图形绘制扩展类型
-ExtendValue = str  # 'right', 'left', 'both', 'none'
+# Box Style Type
+# Size Value Type
+# Vertical Alignment Type
+# Horizontal Alignment Type
+# Text Wrapping Type
+# Table Position Type
+TablePositionValue = str  # 'top_left', 'top_center', etc.
 
-# Y轴定位类型
-YLocValue = str  # 'price', 'abovebar', 'belowbar'
+# Event Types
+ClientEvent = str  # 'connected', 'disconnected', etc.
 
-# 标签样式类型
-LabelStyleValue = str  # 'none', 'xcross', 'cross', 等
-
-# 线条样式类型
-LineStyleValue = str  # 'solid', 'dotted', 'dashed', 等
-
-# 方框样式类型
-BoxStyleValue = str  # 'solid', 'dotted', 'dashed'
-
-# 大小值类型
-SizeValue = str  # 'auto', 'huge', 'large', 'normal', 'small', 'tiny'
-
-# 垂直对齐类型
-VAlignValue = str  # 'top', 'center', 'bottom'
-
-# 水平对齐类型
-HAlignValue = str  # 'left', 'center', 'right'
-
-# 文本包装类型
-TextWrapValue = str  # 'none', 'auto'
-
-# 表格位置类型
-TablePositionValue = str  # 'top_left', 'top_center', 等
-
-# 事件类型
-ClientEvent = str  # 'connected', 'disconnected', 等
-
-# 市场事件类型
-MarketEvent = str  # 'loaded', 'data', 'error'
-
-# 更新变化类型
-UpdateChangeType = str  # 'plots', 'report.currency', 等
+# Market Event Types
+# Update Change Types
+UpdateChangeType = str  # 'plots', 'report.currency', etc.

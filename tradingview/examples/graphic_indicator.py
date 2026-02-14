@@ -1,89 +1,69 @@
-#!/usr/bin/env python3
-"""
-此示例测试发送图形数据的指标，如'线条'、'标签'、'矩形'、'表格'、'多边形'等
-"""
-import asyncio
 import os
-from pprint import pprint
+import sys
+import asyncio
+from dotenv import load_dotenv
 
-from ...tradingview import Client, get_indicator
+# Add project root to path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+
+from tradingview.client import TradingViewClient
 
 async def main():
-    """主函数"""
-    # 检查环境变量
-    session = os.environ.get('TV_SESSION')
-    signature = os.environ.get('TV_SIGNATURE')
+    """Main function"""
+    load_dotenv()
+
+    # Check credentials
+    session = os.getenv('TV_SESSION')
+    signature = os.getenv('TV_SIGNATURE')
 
     if not session or not signature:
-        raise ValueError('请设置TV_SESSION和TV_SIGNATURE环境变量')
+        raise ValueError('Please set TV_SESSION and TV_SIGNATURE environment variables')
 
-    # 创建客户端
-    client = Client(
-        token=session,
-        signature=signature
-    )
+    # Create client
+    client = TradingViewClient()
+    await client.connect(session=session, signature=signature)
 
-    # 连接到TradingView
-    await client.connect()
+    # Create chart
+    chart = client.new_chart()
+    chart.set_market('BINANCE:BTCUSDT', timeframe='60')
 
-    # 创建图表
-    chart = client.Session.Chart()
+    # Search for Zig Zag indicator (often has graphics)
+    results = await client.search_indicator('Zig Zag')
+    if not results:
+        print("Indicator not found")
+        await client.close()
+        return
 
-    # 设置市场
-    chart.set_market('BINANCE:BTCEUR', {
-        'timeframe': '5',
-        'range': 10000,
-    })
+    indic = results[0]
 
-    # 加载指标 - 可以选择内置的Zig_Zag指标或自定义指标
-    # 自定义指标例子:
-    # indicator = await get_indicator('USER;01efac32df544348810bc843a7515f36')
-    # indicator = await get_indicator('PUB;5xi4DbWeuIQrU0Fx6ZKiI2odDvIW9q2j')
+    # Create study
+    study = chart.new_study(indic)
 
-    # 这里使用内置的Zig_Zag指标
-    indicator = await get_indicator('STD;Zig_Zag')
+    # Handle errors
+    @study.on_error
+    async def on_error(*err):
+        print('Indicator error:', *err)
 
-    # 创建指标研究
-    std = chart.Study(indicator)
+    # When study is ready
+    @study.on_ready
+    async def on_ready(std=study):
+        print(f"Indicator '{std.name}' loaded!")
 
-    # 处理错误
-    def on_error(*err):
-        print('指标错误:', *err)
+    # When graphics update
+    @study.on_update
+    async def on_update(std=study):
+        print('Graphics data updated')
+        # Display table info if available
+        if hasattr(std, 'tables') and std.tables:
+            print('Tables found:', std.tables)
 
-    std.on_error(on_error)
-
-    # 当指标准备好时
-    def on_ready():
-        print(f"指标 '{std.instance.description}' 已加载！")
-
-    std.on_ready(on_ready)
-
-    # 当指标数据更新时
-    def on_update():
-        print('图形数据:')
-        pprint(std.graphic)
-
-        # 如果有表格数据，可以显示表格信息
-        if hasattr(std.graphic, 'tables') and std.graphic.tables:
-            print('表格:')
-            pprint(std.graphic.tables)
-
-            # 如果有单元格数据，可以显示单元格信息
-            if hasattr(std.graphic.tables[0], 'cells') and callable(std.graphic.tables[0].cells):
-                print('单元格:')
-                pprint(std.graphic.tables[0].cells())
-
-        # 任务完成，关闭连接
-        asyncio.create_task(client.end())
-
-    std.on_update(on_update)
-
-    # 设置超时，防止程序无限等待
+    # Set timeout
     try:
-        await asyncio.wait_for(asyncio.sleep(30), timeout=30)
-    except asyncio.TimeoutError:
-        print("操作超时，关闭连接")
-        await client.end()
+        await asyncio.sleep(45)
+    except asyncio.CancelledError:
+        pass
+    finally:
+        await client.close()
 
 if __name__ == '__main__':
     asyncio.run(main())
