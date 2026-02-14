@@ -113,13 +113,19 @@
         <div id="symbol-info">
             <div id="last-price" class="text-3xl font-black tracking-tighter">-</div>
             <div id="change-info" class="text-xs font-bold mt-1">-</div>
+            <div id="delta-info" class="text-xs font-black mt-1 text-blue-500">DELTA: - | CVD: -</div>
         </div>
-        <div id="chart" class="chart-container"></div>
+        <div id="chart-wrapper" class="relative w-full h-full">
+            <div id="chart" class="chart-container"></div>
+            <canvas id="footprint-canvas" class="absolute top-0 left-0 pointer-events-none"></canvas>
+        </div>
     </main>
 
     <script>
         const socket = io();
-        let chart, candleSeries, volumeSeries;
+        let chart, candleSeries, volumeSeries, cvdSeries;
+        let footprintCanvas, footprintCtx;
+        let allAggregatedCandles = [];
         let historicalTicks = [];
         let isReplayMode = false;
         let replayIndex = -1;
@@ -160,6 +166,9 @@
                 this.currentTickCount = 0;
                 this.currentCandle = null;
                 this.lastTime = 0;
+                this.lastPrice = 0;
+                this.lastSide = 1;
+                this.cvd = 0;
             }
 
             setTicksPerCandle(tpc) {
@@ -173,6 +182,15 @@
                 const qty = Number(tick.qty || 0);
                 let ts = Math.floor(tick.ts_ms / 1000);
 
+                let side = this.lastSide;
+                if (price > this.lastPrice) side = 1;
+                else if (price < this.lastPrice) side = -1;
+
+                const delta = side * qty;
+                this.cvd += delta;
+                this.lastPrice = price;
+                this.lastSide = side;
+
                 if (!this.currentCandle || this.currentTickCount >= this.tpc) {
                     if (ts <= this.lastTime) {
                         ts = this.lastTime + 1;
@@ -185,8 +203,12 @@
                         high: price,
                         low: price,
                         close: price,
-                        volume: qty
+                        volume: qty,
+                        delta: delta,
+                        cvd: this.cvd,
+                        footprint: {}
                     };
+                    this.updateFootprint(this.currentCandle, price, side, qty);
                     this.currentTickCount = 1;
                     return { type: 'new', candle: this.currentCandle };
                 } else {
@@ -194,8 +216,81 @@
                     this.currentCandle.low = Math.min(this.currentCandle.low, price);
                     this.currentCandle.close = price;
                     this.currentCandle.volume += qty;
+                    this.currentCandle.delta += delta;
+                    this.currentCandle.cvd = this.cvd;
+                    this.updateFootprint(this.currentCandle, price, side, qty);
                     this.currentTickCount++;
                     return { type: 'update', candle: this.currentCandle };
+                }
+            }
+
+            updateFootprint(candle, price, side, qty) {
+                if (!candle.footprint[price]) {
+                    candle.footprint[price] = { buy: 0, sell: 0 };
+                }
+                if (side === 1) candle.footprint[price].buy += qty;
+                else candle.footprint[price].sell += qty;
+
+                const priceLevels = Object.keys(candle.footprint).map(Number).sort((a,b) => a-b);
+
+                // Calculate POC and Total Volume
+                let maxVol = 0;
+                let totalVol = 0;
+                let poc = candle.open;
+                for (let p of priceLevels) {
+                    let vol = candle.footprint[p].buy + candle.footprint[p].sell;
+                    totalVol += vol;
+                    if (vol > maxVol) {
+                        maxVol = vol;
+                        poc = p;
+                    }
+                }
+                candle.poc = poc;
+
+                // Calculate Value Area (70%)
+                let vaVol = totalVol * 0.7;
+                let currentVaVol = maxVol;
+                let lowerIdx = priceLevels.indexOf(poc);
+                let upperIdx = lowerIdx;
+
+                while (currentVaVol < vaVol && (lowerIdx > 0 || upperIdx < priceLevels.length - 1)) {
+                    let lowerVol = lowerIdx > 0 ? (candle.footprint[priceLevels[lowerIdx - 1]].buy + candle.footprint[priceLevels[lowerIdx - 1]].sell) : 0;
+                    let upperVol = upperIdx < priceLevels.length - 1 ? (candle.footprint[priceLevels[upperIdx + 1]].buy + candle.footprint[priceLevels[upperIdx + 1]].sell) : 0;
+
+                    if (lowerVol >= upperVol) {
+                        currentVaVol += lowerVol;
+                        lowerIdx--;
+                    } else {
+                        currentVaVol += upperVol;
+                        upperIdx++;
+                    }
+                }
+                candle.vah = priceLevels[upperIdx];
+                candle.val = priceLevels[lowerIdx];
+
+                // Detect Diagonal Imbalances (300%)
+                // Buy Imbalance: Buy(p) >= 3 * Sell(p-1)
+                // Sell Imbalance: Sell(p) >= 3 * Buy(p+1)
+                candle.imbalances = [];
+                for (let i = 0; i < priceLevels.length; i++) {
+                    const p = priceLevels[i];
+                    const buyV = candle.footprint[p].buy;
+                    const sellV = candle.footprint[p].sell;
+
+                    if (i > 0) {
+                        const prevP = priceLevels[i-1];
+                        const prevSellV = candle.footprint[prevP].sell;
+                        if (buyV >= prevSellV * 3 && buyV > 0 && prevSellV > 0) {
+                            candle.imbalances.push({ price: p, side: 'buy' });
+                        }
+                    }
+                    if (i < priceLevels.length - 1) {
+                        const nextP = priceLevels[i+1];
+                        const nextBuyV = candle.footprint[nextP].buy;
+                        if (sellV >= nextBuyV * 3 && sellV > 0 && nextBuyV > 0) {
+                            candle.imbalances.push({ price: p, side: 'sell' });
+                        }
+                    }
                 }
             }
         }
@@ -249,12 +344,130 @@
                 color: '#3b82f6', priceFormat: { type: 'volume' }, priceScaleId: 'volume'
             });
 
+            cvdSeries = chart.addAreaSeries({
+                lineColor: '#3b82f6', topColor: 'rgba(59, 130, 246, 0.4)', bottomColor: 'rgba(59, 130, 246, 0)',
+                priceFormat: { type: 'price' }, priceScaleId: 'cvd', title: 'CVD'
+            });
+
             chart.priceScale('volume').applyOptions({
-                scaleMargins: { top: 0.8, bottom: 0 }, visible: false
+                scaleMargins: { top: 0.8, bottom: 0.05 }, visible: false
+            });
+
+            chart.priceScale('cvd').applyOptions({
+                scaleMargins: { top: 0.85, bottom: 0 }, visible: true, borderColor: 'rgba(0,0,0,0.1)'
             });
 
             window.addEventListener('resize', () => {
                 chart.resize(container.clientWidth, container.clientHeight);
+                syncCanvasSize();
+                renderFootprint();
+            });
+
+            initFootprint();
+        }
+
+        function initFootprint() {
+            footprintCanvas = document.getElementById('footprint-canvas');
+            footprintCtx = footprintCanvas.getContext('2d');
+            syncCanvasSize();
+
+            chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
+                renderFootprint();
+            });
+        }
+
+        function syncCanvasSize() {
+            const container = document.getElementById('chart-wrapper');
+            if (!footprintCanvas || !container) return;
+            footprintCanvas.width = container.clientWidth;
+            footprintCanvas.height = container.clientHeight;
+        }
+
+        function renderFootprint() {
+            if (!footprintCtx || !chart) return;
+            footprintCtx.clearRect(0, 0, footprintCanvas.width, footprintCanvas.height);
+
+            const timeScale = chart.timeScale();
+            const barSpacing = timeScale.options().barSpacing;
+            if (barSpacing < 45) return;
+
+            const logicalRange = timeScale.getVisibleLogicalRange();
+            if (!logicalRange) return;
+
+            allAggregatedCandles.forEach(candle => {
+                const x = timeScale.timeToCoordinate(candle.time);
+                if (x === null || x < 0 || x > footprintCanvas.width) return;
+
+                const priceLevels = Object.keys(candle.footprint).map(Number).sort((a,b) => b-a);
+                const halfBarWidth = (barSpacing / 2) * 0.9;
+
+                // Value Area Lines
+                if (candle.vah && candle.val) {
+                    const vahY = candleSeries.priceToCoordinate(candle.vah);
+                    const valY = candleSeries.priceToCoordinate(candle.val);
+                    if (vahY !== null && valY !== null) {
+                        footprintCtx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+                        footprintCtx.setLineDash([2, 2]);
+                        footprintCtx.strokeRect(x - halfBarWidth - 2, vahY - 6, halfBarWidth * 2 + 4, valY - vahY + 12);
+                        footprintCtx.setLineDash([]);
+                    }
+                }
+
+                priceLevels.forEach(p => {
+                    const y = candleSeries.priceToCoordinate(p);
+                    if (y === null || y < 0 || y > footprintCanvas.height) return;
+
+                    const data = candle.footprint[p];
+                    const buyVol = data.buy;
+                    const sellVol = data.sell;
+
+                    // Imbalances
+                    const isBuyImbalance = candle.imbalances.some(imb => imb.price === p && imb.side === 'buy');
+                    const isSellImbalance = candle.imbalances.some(imb => imb.price === p && imb.side === 'sell');
+
+                    // Draw Cell Background with Imbalance Highlighting
+                    if (isBuyImbalance) {
+                        footprintCtx.fillStyle = 'rgba(34, 197, 94, 0.2)';
+                        footprintCtx.fillRect(x, y - 6, halfBarWidth, 12);
+                    } else if (isSellImbalance) {
+                        footprintCtx.fillStyle = 'rgba(239, 68, 68, 0.2)';
+                        footprintCtx.fillRect(x - halfBarWidth, y - 6, halfBarWidth, 12);
+                    } else {
+                        footprintCtx.fillStyle = (p >= candle.val && p <= candle.vah) ? 'rgba(148, 163, 184, 0.1)' : 'rgba(148, 163, 184, 0.05)';
+                        footprintCtx.fillRect(x - halfBarWidth, y - 6, halfBarWidth * 2, 12);
+                    }
+
+                    // POC Highlight
+                    if (p === candle.poc) {
+                        footprintCtx.strokeStyle = '#fbbf24';
+                        footprintCtx.lineWidth = 2;
+                        footprintCtx.strokeRect(x - halfBarWidth, y - 6, halfBarWidth * 2, 12);
+                    }
+
+                    footprintCtx.font = '8px "Plus Jakarta Sans"';
+
+                    // Sell Volume (Left)
+                    footprintCtx.textAlign = 'right';
+                    footprintCtx.fillStyle = isSellImbalance ? '#ef4444' : (document.body.classList.contains('light-theme') ? '#475569' : '#cbd5e1');
+                    if (isSellImbalance) footprintCtx.font = 'bold 9px "Plus Jakarta Sans"';
+                    else footprintCtx.font = '8px "Plus Jakarta Sans"';
+                    footprintCtx.fillText(sellVol, x - 4, y + 3);
+
+                    // Buy Volume (Right)
+                    footprintCtx.textAlign = 'left';
+                    footprintCtx.fillStyle = isBuyImbalance ? '#22c55e' : (document.body.classList.contains('light-theme') ? '#475569' : '#cbd5e1');
+                    if (isBuyImbalance) footprintCtx.font = 'bold 9px "Plus Jakarta Sans"';
+                    else footprintCtx.font = '8px "Plus Jakarta Sans"';
+                    footprintCtx.fillText(buyVol, x + 4, y + 3);
+
+                    // Separator
+                    footprintCtx.strokeStyle = 'rgba(148, 163, 184, 0.2)';
+                    footprintCtx.lineWidth = 1;
+                    footprintCtx.beginPath();
+                    footprintCtx.moveTo(x, y - 4);
+                    footprintCtx.lineTo(x, y + 4);
+                    footprintCtx.stroke();
+                });
             });
         }
 
@@ -283,13 +496,63 @@
             }
         }
 
+        function detectSignals(candles) {
+            const markers = [];
+            for (let i = 2; i < candles.length; i++) {
+                const c = candles[i];
+                const p = candles[i-1];
+
+                // Stacked Imbalances
+                const buyImbs = (c.imbalances || []).filter(imb => imb.side === 'buy');
+                const sellImbs = (c.imbalances || []).filter(imb => imb.side === 'sell');
+
+                if (buyImbs.length >= 3) {
+                    markers.push({ time: c.time, position: 'belowBar', color: '#22c55e', shape: 'arrowUp', text: 'STACKED BUY' });
+                } else if (sellImbs.length >= 3) {
+                    markers.push({ time: c.time, position: 'aboveBar', color: '#ef4444', shape: 'arrowDown', text: 'STACKED SELL' });
+                }
+
+                // CVD Divergence
+                if (c.low < p.low && c.cvd > p.cvd) {
+                    markers.push({ time: c.time, position: 'belowBar', color: '#3b82f6', shape: 'circle', text: 'BULL DIV' });
+                } else if (c.high > p.high && c.cvd < p.cvd) {
+                    markers.push({ time: c.time, position: 'aboveBar', color: '#3b82f6', shape: 'circle', text: 'BEAR DIV' });
+                }
+
+                // AIP - Absorption Initiation Pattern
+                // Absorption: Sell imbalances but close above them
+                const isAbsorption = sellImbs.length > 0 && c.close > Math.max(...sellImbs.map(imb => imb.price));
+                if (isAbsorption) {
+                    markers.push({ time: c.time, position: 'belowBar', color: '#fbbf24', shape: 'circle', text: 'ABSORPTION' });
+                }
+
+                // Initiation: Previous was absorption, current has buy imbalances and closes above them
+                if (i > 0) {
+                    const prevCandle = candles[i-1];
+                    const prevSellImbs = (prevCandle.imbalances || []).filter(imb => imb.side === 'sell');
+                    const wasPrevAbsorption = prevSellImbs.length > 0 && prevCandle.close > Math.max(...prevSellImbs.map(imb => imb.price));
+
+                    if (wasPrevAbsorption) {
+                        const isInitiation = buyImbs.length > 0 && c.close > Math.max(...buyImbs.map(imb => imb.price));
+                        if (isInitiation) {
+                            markers.push({ time: c.time, position: 'belowBar', color: '#22c55e', shape: 'arrowUp', text: 'INITIATION' });
+                        }
+                    }
+                }
+            }
+            return markers;
+        }
+
         function renderTicks(ticks) {
             const candles = [];
             const volumes = [];
+            const cvds = [];
 
             aggregator.lastTime = 0;
             aggregator.currentCandle = null;
             aggregator.currentTickCount = 0;
+            aggregator.cvd = 0;
+            aggregator.lastPrice = ticks.length > 0 ? ticks[0].price : 0;
 
             ticks.forEach(t => {
                 const result = aggregator.processTick(t);
@@ -306,18 +569,34 @@
                     value: c.volume,
                     color: c.close >= c.open ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)'
                 });
+                cvds.push({
+                    time: c.time,
+                    value: c.cvd
+                });
             });
 
             candleSeries.setData(candles);
             volumeSeries.setData(volumes);
+            cvdSeries.setData(cvds);
+
+            allAggregatedCandles = candles;
+            const markers = detectSignals(candles);
+            candleSeries.setMarkers(markers);
+
+            renderFootprint();
 
             if (candles.length > 0) {
-                updatePriceUI(candles[candles.length - 1].close);
+                updatePriceUI(candles[candles.length - 1]);
             }
         }
 
-        function updatePriceUI(price) {
-            document.getElementById('last-price').textContent = price.toLocaleString(undefined, { minimumFractionDigits: 2 });
+        function updatePriceUI(candle) {
+            document.getElementById('last-price').textContent = candle.close.toLocaleString(undefined, { minimumFractionDigits: 2 });
+            const deltaInfo = document.getElementById('delta-info');
+            const delta = Math.round(candle.delta || 0);
+            const cvd = Math.round(candle.cvd || 0);
+            deltaInfo.textContent = `DELTA: ${delta > 0 ? '+' : ''}${delta} | CVD: ${cvd > 0 ? '+' : ''}${cvd}`;
+            deltaInfo.className = `text-xs font-black mt-1 ${delta >= 0 ? 'text-green-500' : 'text-red-500'}`;
         }
 
         function initSocket() {
@@ -341,7 +620,23 @@
                         value: result.candle.volume,
                         color: result.candle.close >= result.candle.open ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)'
                     });
-                    updatePriceUI(result.candle.close);
+                    cvdSeries.update({
+                        time: result.candle.time,
+                        value: result.candle.cvd
+                    });
+
+                    if (result.type === 'new') {
+                        allAggregatedCandles.push({...result.candle});
+                    } else {
+                        allAggregatedCandles[allAggregatedCandles.length - 1] = {...result.candle};
+                    }
+
+                    const markers = detectSignals(allAggregatedCandles);
+                    candleSeries.setMarkers(markers);
+
+                    renderFootprint();
+
+                    updatePriceUI(result.candle);
                 }
             });
         }
