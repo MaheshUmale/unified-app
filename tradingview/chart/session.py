@@ -1,5 +1,5 @@
 """
-图表会话模块
+Chart Session Module
 """
 import json
 import time
@@ -13,37 +13,41 @@ logger = get_logger(__name__)
 
 class ChartSession:
     """
-    图表会话类
+    Class representing a chart session.
     """
     def __init__(self, client):
         """
-        初始化图表会话
+        Initialize the chart session.
 
         Args:
-            client: 客户端实例
+            client: Client instance
         """
         self._session_id = gen_session_id('cs')
         self._replay_session_id = gen_session_id('rs')
         self._client = client
         self._study_listeners = {}
+        self._deleted = False
 
-        # 回放模式属性
+        # State events
+        self._symbol_resolved_event = asyncio.Event()
+
+        # Replay mode properties
         self._replay_active = False
         self._replay_ok_cb = {}
 
-        # 创建会话
+        # Register sessions
         self._client.sessions[self._session_id] = {
             'type': 'chart',
             'on_data': self._on_session_data
         }
 
-        # 回放会话
+        # Replay session
         self._client.sessions[self._replay_session_id] = {
             'type': 'replay',
             'on_data': self._on_replay_data
         }
 
-        # 初始化数据
+        # Initialize data
         self._periods = {}
         self._infos = {}
         self._indexes = {}
@@ -51,11 +55,11 @@ class ChartSession:
         self._symbol = 'BITSTAMP:BTCUSD'
         self._timeframe = '240'
 
-        # 系列管理
+        # Series management
         self._series_created = False
         self._current_series = 0
 
-        # 回调函数
+        # Callbacks
         self._callbacks = {
             'symbol_loaded': [],
             'update': [],
@@ -67,53 +71,63 @@ class ChartSession:
             'error': []
         }
 
-        # 创建图表会话
+        # Create chart session
         self._create_session_task = asyncio.create_task(self._client.send('chart_create_session', [self._session_id]))
 
-        # 创建研究类
+        # Create study factory
         self.Study = lambda indicator: ChartStudy(self, indicator)
 
     def _on_session_data(self, packet):
         """
-        处理会话数据
+        Handle session data.
 
         Args:
-            packet: 数据包
+            packet: Data packet
         """
+        if self._deleted:
+            return
+
         try:
-            # 如果是研究数据
+            # Handle study data
             if isinstance(packet['data'], list) and len(packet['data']) > 1 and isinstance(packet['data'][1], str) and packet['data'][1] in self._study_listeners:
                 study_id = packet['data'][1]
                 self._study_listeners[study_id](packet)
                 return
 
-            # 处理符号解析
+            # Handle symbol resolution
             if packet['type'] == 'symbol_resolved':
                 self._infos = {
                     'series_id': packet['data'][1],
                     **packet['data'][2]
                 }
 
+                # Set symbol resolved event
+                self._symbol_resolved_event.set()
+
                 self._handle_event('symbol_loaded')
                 return
 
-            # 处理时间刻度更新
+            # Handle timescale updates
             if packet['type'] in ['timescale_update', 'du']:
                 changes = []
 
                 if isinstance(packet['data'], list) and len(packet['data']) > 1:
-                    for k in packet['data'][1].keys():
+                    data_dict = packet['data'][1]
+                    if not isinstance(data_dict, dict):
+                        return
+
+                    for k in data_dict.keys():
                         changes.append(k)
 
                         if k == '$prices':
-                            periods = packet['data'][1]['$prices']
+                            periods = data_dict['$prices']
                             if not periods or 's' not in periods:
                                 continue
 
                             # {"i":2,"v":[1754297700.0,3359.56,3359.925,3358.205,3358.605,696.0]}
                             for p in periods['s']:
                                 if 'i' in p and 'v' in p:
-                                    if len(p['v']) >= 6:  # 确保有足够的数据点
+                                    if len(p['v']) >= 6:
                                         self._indexes[p['i']] = p['v'][0]
                                         self._periods[p['v'][0]] = {
                                             'time': p['v'][0],
@@ -121,8 +135,8 @@ class ChartSession:
                                             'close': p['v'][4],
                                             'max': p['v'][2],
                                             'min': p['v'][3],
-                                            'high': p['v'][2],  # 别名
-                                            'low': p['v'][3],   # 别名
+                                            'high': p['v'][2],  # Alias
+                                            'low': p['v'][3],   # Alias
                                             'volume': round(p['v'][5] * 100) / 100 if len(p['v']) > 5 else 0,
                                         }
 
@@ -134,17 +148,17 @@ class ChartSession:
                     self._handle_event('update', changes)
                     return
 
-            # 处理符号错误
+            # Handle symbol errors
             if packet['type'] == 'symbol_error':
                 self._handle_error(f"({packet['data'][1]}) Symbol error:", packet['data'][2])
                 return
 
-            # 处理系列错误
+            # Handle series errors
             if packet['type'] == 'series_error':
                 self._handle_error('Series error:', packet['data'][3])
                 return
 
-            # 处理关键错误
+            # Handle critical errors
             if packet['type'] == 'critical_error':
                 name, description = None, None
                 if len(packet['data']) > 1:
@@ -155,18 +169,21 @@ class ChartSession:
                 return
 
         except Exception as e:
-            self._handle_error(f"处理会话数据错误: {str(e)}")
+            self._handle_error(f"Error processing session data: {str(e)}")
 
     def _on_replay_data(self, packet):
         """
-        处理回放会话数据
+        Handle replay session data.
 
         Args:
-            packet: 数据包
+            packet: Data packet
         """
+        if self._deleted:
+            return
+
         try:
             if packet['type'] == 'replay_ok':
-                # 处理回放确认
+                # Handle replay confirmation
                 if packet['data'][1] in self._replay_ok_cb:
                     self._replay_ok_cb[packet['data'][1]]()
                     del self._replay_ok_cb[packet['data'][1]]
@@ -193,151 +210,30 @@ class ChartSession:
                 self._handle_error('Critical error:', name, description)
                 return
         except Exception as e:
-            self._handle_error(f"处理回放数据错误: {str(e)}")
-
-    def _handle_timescale_update(self, packet):
-        """
-        处理时间刻度更新
-
-        Args:
-            packet: 数据包
-        """
-        try:
-            # 获取数据
-            if not packet['data'] or len(packet['data']) < 2:
-                return
-
-            data = packet['data'][1]
-            changes = []
-
-            # 兼容不同格式的数据
-            if isinstance(data, dict):
-                # 尝试直接访问数据
-                if 'sds_1' in data:
-                    data = data['sds_1']
-                elif '$prices' in data:
-                    # 处理 $prices 格式
-                    if 's' in data['$prices']:
-                        periods_data = data['$prices']['s']
-                        for period in periods_data:
-                            if 'v' in period and len(period['v']) >= 5:
-                                time_value = period['v'][0]
-                                self._periods[time_value] = {
-                                    'time': time_value,
-                                    'open': period['v'][1],
-                                    'high': period['v'][2],
-                                    'low': period['v'][3],
-                                    'close': period['v'][4],
-                                    'volume': period['v'][5] if len(period['v']) > 5 else 0
-                                }
-                        changes.append('periods')
-
-                # 更新K线周期数据
-                if 's' in data:
-                    for candle in data['s']:
-                        # 兼容不同格式
-                        if 'i' in candle and 'v' in candle:
-                            time_value = candle['i'][0] if isinstance(candle['i'], list) else candle['i']
-
-                            values = candle['v']
-                            if len(values) >= 4:
-                                self._periods[time_value] = {
-                                    'time': time_value,
-                                    'open': values[0],
-                                    'high': values[1],
-                                    'low': values[2],
-                                    'close': values[3],
-                                    'volume': values[4] if len(values) > 4 else 0
-                                }
-
-                    changes.append('periods')
-
-                # 更新索引数据
-                if 'indexes' in data:
-                    old_index_count = len(self._indexes)
-
-                    for i in range(len(data['indexes'])):
-                        self._indexes[i] = data['indexes'][i]
-
-                    if len(self._indexes) != old_index_count:
-                        changes.append('indexes')
-
-                # 更新其他信息
-                if 'ns' in data and 'i' in data['ns']:
-                    for k, v in data['ns']['i'].items():
-                        if k not in self._infos or self._infos[k] != v:
-                            self._infos[k] = v
-                            changes.append(f'info.{k}')
-
-            # 触发更新事件
-            if changes:
-                self._handle_event('update', changes)
-        except Exception as e:
-            self._handle_error(f"处理时间刻度更新出错: {str(e)}")
-
-    def _handle_symbol_resolved(self, packet):
-        """
-        处理符号解析结果
-
-        Args:
-            packet: 数据包
-        """
-        try:
-            # 尝试兼容新旧格式
-            if len(packet['data']) >= 3:
-                if packet['data'][1] == 'sds_1':
-                    if isinstance(packet['data'][2], dict):
-                        # 新格式，直接使用字典
-                        self._infos = packet['data'][2]
-                    elif isinstance(packet['data'][2], str) and packet['data'][2].startswith('{'):
-                        # JSON 字符串，需要解析
-                        try:
-                            self._infos = json.loads(packet['data'][2])
-                        except json.JSONDecodeError:
-                            pass
-
-                    self._handle_event('symbol_loaded')
-                    return
-        except Exception as e:
-            self._handle_error(f"处理符号解析结果出错: {str(e)}")
-
-        # 如果上面的处理失败，尝试旧方法
-        try:
-            if packet['data'][1] == 'sds_1':
-                if isinstance(packet['data'][2], dict) and 'v' in packet['data'][2]:
-                    # 符号解析成功
-                    if packet['data'][2]['v']:
-                        self._symbol = packet['data'][2].get('n', self._symbol)
-                        self._handle_event('symbol_loaded')
-                    else:
-                        # 符号解析失败
-                        self._handle_error('Symbol not found', self._symbol)
-        except Exception as e:
-            self._handle_error(f"处理符号解析结果出错: {str(e)}")
+            self._handle_error(f"Error processing replay data: {str(e)}")
 
     def _handle_event(self, event, *data):
         """
-        处理事件
+        Handle events.
 
         Args:
-            event: 事件类型
-            data: 事件数据
+            event: Event type
+            data: Event data
         """
-        # 为了兼容示例程序中的回调函数，特殊处理 'update' 事件
+        # Special handling for 'update' event for compatibility
         if event == 'update':
             for callback in self._callbacks[event]:
                 try:
-                    # 检查回调函数是否接受参数
                     import inspect
                     if inspect.signature(callback).parameters:
                         callback(*data)
                     else:
-                        # 如果回调不接受参数，则直接调用
+                        # If callback doesn't accept args, call directly
                         callback()
                 except Exception as e:
-                    self._handle_error(f"回调函数错误: {str(e)}")
+                    self._handle_error(f"Callback error: {str(e)}")
         else:
-            # 其他事件正常处理
+            # Normal handling for other events
             for callback in self._callbacks[event]:
                 callback(*data)
 
@@ -346,14 +242,13 @@ class ChartSession:
 
     def _handle_error(self, *msgs):
         """
-        处理错误
+        Handle errors.
 
         Args:
-            msgs: 错误信息
+            msgs: Error messages
         """
         if not self._callbacks['error']:
-            # 修复格式化错误
-            # 将msgs转换为字符串并合并
+            # Format and log error
             error_msg = " ".join(str(msg) for msg in msgs)
             logger.error(f"ERROR: {error_msg}")
         else:
@@ -361,32 +256,31 @@ class ChartSession:
 
     @property
     def session_id(self):
-        """获取会话ID"""
+        """Get session ID"""
         return self._session_id
 
     @property
     def periods(self):
-        """获取所有K线周期，与JavaScript版本一致，但返回属性对象"""
+        """Get all K-line periods, sorted descending by time"""
         from types import SimpleNamespace
 
-        # 先用JavaScript逻辑获取排序后的周期数据
+        # Get sorted period data
         sorted_periods = sorted(self._periods.values(), key=lambda p: p['time'], reverse=True)
 
-        # 转换为带属性访问的对象
+        # Convert to attribute-accessible objects
         periods_list = []
         for period_data in sorted_periods:
-            # 创建SimpleNamespace对象
             period = SimpleNamespace()
             period.time = period_data['time']
             period.open = period_data['open']
-            period.high = period_data['high']  # 高点
-            period.max = period_data['high']   # 最高价别名
-            period.low = period_data['low']    # 低点
-            period.min = period_data['low']    # 最低价别名
+            period.high = period_data['high']
+            period.max = period_data['high']   # Alias
+            period.low = period_data['low']
+            period.min = period_data['low']    # Alias
             period.close = period_data['close']
             period.volume = period_data['volume']
 
-            # 添加其他可能存在的属性
+            # Add other properties
             for key, value in period_data.items():
                 if key not in ['time', 'open', 'high', 'low', 'close', 'volume']:
                     setattr(period, key, value)
@@ -397,17 +291,15 @@ class ChartSession:
 
     @property
     def infos(self):
-        """获取会话信息，符合JavaScript逻辑但提供属性访问"""
+        """Get session info as attribute-accessible object"""
         from types import SimpleNamespace
-
-        # 创建一个SimpleNamespace对象
         info_obj = SimpleNamespace()
 
-        # 复制所有属性
+        # Copy all attributes
         for key, value in self._infos.items():
             setattr(info_obj, key, value)
 
-        # 添加一些常用属性，如果没有的话
+        # Add common attributes if missing
         if not hasattr(info_obj, 'description'):
             info_obj.description = getattr(info_obj, 'name', self._symbol)
 
@@ -424,135 +316,129 @@ class ChartSession:
 
     @property
     def indexes(self):
-        """获取索引"""
+        """Get indexes"""
         return self._indexes
 
     def set_market(self, symbol, options=None):
         """
-        设置市场（与JS版本兼容的方法）
+        Set market (compatible with JS version).
 
         Args:
-            symbol: 交易对代码
-            options: 加载选项
+            symbol: Trading pair code
+            options: Loading options
         """
+        if self._deleted:
+            return
         if options is None:
             options = {}
 
-        # 重置数据
+        # Reset data
         self._periods = {}
+        self._symbol_resolved_event.clear()
 
-        # 回放模式处理
+        # Replay mode handling
         if self._replay_active:
             self._replay_active = False
             asyncio.create_task(self._client.send('replay_delete_session', [self._replay_session_id]))
 
-        # 创建异步任务
+        # Create async task
         async def load_market():
-            # 先确保会话已创建
-            if hasattr(self, '_create_session_task'):
-                try:
+            try:
+                # Ensure session is created
+                if hasattr(self, '_create_session_task'):
                     await self._create_session_task
-                except Exception as e:
-                    self._handle_error(f"创建会话出错: {str(e)}")
 
-            # 设置基本信息和符号初始化
-            symbol_init = {
-                'symbol': symbol or 'BTCEUR',
-                'adjustment': options.get('adjustment', 'splits'),
-            }
+                # Base symbol initialization
+                symbol_init = {
+                    'symbol': symbol or 'BTCEUR',
+                    'adjustment': options.get('adjustment', 'splits'),
+                }
 
-            # 添加可选参数
-            if options.get('backadjustment'):
-                symbol_init['backadjustment'] = 'default'
+                # Optional parameters
+                if options.get('backadjustment'):
+                    symbol_init['backadjustment'] = 'default'
 
-            if options.get('session'):
-                symbol_init['session'] = options.get('session')
+                if options.get('session'):
+                    symbol_init['session'] = options.get('session')
 
-            if options.get('currency'):
-                symbol_init['currency-id'] = options.get('currency')
+                if options.get('currency'):
+                    symbol_init['currency-id'] = options.get('currency')
 
-            # 处理回放模式
-            if options.get('replay'):
-                if not self._replay_active:
-                    self._replay_active = True
-                    await self._client.send('replay_create_session', [self._replay_session_id])
-
-                await self._client.send('replay_add_series', [
-                    self._replay_session_id,
-                    'req_replay_addseries',
-                    f"={json.dumps(symbol_init)}",
-                    options.get('timeframe', '240'),
-                ])
-
-                await self._client.send('replay_reset', [
-                    self._replay_session_id,
-                    'req_replay_reset',
-                    options['replay'],
-                ])
-
-            # 处理复杂图表类型
-            complex_chart = options.get('type') or options.get('replay')
-            chart_init = {} if complex_chart else symbol_init
-
-            if complex_chart:
+                # Replay mode processing
                 if options.get('replay'):
-                    chart_init['replay'] = self._replay_session_id
+                    if not self._replay_active:
+                        self._replay_active = True
+                        await self._client.send('replay_create_session', [self._replay_session_id])
 
-                chart_init['symbol'] = symbol_init
+                    await self._client.send('replay_add_series', [
+                        self._replay_session_id,
+                        'req_replay_addseries',
+                        f"={json.dumps(symbol_init)}",
+                        options.get('timeframe', '240'),
+                    ])
 
-                if options.get('type'):
-                    # 此处需要增加ChartTypes映射
-                    chart_init['type'] = options.get('type')
-                    chart_init['inputs'] = options.get('inputs', {})
+                    await self._client.send('replay_reset', [
+                        self._replay_session_id,
+                        'req_replay_reset',
+                        options['replay'],
+                    ])
 
-            # 增加系列计数
-            self._current_series += 1
+                # Complex chart type processing
+                complex_chart = options.get('type') or options.get('replay')
+                chart_init = {} if complex_chart else symbol_init
 
-            # 解析符号
-            await self._client.send('resolve_symbol', [
-                self._session_id,
-                f"ser_{self._current_series}",
-                f"={json.dumps(chart_init)}",
-            ])
+                if complex_chart:
+                    if options.get('replay'):
+                        chart_init['replay'] = self._replay_session_id
+                    chart_init['symbol'] = symbol_init
+                    if options.get('type'):
+                        chart_init['type'] = options.get('type')
+                        chart_init['inputs'] = options.get('inputs', {})
 
-            # 设置系列
-            self.set_series(
-                options.get('timeframe', '240'),
-                options.get('range', 100),
-                options.get('to')
-            )
+                # Increment series count
+                self._current_series += 1
 
-        # 执行任务
-        asyncio.create_task(load_market())
+                # Resolve symbol
+                await self._client.send('resolve_symbol', [
+                    self._session_id,
+                    f"ser_{self._current_series}",
+                    f"={json.dumps(chart_init)}",
+                ])
+
+                # Set series
+                self.set_series(
+                    options.get('timeframe', '240'),
+                    options.get('range', 100),
+                    options.get('to')
+                )
+            except Exception as e:
+                self._handle_error(f"load_market error: {e}")
+
+        # Execute task
+        return asyncio.create_task(load_market())
 
     def set_series(self, timeframe='240', range_val=100, reference=None):
         """
-        设置系列（与JS版本兼容的方法）
+        Set series (compatible with JS version).
 
         Args:
-            timeframe: 时间周期
-            range_val: 数据范围
-            reference: 参考时间（时间戳）
+            timeframe: Timeframe
+            range_val: Range value
+            reference: Reference time (timestamp)
         """
-        # 检查是否已设置市场
+        if self._deleted:
+            return
         if self._current_series == 0:
-            self._handle_error('请先设置市场再设置系列')
+            self._handle_error('Please set market before setting series')
             return
 
-        # 严格按照JavaScript版本的实现处理calc_range
-        # JavaScript中是: const calcRange = !reference ? range : ['bar_count', reference, range];
+        # calcRange = !reference ? range : ['bar_count', reference, range];
         calc_range = range_val if reference is None else ['bar_count', reference, range_val]
-
-        # 清空数据
         self._periods = {}
 
-        # 创建异步任务
         async def setup_series():
             try:
-                # 确定命令类型
                 command = 'modify_series' if self._series_created else 'create_series'
-
-                # 直接使用数值而不是数组形式的calc_range，更符合API期望
                 params = [
                     self._session_id,
                     '$prices',
@@ -561,33 +447,21 @@ class ChartSession:
                     timeframe
                 ]
 
-                # 只在创建系列时添加范围参数
                 if not self._series_created:
-                    # 简化参数传递，避免嵌套数组
-                    if isinstance(calc_range, list):
-                        params.append(calc_range)
-                    else:
-                        params.append(calc_range)
+                    params.append(calc_range)
                 else:
                     params.append('')
 
                 await self._client.send(command, params)
-
-                # 设置系列已创建标志
                 self._series_created = True
             except Exception as e:
-                self._handle_error(f"设置系列出错: {str(e)}")
+                self._handle_error(f"Error setting series: {str(e)}")
 
-        # 执行任务
-        asyncio.create_task(setup_series())
+        return asyncio.create_task(setup_series())
 
     async def set_timezone(self, timezone):
-        """
-        设置时区
-
-        Args:
-            timezone: 时区
-        """
+        """Set timezone"""
+        if self._deleted: return
         self._timezone = timezone
         await self._client.send('set_timezone', [
             self._session_id,
@@ -595,263 +469,122 @@ class ChartSession:
         ])
 
     async def fetch_more(self, number=1):
-        """
-        获取更多数据
-
-        Args:
-            number: 获取数量
-        """
+        """Fetch more data"""
+        if self._deleted: return
         await self._client.send('request_more_data', [self._session_id, 'sds_1', number])
 
     async def replay_step(self, number=1):
-        """
-        回放步进
-
-        Args:
-            number: 步进数量
-        Returns:
-            Promise: 数据获取完成后的Promise
-        """
-        if not self._replay_active:
-            self._handle_error('No replay session')
+        """Replay step"""
+        if self._deleted or not self._replay_active:
             return
 
-        # 创建Promise
         fut = asyncio.Future()
-
         req_id = gen_session_id('rsq_step')
         await self._client.send('replay_step', [self._replay_session_id, req_id, number])
-
-        # 设置回调
         self._replay_ok_cb[req_id] = lambda: fut.set_result(None)
-
         return fut
 
     async def replay_start(self, interval=1000):
-        """
-        开始回放
-
-        Args:
-            interval: 时间间隔(毫秒)
-        Returns:
-            Promise: 回放开始后的Promise
-        """
-        if not self._replay_active:
-            self._handle_error('No replay session')
+        """Start replay"""
+        if self._deleted or not self._replay_active:
             return
 
-        # 创建Promise
         fut = asyncio.Future()
-
         req_id = gen_session_id('rsq_start')
         await self._client.send('replay_start', [self._replay_session_id, req_id, interval])
-
-        # 设置回调
         self._replay_ok_cb[req_id] = lambda: fut.set_result(None)
-
         return fut
 
-    async def replay_stop(self,):
-        """
-        停止回放
-
-        Returns:
-            Promise: 回放停止后的Promise
-        """
-        if not self._replay_active:
-            self._handle_error('No replay session')
+    async def replay_stop(self):
+        """Stop replay"""
+        if self._deleted or not self._replay_active:
             return
 
-        # 创建Promise
         fut = asyncio.Future()
-
         req_id = gen_session_id('rsq_stop')
         await self._client.send('replay_stop', [self._replay_session_id, req_id])
-
-        # 设置回调
         self._replay_ok_cb[req_id] = lambda: fut.set_result(None)
-
         return fut
 
     def on_symbol_loaded(self, callback):
-        """
-        添加符号加载回调
-
-        Args:
-            callback: 回调函数
-        """
         self._callbacks['symbol_loaded'].append(callback)
-
     def on_update(self, callback):
-        """
-        添加更新回调
-
-        Args:
-            callback: 回调函数
-        """
         self._callbacks['update'].append(callback)
-
-    def on_replay_loaded(self, callback):
-        """
-        添加回放加载回调
-
-        Args:
-            callback: 回调函数
-        """
-        self._callbacks['replay_loaded'].append(callback)
-
-    def on_replay_resolution(self, callback):
-        """
-        添加回放分辨率回调
-
-        Args:
-            callback: 回调函数
-        """
-        self._callbacks['replay_resolution'].append(callback)
-
-    def on_replay_end(self, callback):
-        """
-        添加回放结束回调
-
-        Args:
-            callback: 回调函数
-        """
-        self._callbacks['replay_end'].append(callback)
-
-    def on_replay_point(self, callback):
-        """
-        添加回放点回调
-
-        Args:
-            callback: 回调函数
-        """
-        self._callbacks['replay_point'].append(callback)
-
     def on_error(self, callback):
-        """
-        添加错误回调
-
-        Args:
-            callback: 回调函数
-        """
         self._callbacks['error'].append(callback)
 
-    def delete(self):
-        """删除会话（旧方法，保留向后兼容性）"""
-        asyncio.create_task(self.remove())
-
     async def remove(self):
-        """异步删除会话"""
-        await self._client.send('chart_delete_session', [self._session_id])
+        """Asynchronously remove session"""
+        if self._deleted:
+            return
+        self._deleted = True
+
+        try:
+            await self._client.send('chart_delete_session', [self._session_id])
+            if self._replay_active:
+                await self._client.send('replay_delete_session', [self._replay_session_id])
+        except Exception:
+            pass
+
         if self._session_id in self._client.sessions:
             del self._client.sessions[self._session_id]
+        if self._replay_session_id in self._client.sessions:
+            del self._client.sessions[self._replay_session_id]
 
-    def load_symbol(self, symbol, options=None):
-        """
-        加载交易对（兼容方法，内部调用set_market）
-
-        Args:
-            symbol: 交易对代码
-            options: 加载选项
-        """
-        self.set_market(symbol, options)
+    def delete(self):
+        """Delete session (backward compatibility)"""
+        asyncio.create_task(self.remove())
 
     async def get_historical_data(self, symbol: str, timeframe: str, count: int = 500) -> List[Dict]:
-        """
-        获取历史K线数据的便捷方法（采用成功示例的回调机制）
-
-        Args:
-            symbol: 交易对代码 (例如: "BINANCE:BTCUSDT")
-            timeframe: 时间框架 (例如: "15m", "1h", "1D")
-            count: 数据数量，默认500
-
-        Returns:
-            List[Dict]: K线数据列表
-        """
+        """Convenience method to get historical K-line data"""
         try:
-            # 清理现有数据和回调
             self._periods = {}
             data_loaded = False
             result_data = []
-
-            # 创建Future用于等待数据加载完成
-            data_future = asyncio.Future()
-
-            def on_symbol_loaded():
-                """符号加载完成回调"""
-                logger.debug(f"✅ 符号加载完成: {symbol}")
+            data_future = asyncio.get_running_loop().create_future()
 
             def on_update():
-                """数据更新回调 - 关键！"""
                 nonlocal data_loaded, result_data
-
                 if data_loaded or not self._periods:
                     return
-
-                logger.debug(f"📊 数据更新回调触发，periods数量: {len(self._periods)}")
-
-                # 转换数据格式为转换器期望的格式
                 klines = []
                 for period in sorted(self._periods.values(), key=lambda p: p['time']):
                     klines.append({
-                        'time': period['time'],  # 转换器期望的字段名
+                        'time': period['time'],
                         'open': period['open'],
                         'high': period['high'],
                         'low': period['low'],
                         'close': period['close'],
                         'volume': period.get('volume', 0)
                     })
-
                 result_data = klines
                 data_loaded = True
-
-                # 完成Future
                 if not data_future.done():
                     data_future.set_result(klines)
-                    logger.info(f"✅ 获取到 {len(klines)} 条K线数据: {symbol} {timeframe}")
 
             def on_error(*msgs):
-                """错误处理回调"""
                 error_msg = " ".join(str(msg) for msg in msgs)
-                logger.error(f"❌ ChartSession错误: {error_msg}")
                 if not data_future.done():
                     data_future.set_exception(Exception(error_msg))
 
-            # 注册回调（采用成功示例的方式）
-            self.on_symbol_loaded(on_symbol_loaded)
             self.on_update(on_update)
             self.on_error(on_error)
 
-            # 转换timeframe格式
-            if timeframe.endswith('m'):
-                tf_value = timeframe[:-1]
-            elif timeframe.endswith('h'):
-                tf_value = str(int(timeframe[:-1]) * 60)
-            else:
-                tf_value = timeframe
+            # Format timeframe
+            if timeframe.endswith('m'): tf_value = timeframe[:-1]
+            elif timeframe.endswith('h'): tf_value = str(int(timeframe[:-1]) * 60)
+            else: tf_value = timeframe
 
-            logger.debug(f"🎯 设置市场: {symbol}, timeframe: {tf_value}, count: {count}")
+            self.set_market(symbol, {'timeframe': tf_value, 'range': count})
 
-            # 采用成功示例的方式：在set_market时设置所有参数
-            self.set_market(symbol, {
-                'timeframe': tf_value,
-                'range': count
-            })
-
-            # 等待数据加载完成，设置合理的超时时间
             try:
-                result = await asyncio.wait_for(data_future, timeout=15.0)
-                return result
-
+                return await asyncio.wait_for(data_future, timeout=20.0)
             except asyncio.TimeoutError:
-                logger.error(f"⏰ 获取数据超时: {symbol} {timeframe}")
-                # 超时后仍尝试返回已有数据
                 if self._periods:
-                    logger.warning(f"⚠️ 超时但返回部分数据: {len(self._periods)} 条")
                     klines = []
                     for period in sorted(self._periods.values(), key=lambda p: p['time']):
                         klines.append({
-                            'time': period['time'],  # 转换器期望的字段名
+                            'time': period['time'],
                             'open': period['open'],
                             'high': period['high'],
                             'low': period['low'],
@@ -860,8 +593,7 @@ class ChartSession:
                         })
                     return klines
                 else:
-                    raise Exception(f"获取数据超时且无数据: {symbol}")
-
+                    raise Exception(f"Timeout fetching data for {symbol}")
         except Exception as e:
-            logger.error(f"❌ 获取历史数据失败: {e}")
+            logger.error(f"get_historical_data error: {e}")
             raise e

@@ -1,88 +1,88 @@
 """
-Pine指标类
+Pine Indicator Module
 """
 from typing import Dict, Any, Optional
 
 class PineIndicator:
     """
-    Pine指标类
+    Class representing a Pine Script indicator.
     """
     def __init__(self, options: Dict[str, Any]):
         """
-        初始化Pine指标
+        Initialize Pine indicator.
 
         Args:
-            options: 指标选项
+            options: Indicator options
         """
         self._options = options
         self._type = 'Script@tv-scripting-101!'
 
     @property
     def pine_id(self) -> str:
-        """获取指标ID"""
+        """Get indicator ID"""
         return self._options.get('pineId', '')
 
     @property
     def pine_version(self) -> str:
-        """获取指标版本"""
+        """Get indicator version"""
         return self._options.get('pineVersion', '')
 
     @property
     def description(self) -> str:
-        """获取指标描述"""
+        """Get indicator description"""
         return self._options.get('description', '')
 
     @property
     def short_description(self) -> str:
-        """获取指标简短描述"""
+        """Get indicator short description"""
         return self._options.get('shortDescription', '')
 
     @property
     def inputs(self) -> Dict[str, Any]:
-        """获取指标输入参数"""
+        """Get indicator inputs"""
         return self._options.get('inputs', {})
 
     @property
     def plots(self) -> Dict[str, str]:
-        """获取指标绘图"""
+        """Get indicator plots"""
         return self._options.get('plots', {})
 
     @property
     def type(self) -> str:
-        """获取指标类型"""
+        """Get indicator type"""
         return self._type
 
     def set_type(self, type: str = 'Script@tv-scripting-101!') -> None:
         """
-        设置指标类型
+        Set indicator type.
 
         Args:
-            type: 指标类型
+            type: Indicator type string
         """
         self._type = type
 
     @property
     def script(self) -> str:
-        """获取指标脚本"""
+        """Get indicator source script"""
         return self._options.get('script', '')
 
     def set_option(self, key: str, value: Any) -> None:
         """
-        设置指标选项
+        Set an indicator input option.
 
         Args:
-            key: 选项键
-            value: 选项值
+            key: Option key
+            value: Option value
         """
         prop_id = ''
 
-        # 查找输入参数
+        # Look for input parameters
         if f'in_{key}' in self._options['inputs']:
             prop_id = f'in_{key}'
         elif key in self._options['inputs']:
             prop_id = key
         else:
-            # 通过inline或internalID查找
+            # Search by inline or internalID
             for input_id, input_data in self._options['inputs'].items():
                 if input_data.get('inline') == key or input_data.get('internalID') == key:
                     prop_id = input_id
@@ -91,19 +91,19 @@ class PineIndicator:
         if prop_id and prop_id in self._options['inputs']:
             input_data = self._options['inputs'][prop_id]
 
-            # 类型检查
-            types = {
+            # Type validation
+            types_map = {
                 'bool': bool,
                 'integer': int,
                 'float': float,
                 'text': str
             }
 
-            if input_data['type'] in types:
-                if not isinstance(value, types[input_data['type']]):
-                    raise TypeError(f"Input '{input_data['name']}' ({prop_id}) must be a {types[input_data['type']].__name__}!")
+            if input_data['type'] in types_map:
+                if not isinstance(value, types_map[input_data['type']]):
+                    raise TypeError(f"Input '{input_data['name']}' ({prop_id}) must be a {types_map[input_data['type']].__name__}!")
 
-            # 选项值检查
+            # Options value validation
             if 'options' in input_data and value not in input_data['options']:
                 raise ValueError(f"Input '{input_data['name']}' ({prop_id}) must be one of these values: {input_data['options']}")
 

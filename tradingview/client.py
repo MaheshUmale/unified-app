@@ -47,6 +47,7 @@ class Client:
         self._logged = False
         self._sessions = {}
         self._send_queue = []
+        self._send_lock = asyncio.Lock()
         self._debug = options.get('DEBUG', False)
 
         # Callbacks
@@ -219,7 +220,7 @@ class Client:
                         'p': [user.auth_token]
                     }))
                     self._logged = True
-                    await self._send_queue_data()
+                    asyncio.create_task(self._send_queue_data())
                 except Exception as e:
                     self._handle_error(f"Authentication error: {str(e)}")
             else:
@@ -229,7 +230,7 @@ class Client:
                     'p': ['unauthorized_user_token']
                 }))
                 self._logged = True
-                await self._send_queue_data()
+                asyncio.create_task(self._send_queue_data())
 
             # Stop old tasks to avoid conflict
             await self._stop_background_tasks()
@@ -248,10 +249,6 @@ class Client:
 
     async def _heartbeat(self):
         """Heartbeat task to send pings and keep connection active"""
-        retry_count = 0
-        max_retries = 5
-        base_wait_time = 2
-
         try:
             while True:  # Reconnection logic is handled by the Enhanced client
                 if not self.is_open:
@@ -514,6 +511,8 @@ class Client:
             if not isinstance(packet_data, list):
                 packet_data = [packet_data]
 
+            logger.debug(f"Client.send: type={packet_type}, data={packet_data}")
+
             processed_data = []
 
             # Some commands require preserving array structure
@@ -541,7 +540,9 @@ class Client:
 
             if formatted_packet:
                 self._send_queue.append(formatted_packet)
-                await self._send_queue_data()
+                # Ensure we are logged in or sending auth token
+                if self._logged or 'set_auth_token' in formatted_packet:
+                    await self._send_queue_data()
             else:
                 self._handle_error("Failed to format packet")
         except Exception as e:
@@ -552,66 +553,63 @@ class Client:
         if not self.is_open:
             return
 
-        if not self._logged and self._send_queue and 'set_auth_token' not in self._send_queue[0]:
-            # Do not send until logged in (except auth packet)
+        # If already sending, the existing loop will handle new queue items
+        if self._send_lock.locked():
             return
 
-        try:
-            import websockets
-            connection_exceptions = []
+        async with self._send_lock:
+            try:
+                import websockets
+                connection_exceptions = []
 
-            if hasattr(websockets, 'exceptions'):
-                if hasattr(websockets.exceptions, 'ConnectionClosed'):
-                    connection_exceptions.append(websockets.exceptions.ConnectionClosed)
-                if hasattr(websockets.exceptions, 'ConnectionClosedError'):
-                    connection_exceptions.append(websockets.exceptions.ConnectionClosedError)
-                if hasattr(websockets.exceptions, 'ConnectionClosedOK'):
-                    connection_exceptions.append(websockets.exceptions.ConnectionClosedOK)
-            elif hasattr(websockets, 'ConnectionClosed'):
-                connection_exceptions.append(websockets.ConnectionClosed)
+                if hasattr(websockets, 'exceptions'):
+                    if hasattr(websockets.exceptions, 'ConnectionClosed'):
+                        connection_exceptions.append(websockets.exceptions.ConnectionClosed)
+                    if hasattr(websockets.exceptions, 'ConnectionClosedError'):
+                        connection_exceptions.append(websockets.exceptions.ConnectionClosedError)
+                    if hasattr(websockets.exceptions, 'ConnectionClosedOK'):
+                        connection_exceptions.append(websockets.exceptions.ConnectionClosedOK)
+                elif hasattr(websockets, 'ConnectionClosed'):
+                    connection_exceptions.append(websockets.ConnectionClosed)
 
-            retry_count = 0
-            max_retries = 3
-            base_wait_time = 0.5
+                retry_count = 0
+                max_retries = 3
+                base_wait_time = 0.5
 
-            while self._send_queue:
-                if not self.is_open:
-                    break
+                while self._send_queue:
+                    if not self.is_open:
+                        break
 
-                packet = self._send_queue[0]
-                if self._debug:
-                    logger.debug(f"Sending: {packet}")
+                    packet = self._send_queue[0]
+                    if self._debug:
+                        logger.debug(f"Sending: {packet}")
 
-                try:
-                    await self._ws.send(packet)
-                    self._send_queue.pop(0)
-                    retry_count = 0
-                except tuple(connection_exceptions) if connection_exceptions else Exception as e:
-                    self._handle_error(f"Connection closed, cannot send: {str(e)}")
-                    self._logged = False
-                    self._handle_event('disconnected')
-                    break
-                except Exception as e:
-                    retry_count += 1
-                    wait_time = base_wait_time * (2 ** min(retry_count - 1, 3))
-
-                    if retry_count > max_retries:
-                        self._handle_error(f"Failed to send, max retries reached, dropping packet: {str(e)}")
+                    try:
+                        await self._ws.send(packet)
                         self._send_queue.pop(0)
                         retry_count = 0
-                        continue
+                    except tuple(connection_exceptions) if connection_exceptions else Exception as e:
+                        self._handle_error(f"Connection closed, cannot send: {str(e)}")
+                        self._logged = False
+                        self._handle_event('disconnected')
+                        break
+                    except Exception as e:
+                        retry_count += 1
+                        wait_time = base_wait_time * (2 ** min(retry_count - 1, 3))
 
-                    self._handle_error(f"Send error({retry_count}/{max_retries}): {str(e)}, retrying in {wait_time}s")
-                    await asyncio.sleep(wait_time)
+                        if retry_count > max_retries:
+                            self._handle_error(f"Failed to send, max retries reached, dropping packet: {str(e)}")
+                            self._send_queue.pop(0)
+                            retry_count = 0
+                            continue
 
-                    if not self.is_open:
-                        try:
-                            await self.connect()
-                        except Exception as conn_err:
-                            self._handle_error(f"Reconnection error: {str(conn_err)}")
+                        self._handle_error(f"Send error({retry_count}/{max_retries}): {str(e)}, retrying in {wait_time}s")
+                        await asyncio.sleep(wait_time)
+                        if not self.is_open:
+                            break
 
-        except Exception as e:
-            self._handle_error(f"Processing send queue error: {str(e)}")
+            except Exception as e:
+                self._handle_error(f"Processing send queue error: {str(e)}")
 
     def on_connected(self, callback):
         """Register connection callback"""
