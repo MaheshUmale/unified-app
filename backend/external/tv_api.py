@@ -26,7 +26,12 @@ class TradingViewAPI:
             self.tv = None
             logger.warning("tvDatafeed not installed, falling back to Streamer only")
 
-        self.streamer = Streamer(export_result=False)
+        try:
+            self.streamer = Streamer(export_result=False)
+        except Exception as e:
+            logger.error(f"Failed to initialize TradingView Streamer: {e}")
+            self.streamer = None
+
         self.symbol_map = {
             'NIFTY': {'symbol': 'NIFTY', 'exchange': 'NSE'},
             'BANKNIFTY': {'symbol': 'BANKNIFTY', 'exchange': 'NSE'},
