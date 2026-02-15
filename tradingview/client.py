@@ -216,9 +216,8 @@ class Client:
 
             # Wait for initial session info from server
             logger.debug("Waiting for initial session info...")
-            # We don't have a clean way to wait for a specific message yet,
-            # so we'll use a short sleep as a workaround, but better would be an event.
-            await asyncio.sleep(1.0)
+            # Increased sleep to ensure server is ready for handshake
+            await asyncio.sleep(2.0)
 
             # Set authentication and initial state
             # Following the exact sequence in tv_live_wss.py
@@ -236,9 +235,14 @@ class Client:
                 token = "unauthorized_user_token"
 
             # 1. Set Auth Token
-            msg = format_ws_packet({'m': 'set_auth_token', 'p': [token]})
-            logger.debug(f"Handshake: sending auth token: {msg}")
-            await self._ws.send(msg)
+            msg_auth = format_ws_packet({'m': 'set_auth_token', 'p': [token]})
+            logger.debug(f"Handshake: sending auth token: {msg_auth}")
+            await self._ws.send(msg_auth)
+
+            # 2. Set Locale (added for better compatibility with some TV servers)
+            msg_locale = format_ws_packet({'m': 'set_locale', 'p': ["en", "US"]})
+            logger.debug(f"Handshake: sending locale: {msg_locale}")
+            await self._ws.send(msg_locale)
 
             self._logged = True
 
@@ -450,7 +454,11 @@ class Client:
 
                 # Handle protocol error
                 if isinstance(packet, dict) and packet.get('m') == 'protocol_error':
-                    self._handle_error(f"Protocol error: {packet.get('p')}")
+                    error_payload = packet.get('p')
+                    self._handle_error(f"Protocol error: {error_payload}")
+                    if error_payload == ['wrong data']:
+                        logger.warning("Received 'wrong data' error. This often means messages were sent in wrong sequence or format.")
+
                     try:
                         await self._ws.close()
                     except Exception as e:

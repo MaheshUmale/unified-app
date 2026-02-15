@@ -61,6 +61,8 @@ class EnhancedTradingViewProvider(ILiveStreamProvider, IHistoricalDataProvider):
 
     def _map_symbol(self, symbol: str) -> str:
         """Maps internal symbol names to TradingView compatible symbols."""
+        if not symbol:
+            return ""
         s = symbol.upper()
         mapping = {
             'NSE:FINNIFTY': 'NSE:CNXFINANCE',
@@ -68,9 +70,14 @@ class EnhancedTradingViewProvider(ILiveStreamProvider, IHistoricalDataProvider):
             'NSE:NIFTY': 'NSE:NIFTY',
             'NSE:BANKNIFTY': 'NSE:BANKNIFTY',
             'NSE:INDIAVIX': 'NSE:INDIAVIX',
-            'NSE:INDIA VIX': 'NSE:INDIAVIX'
+            'NSE:INDIA VIX': 'NSE:INDIAVIX',
+            'BTCUSD': 'BITSTAMP:BTCUSD',
+            'COINBASE:BTCUSD': 'COINBASE:BTCUSD'
         }
-        return mapping.get(s, symbol)
+        mapped = mapping.get(s, symbol)
+        if mapped != symbol:
+            logger.debug(f"Mapped symbol {symbol} -> {mapped}")
+        return mapped
 
     def subscribe(self, symbols: List[str], interval: str = "1"):
         for symbol in symbols:
@@ -81,32 +88,44 @@ class EnhancedTradingViewProvider(ILiveStreamProvider, IHistoricalDataProvider):
     async def _subscribe_internal(self, symbol: str, interval: str):
         try:
             if symbol in self._active_sessions:
-                self._active_sessions[symbol].delete()
+                try:
+                    self._active_sessions[symbol].delete()
+                except Exception as e:
+                    logger.debug(f"Error deleting old session for {symbol}: {e}")
 
             tv_symbol = self._map_symbol(symbol)
+            logger.info(f"Enhanced TV Provider subscribing to {symbol} (TV: {tv_symbol}, TF: {interval})")
+
             chart = self.client.Session.Chart()
             self._active_sessions[symbol] = chart
-            chart.set_market(tv_symbol, {'timeframe': interval})
 
-            def on_update():
-                if chart.periods and self.callback:
-                    latest = chart.periods[0]
-                    data = {
-                        'feeds': {
-                            symbol: {
-                                'last_price': latest.close,
-                                'tv_volume': latest.volume,
-                                'ts_ms': int(latest.time * 1000),
-                                'source': 'enhanced_tv'
+            # Wait for market loading
+            await chart.set_market(tv_symbol, {'timeframe': interval})
+
+            def on_update(*args):
+                try:
+                    if chart.periods and self.callback:
+                        latest = chart.periods[0]
+                        data = {
+                            'feeds': {
+                                symbol: {
+                                    'last_price': latest.close,
+                                    'tv_volume': latest.volume,
+                                    'ts_ms': int(latest.time * 1000),
+                                    'source': 'enhanced_tv'
+                                }
                             }
                         }
-                    }
-                    self.callback(data)
+                        self.callback(data)
+                except Exception as e:
+                    logger.error(f"Error in Enhanced TV on_update for {symbol}: {e}")
 
             chart.on_update(on_update)
-            logger.info(f"Enhanced TV Provider subscribed to {symbol} ({interval})")
+            logger.info(f"✅ Enhanced TV Provider subscription active for {symbol}")
         except Exception as e:
-            logger.error(f"Error in Enhanced TV Provider subscription for {symbol}: {e}")
+            logger.error(f"❌ Error in Enhanced TV Provider subscription for {symbol}: {e}")
+            if symbol in self._active_sessions:
+                del self._active_sessions[symbol]
 
     def unsubscribe(self, symbol: str, interval: str = "1"):
         if symbol in self._subscriptions:
