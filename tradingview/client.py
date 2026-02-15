@@ -601,6 +601,8 @@ class Client:
                         await self._ws.send(packet)
                         self._send_queue.pop(0)
                         retry_count = 0
+                        # Small delay to avoid overwhelming the server during handshake/init
+                        await asyncio.sleep(0.02)
                     except tuple(connection_exceptions) if connection_exceptions else Exception as e:
                         self._handle_error(f"Connection closed, cannot send: {str(e)}")
                         self._logged = False
