@@ -125,18 +125,21 @@ class ChartSession:
                     for k in data_dict.keys():
                         changes.append(k)
 
-                        if k == '$prices':
-                            periods = data_dict['$prices']
-                            if not periods or 's' not in periods:
+                        # Handle both $prices and sds_1 (or other series IDs)
+                        if k == '$prices' or k.startswith('sds_'):
+                            periods = data_dict[k]
+                            if not isinstance(periods, dict) or 's' not in periods:
                                 continue
 
                             # {"i":2,"v":[1754297700.0,3359.56,3359.925,3358.205,3358.605,696.0]}
                             for p in periods['s']:
                                 if 'i' in p and 'v' in p:
                                     if len(p['v']) >= 6:
-                                        self._indexes[p['i']] = p['v'][0]
-                                        self._periods[p['v'][0]] = {
-                                            'time': p['v'][0],
+                                        # Use timestamp as key for uniqueness
+                                        ts = p['v'][0]
+                                        self._indexes[p['i']] = ts
+                                        self._periods[ts] = {
+                                            'time': ts,
                                             'open': p['v'][1],
                                             'close': p['v'][4],
                                             'max': p['v'][2],
@@ -417,9 +420,10 @@ class ChartSession:
 
                 # Wait for symbol resolution before creating series
                 try:
-                    await asyncio.wait_for(self._symbol_resolved_event.wait(), timeout=10.0)
+                    # Increased timeout for better reliability
+                    await asyncio.wait_for(self._symbol_resolved_event.wait(), timeout=20.0)
                 except asyncio.TimeoutError:
-                    logger.warning(f"Timeout waiting for symbol resolution: {symbol}")
+                    logger.warning(f"Timeout waiting for symbol resolution: {symbol}. Proceeding to set series anyway.")
 
                 # Set series
                 self.set_series(
@@ -448,6 +452,11 @@ class ChartSession:
             self._handle_error('Please set market before setting series')
             return
 
+        # Handle timeframe formatting
+        tf = str(timeframe)
+        if tf.endswith('m'): tf = tf[:-1]
+        elif tf.endswith('h'): tf = str(int(tf[:-1]) * 60)
+
         # calcRange = !reference ? range : ['bar_count', reference, range];
         calc_range = range_val if reference is None else ['bar_count', reference, range_val]
         self._periods = {}
@@ -461,7 +470,7 @@ class ChartSession:
                     'sds_1', # Default series ID
                     's1',
                     f"ser_{self._current_series}",
-                    timeframe,
+                    tf,
                     calc_range if not self._series_created else "",
                     "" # Extra param
                 ]
