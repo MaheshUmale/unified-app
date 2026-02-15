@@ -146,12 +146,17 @@ class ChartInstance {
     }
 
     setChartType(type) {
+        if (!this.chart) return;
         this.chartType = type;
         const data = Array.from(this.fullHistory.candles.values()).sort((a,b) => a.time - b.time);
         const markers = this.markers;
 
         if (this.mainSeries) {
-            this.chart.removeSeries(this.mainSeries);
+            try {
+                this.chart.removeSeries(this.mainSeries);
+            } catch (e) {
+                console.warn("Failed to remove series:", e);
+            }
             this.mainSeries = null;
         }
 
@@ -219,6 +224,7 @@ class ChartInstance {
         if (maxOI === 0) return;
 
         sortedData.forEach(d => {
+            if (!this.mainSeries) return;
             const y = this.mainSeries.priceToCoordinate(d.strike);
             if (y === null || y < 0 || y > height) return;
 
