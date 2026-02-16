@@ -42,14 +42,14 @@ LOGGING_CONFIG = {
 OPTIONS_UNDERLYINGS: List[str] = [
     "NSE:NIFTY",
     "NSE:BANKNIFTY",
-    "NSE:FINNIFTY"
+    "NSE:CNXFINANCE"
 ]
 
 # Initial instruments for WebSocket feed
 INITIAL_INSTRUMENTS: List[str] = [
     "NSE:NIFTY",
     "NSE:BANKNIFTY",
-    "NSE:FINNIFTY"
+    "NSE:CNXFINANCE"
 ]
 
 # Greeks Calculator Configuration

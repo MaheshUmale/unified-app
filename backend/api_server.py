@@ -192,7 +192,7 @@ async def tv_search(text: str = Query(..., min_length=1)):
     
     # Augmented search for options
     upper_text = search_text.upper()
-    indices = ["NIFTY", "BANKNIFTY", "FINNIFTY"]
+    indices = ["NIFTY", "BANKNIFTY", "CNXFINANCE"]
     underlying = None
     
     for idx in indices:

@@ -22,7 +22,7 @@ class TradingViewAPI:
         self.symbol_map = {
             'NIFTY': {'symbol': 'NIFTY', 'exchange': 'NSE'},
             'BANKNIFTY': {'symbol': 'BANKNIFTY', 'exchange': 'NSE'},
-            'FINNIFTY': {'symbol': 'CNXFINANCE', 'exchange': 'NSE'},
+            'CNXFINANCE': {'symbol': 'CNXFINANCE', 'exchange': 'NSE'},
             'INDIA VIX': {'symbol': 'INDIAVIX', 'exchange': 'NSE'}
         }
 
@@ -60,7 +60,7 @@ class TradingViewAPI:
                 tv_symbol = 'NIFTY'
             elif symbol_or_hrn.upper() == 'BANKNIFTY':
                 tv_symbol = 'BANKNIFTY'
-            elif symbol_or_hrn.upper() == 'FINNIFTY':
+            elif symbol_or_hrn.upper() == 'CNXFINANCE':
                 tv_symbol = 'CNXFINANCE'
 
             # Try Streamer first

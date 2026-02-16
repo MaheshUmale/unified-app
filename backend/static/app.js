@@ -1215,7 +1215,7 @@ function normalizeSymbol(sym) {
     let s = String(sym).toUpperCase().trim();
     if (s.includes(':')) s = s.split(':')[1];
     if (s.includes('|')) s = s.split('|')[1];
-    return s.split(' ')[0].replace("NIFTY 50", "NIFTY").replace("BANK NIFTY", "BANKNIFTY").replace("FIN NIFTY", "FINNIFTY");
+    return s.split(' ')[0].replace("NIFTY 50", "NIFTY").replace("BANK NIFTY", "BANKNIFTY").replace("FIN NIFTY", "CNXFINANCE");
 }
 
 function rgbaToHex(rgba) {

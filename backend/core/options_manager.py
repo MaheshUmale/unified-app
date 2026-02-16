@@ -44,7 +44,7 @@ class OptionsManager:
         self.tl_symbol_map = {
             "NSE:NIFTY": "NIFTY 50",
             "NSE:BANKNIFTY": "BANKNIFTY",
-            "NSE:FINNIFTY": "FINNIFTY"
+            "NSE:CNXFINANCE": "CNXFINANCE"
         }
         self.running = False
         self._task = None
@@ -500,8 +500,8 @@ class OptionsManager:
                 target_keys.extend(["NSE_INDEX|NIFTY 50", "NSE|NIFTY", "NIFTY"])
             elif hrn == "BANKNIFTY":
                 target_keys.extend(["NSE_INDEX|NIFTY BANK", "NSE|BANKNIFTY", "BANKNIFTY"])
-            elif hrn == "FINNIFTY":
-                target_keys.extend(["NSE_INDEX|NIFTY FIN SERVICE", "NSE|CNXFINANCE", "FINNIFTY"])
+            elif hrn == "CNXFINANCE":
+                target_keys.extend(["NSE_INDEX|NIFTY FIN SERVICE", "NSE|CNXFINANCE", "CNXFINANCE"])
 
             placeholders = ",".join(["?"] * len(target_keys))
             res = await asyncio.to_thread(

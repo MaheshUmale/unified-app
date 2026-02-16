@@ -66,8 +66,8 @@ class EnhancedTradingViewProvider(ILiveStreamProvider, IHistoricalDataProvider):
             return ""
         s = symbol.upper()
         mapping = {
-            'NSE:FINNIFTY': 'NSE:CNXFINANCE',
-            'FINNIFTY': 'NSE:CNXFINANCE',
+            'NSE:CNXFINANCE': 'NSE:CNXFINANCE',
+            'CNXFINANCE': 'NSE:CNXFINANCE',
             'NSE:NIFTY': 'NSE:NIFTY',
             'NSE:BANKNIFTY': 'NSE:BANKNIFTY',
             'NSE:INDIAVIX': 'NSE:INDIAVIX',
