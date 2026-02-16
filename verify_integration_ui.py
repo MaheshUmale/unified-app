@@ -4,9 +4,9 @@ import requests
 import os
 
 def verify_integrated_system():
-    print("Checking if server is running on port 5051...")
+    print("Checking if server is running on port 3000...")
     try:
-        requests.get('http://localhost:5051/health')
+        requests.get('http://localhost:3000/health')
         print("Server is up!")
     except Exception as e:
         print(f"Server not running: {e}")
@@ -22,14 +22,14 @@ def verify_integrated_system():
         # 1. Main Terminal
         print("Navigating to Main Terminal...")
         try:
-            page.goto('http://localhost:5051/', timeout=60000)
+            page.goto('http://localhost:3000/', timeout=60000)
             time.sleep(10) # Wait for chart initialization
             page.screenshot(path='verification/integrated_terminal_chart.png')
             print("Captured Terminal Chart")
 
             # 2. Options Dashboard
             print("Navigating to Options Dashboard...")
-            page.goto('http://localhost:5051/options', timeout=60000)
+            page.goto('http://localhost:3000/options', timeout=60000)
             time.sleep(5)
             page.screenshot(path='verification/integrated_options_dashboard.png')
             print("Captured Options Dashboard")
