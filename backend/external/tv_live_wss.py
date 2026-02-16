@@ -98,16 +98,16 @@ class TradingViewWSS:
         self._send_message("resolve_symbol", [session_id, "sds_sym_1", symbol_payload])
         self._send_message("create_series", [session_id, "sds_1", "s1", "sds_sym_1", interval, 300, ""])
 
-        from config import TV_STUDY_ID
-        if TV_STUDY_ID:
-            try:
-                if TV_STUDY_ID not in self.indicator_metadata:
-                    self.indicator_metadata[TV_STUDY_ID] = self.get_indicator_metadata(TV_STUDY_ID)
+        # from config import TV_STUDY_ID
+        # if TV_STUDY_ID:
+        #     try:
+        #         if TV_STUDY_ID not in self.indicator_metadata:
+        #             self.indicator_metadata[TV_STUDY_ID] = self.get_indicator_metadata(TV_STUDY_ID)
 
-                meta_info = self.indicator_metadata[TV_STUDY_ID]
-                self._create_study(session_id, self.study_id, "sds_1", meta_info)
-            except Exception as e:
-                logger.error(f"Failed to load study for {symbol}: {e}")
+        #         meta_info = self.indicator_metadata[TV_STUDY_ID]
+        #         self._create_study(session_id, self.study_id, "sds_1", meta_info)
+        #     except Exception as e:
+        #         logger.error(f"Failed to load study for {symbol}: {e}")
 
     def _create_study(self, session_id, study_id, series_id, metadata):
         inputs = {"text": metadata["script"]}
