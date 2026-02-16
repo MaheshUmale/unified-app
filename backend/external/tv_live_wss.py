@@ -165,8 +165,9 @@ class TradingViewWSS:
         for msg in payloads:
             if msg.startswith("~h~"):
                 try:
-                    # Standard TradingView heartbeat response (unwrapped)
-                    ws.send(msg)
+                    # Send wrapped heartbeat response
+                    wrapped = f"~m~{len(msg)}~m~{msg}"
+                    ws.send(wrapped)
                 except: pass
                 continue
             try:
