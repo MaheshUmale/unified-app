@@ -1221,29 +1221,29 @@
                 const borderColor = isSup ? 'border-green-500/20' : 'border-red-500/20';
                 const label = level.oi > 1000000 ? '(ss)' : level.oi > 500000 ? '(s)' : '';
 
-                // Sparkline generator for Trend - Improved and Styled
+                // Sparkline generator for Trend - Strict Image Match
                 let sparkline = '';
                 if (level.oi_history && level.oi_history.length > 1) {
                     const min = Math.min(...level.oi_history);
                     const max = Math.max(...level.oi_history);
                     const range = (max - min) || 1;
                     const points = level.oi_history.map((val, i) => {
-                        const x = (i / (level.oi_history.length - 1)) * 80;
-                        const y = 25 - ((val - min) / range) * 20;
+                        const x = (i / (level.oi_history.length - 1)) * 120;
+                        const y = 15 - ((val - min) / range) * 12;
                         return `${x},${y}`;
                     }).join(' ');
-                    // Overlay sparkline with absolute positioning
+                    // Overlay sparkline positioned exactly as in image
                     sparkline = `
-                        <div class="absolute top-1 right-2 opacity-60">
-                            <svg width="60" height="25" viewBox="0 0 80 25">
-                                <polyline points="${points}" fill="none" stroke="${strokeColor}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+                        <div class="absolute top-2 right-4 opacity-80 pointer-events-none">
+                            <svg width="90" height="20" viewBox="0 0 120 20">
+                                <polyline points="${points}" fill="none" stroke="${strokeColor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
                             </svg>
                         </div>
                     `;
                 }
 
                 const div = document.createElement('div');
-                div.className = `relative flex justify-between items-center py-2 px-3 ${bgColor} border-l-4 ${borderColor} rounded-lg mb-1.5 shadow-sm transition-all hover:translate-x-1 h-14 overflow-hidden`;
+                div.className = `relative flex justify-between items-center py-1.5 px-3 ${bgColor} border-l-4 ${borderColor} rounded-lg mb-1 shadow-sm transition-all hover:translate-x-1 h-12 overflow-hidden`;
                 div.innerHTML = `
                     ${sparkline}
                     <div class="flex items-center gap-3 z-10">
@@ -1254,9 +1254,9 @@
                     </div>
                     <div class="flex items-center gap-4 z-10">
                         <div class="flex flex-col items-end">
-                             <div class="flex items-center gap-1.5 mt-4">
-                                 <span class="text-xs font-black text-gray-700 dark:text-gray-300 tracking-tighter">${(level.oi/1000000).toFixed(2)}M</span>
-                                 <span class="text-xs font-black ${color}">${label}</span>
+                             <div class="flex items-center gap-1 mt-5">
+                                 <span class="text-[11px] font-black text-gray-700 dark:text-gray-300 tracking-tighter">${(level.oi/1000000).toFixed(2)}M</span>
+                                 <span class="text-[11px] font-black ${color}">${label}</span>
                              </div>
                         </div>
                     </div>
