@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PRODESK | Modern Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+    <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&family=IBM+Plex+Mono:wght@400;700&display=swap');
+
+        :root {
+            --bg-deep: #121212;
+            --bg-panel: #1e1e1e;
+            --accent-bull: #00FFC2;
+            --accent-bear: #FF3366;
+            --accent-liquidity: #3b82f6;
+            --text-primary: #e5e7eb;
+            --text-muted: #94a3b8;
+            --border-glow: rgba(59, 130, 246, 0.2);
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-deep);
+            color: var(--text-primary);
+            overflow: hidden;
+        }
+
+        .mono { font-family: 'IBM Plex Mono', monospace; }
+
+        .glass-panel {
+            background: var(--bg-panel);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 4px;
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.5);
+        }
+
+        .glow-border {
+            border: 1px solid var(--border-glow);
+            box-shadow: 0 0 10px var(--border-glow);
+        }
+
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }
+
+        .chart-container { position: relative; width: 100%; height: 100%; }
+
+        /* Layout specific adjustments */
+        .col-left { width: 30%; }
+        .col-center { width: 45%; }
+        .col-right { width: 25%; }
+
+        /* Typography & Coloring */
+        .text-bull { color: var(--accent-bull); }
+        .text-bear { color: var(--accent-bear); }
+        .bg-bull { background-color: var(--accent-bull); }
+        .bg-bear { background-color: var(--accent-bear); }
+    </style>
+</head>
+<body class="h-full flex flex-col p-1 gap-1">
+    <!-- Header -->
+    <header class="h-12 flex items-center justify-between px-4 glass-panel glow-border">
+        <div class="flex items-center gap-4">
+            <div class="flex items-center gap-2">
+                <span class="text-xs font-black italic text-cyan-400 uppercase">PRO<span class="text-white">DESK</span></span>
+                <div class="h-4 w-px bg-white/10"></div>
+                <select id="assetSelector" class="bg-transparent text-xs font-bold outline-none cursor-pointer text-cyan-400">
+                    <option value="NSE:NIFTY">NIFTY 50</option>
+                    <option value="NSE:BANKNIFTY">BANKNIFTY</option>
+                    <option value="NSE:CNXFINANCE">FINNIFTY</option>
+                </select>
+                <select id="expirySelector" class="bg-transparent text-[10px] font-bold outline-none cursor-pointer text-gray-400">
+                    <!-- Dynamic -->
+                </select>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-6">
+            <div class="flex flex-col items-center">
+                <div class="flex items-baseline gap-2">
+                    <span id="spotPrice" class="text-lg font-black mono text-white">0.00</span>
+                    <span id="spotChange" class="text-[10px] font-bold text-bull">+0.00%</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-4 text-[10px] font-bold mono">
+            <span id="currentTime" class="text-gray-400">00:00:00</span>
+            <div class="flex items-center gap-1.5">
+                <div id="statusDot" class="w-2 h-2 rounded-full bg-bull shadow-[0_0_5px_#00FFC2]"></div>
+                <span class="text-gray-500 uppercase">LIVE: &lt;5ms</span>
+            </div>
+            <div class="flex flex-col text-right">
+                <span class="text-gray-500 uppercase">Margin Available</span>
+                <span class="text-white">₹ 2,45,000</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Grid -->
+    <main class="flex-1 flex gap-1 overflow-hidden">
+        <!-- Left Column: Analytics & Sentiment -->
+        <aside class="col-left flex flex-col gap-1 overflow-y-auto custom-scrollbar">
+            <!-- Widget 1: PCR Gauge -->
+            <section class="glass-panel p-3 flex flex-col gap-2 min-h-[220px]">
+                <h3 class="text-[9px] font-black uppercase tracking-widest text-gray-500">Sentiment Gauge (PCR)</h3>
+                <div class="flex-1 relative flex items-center justify-center">
+                    <canvas id="pcrGauge"></canvas>
+                    <div class="absolute bottom-4 flex flex-col items-center">
+                        <span id="pcrValue" class="text-2xl font-black mono text-white">0.00</span>
+                        <span id="pcrLabel" class="text-[8px] font-bold text-gray-500 uppercase tracking-tighter">Neutral</span>
+                    </div>
+                </div>
+                <div class="h-10">
+                    <canvas id="pcrTrendChart"></canvas>
+                </div>
+            </section>
+
+            <!-- Widget 2: Multi-Strike OI Analysis -->
+            <section class="glass-panel p-3 flex flex-col gap-2 flex-1 min-h-[300px]">
+                <h3 class="text-[9px] font-black uppercase tracking-widest text-gray-500">Multi-Strike OI Battlefield</h3>
+                <div class="flex-1">
+                    <canvas id="oiStrikeChart"></canvas>
+                </div>
+            </section>
+
+            <!-- Widget 3: OI Change vs Spot Price -->
+            <section class="glass-panel p-3 flex flex-col gap-2 min-h-[200px]">
+                <h3 class="text-[9px] font-black uppercase tracking-widest text-gray-500">OI Divergence Spotter</h3>
+                <div class="flex-1">
+                    <canvas id="oiPriceDivergenceChart"></canvas>
+                </div>
+            </section>
+
+            <!-- Widget 4: Max Pain & Straddle -->
+            <section class="glass-panel p-3 grid grid-cols-2 gap-2">
+                <div class="flex flex-col">
+                    <span class="text-[8px] font-black uppercase text-gray-500">Max Pain</span>
+                    <span id="maxPainValue" class="text-lg font-black mono text-cyan-400">0</span>
+                    <span class="text-[7px] font-bold text-gray-600 uppercase">Theoretical Expiry</span>
+                </div>
+                <div class="flex flex-col border-l border-white/5 pl-2">
+                    <span class="text-[8px] font-black uppercase text-gray-500">ATM Straddle</span>
+                    <span id="straddleValue" class="text-lg font-black mono text-bear">0.00</span>
+                    <span class="text-[7px] font-bold text-gray-600 uppercase">IV Rank: <span id="ivRankValue">0%</span></span>
+                </div>
+            </section>
+        </aside>
+
+        <!-- Center Column: Price Action & Order Flow -->
+        <div class="col-center flex flex-col gap-1">
+            <!-- Triple Stacked Charts -->
+            <div class="flex-1 flex flex-col gap-1 overflow-hidden">
+                <!-- Index Chart -->
+                <div class="flex-[3] glass-panel relative">
+                    <div id="indexChart" class="chart-container"></div>
+                    <canvas id="footprintCanvas" class="absolute top-0 left-0 pointer-events-none"></canvas>
+                </div>
+                <!-- Option Chart -->
+                <div class="flex-[2] glass-panel relative">
+                    <div id="optionChart" class="chart-container"></div>
+                    <div class="absolute top-2 left-2 flex gap-2 pointer-events-none">
+                        <span id="optionTypeLabel" class="text-[8px] font-black bg-cyan-500/20 text-cyan-400 px-1.5 py-0.5 rounded uppercase">ATM CE</span>
+                    </div>
+                </div>
+                <!-- Delta / CVD Chart -->
+                <div class="flex-[1] glass-panel relative">
+                    <div id="cvdChart" class="chart-container"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column: Execution & Liquidity -->
+        <aside class="col-right flex flex-col gap-1 overflow-y-auto custom-scrollbar">
+            <!-- Widget 8: Liquidity Heatmap -->
+            <section class="glass-panel p-3 flex flex-col gap-2 min-h-[250px]">
+                <h3 class="text-[9px] font-black uppercase tracking-widest text-gray-500">Liquidity Heatmap</h3>
+                <div class="flex-1 flex overflow-hidden">
+                    <div id="heatmapPriceScale" class="w-10 border-r border-white/5 flex flex-col justify-between text-[8px] mono text-gray-500 py-1"></div>
+                    <div id="heatmapCanvasContainer" class="flex-1 relative">
+                         <canvas id="heatmapCanvas"></canvas>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Widget 9: Fast Order Entry -->
+            <section class="glass-panel p-3 flex flex-col gap-3">
+                <h3 class="text-[9px] font-black uppercase tracking-widest text-gray-500">Fast Order Execution</h3>
+                <div class="flex gap-2">
+                    <button id="buyCallBtn" class="flex-1 bg-bull hover:opacity-80 text-black font-black py-3 rounded text-sm transition-all active:scale-95 shadow-[0_4px_10px_rgba(0,255,194,0.3)]">BUY CALL</button>
+                    <button id="buyPutBtn" class="flex-1 bg-bear hover:opacity-80 text-black font-black py-3 rounded text-sm transition-all active:scale-95 shadow-[0_4px_10px_rgba(255,51,102,0.3)]">BUY PUT</button>
+                </div>
+                <div class="grid grid-cols-3 gap-1">
+                    <button class="bg-gray-800 hover:bg-gray-700 text-[10px] font-bold py-1 rounded border border-white/5 text-gray-400 strike-toggle" data-offset="-1">ATM-1</button>
+                    <button class="bg-gray-700 hover:bg-gray-600 text-[10px] font-black py-1 rounded border border-cyan-400/50 text-cyan-400 strike-toggle active" data-offset="0">ATM</button>
+                    <button class="bg-gray-800 hover:bg-gray-700 text-[10px] font-bold py-1 rounded border border-white/5 text-gray-400 strike-toggle" data-offset="1">ATM+1</button>
+                </div>
+                <div class="flex items-center justify-between px-1">
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" id="autoSlCheck" checked class="w-3 h-3 rounded bg-gray-800 border-white/10 text-cyan-400 focus:ring-0">
+                        <span class="text-[9px] font-bold text-gray-400 uppercase">Auto SL (15pt)</span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" id="autoTpCheck" checked class="w-3 h-3 rounded bg-gray-800 border-white/10 text-cyan-400 focus:ring-0">
+                        <span class="text-[9px] font-bold text-gray-400 uppercase">Auto TP (30pt)</span>
+                    </label>
+                </div>
+                <div class="flex gap-1">
+                    <button class="flex-1 bg-gray-800 hover:bg-gray-700 text-[9px] font-bold py-1.5 rounded text-gray-300 qty-btn" data-qty="50">50</button>
+                    <button class="flex-1 bg-gray-800 hover:bg-gray-700 text-[9px] font-bold py-1.5 rounded text-gray-300 qty-btn active" data-qty="100">100</button>
+                    <button class="flex-1 bg-gray-800 hover:bg-gray-700 text-[9px] font-bold py-1.5 rounded text-gray-300 qty-btn" data-qty="250">250</button>
+                    <button class="flex-1 bg-gray-800 hover:bg-gray-700 text-[9px] font-bold py-1.5 rounded text-gray-300 qty-btn" data-qty="MAX">MAX</button>
+                </div>
+            </section>
+
+            <!-- Widget 10: Positions Table -->
+            <section class="glass-panel flex-1 flex flex-col min-h-[200px] overflow-hidden">
+                <div class="p-3 flex justify-between items-center border-b border-white/5">
+                    <h3 class="text-[9px] font-black uppercase tracking-widest text-gray-500">Active Raid Scoreboard</h3>
+                    <button id="closeAllBtn" class="text-[8px] font-black bg-bear/20 text-bear px-2 py-1 rounded hover:bg-bear hover:text-white transition-all">CLOSE ALL</button>
+                </div>
+                <div class="flex-1 overflow-y-auto custom-scrollbar">
+                    <table class="w-full text-[10px] mono">
+                        <thead class="sticky top-0 bg-[#1a1a1a] text-gray-500">
+                            <tr>
+                                <th class="py-2 px-2 text-left">SYMBOL</th>
+                                <th class="py-2 px-2 text-right">P&L</th>
+                                <th class="py-2 px-2 text-right">Δ</th>
+                                <th class="py-2 px-2 text-center"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="positionsBody" class="divide-y divide-white/5">
+                            <!-- Dynamic -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </aside>
+    </main>
+
+    <script src="/static/modern_app.js"></script>
+</body>
+</html>

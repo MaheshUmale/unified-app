@@ -920,6 +920,12 @@ async def serve_index(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
 
+@fastapi_app.get("/modern")
+async def serve_modern_dashboard(request: Request):
+    """Serves the new modern, single-screen tactical dashboard."""
+    return templates.TemplateResponse("modern_dashboard.html", {"request": request})
+
+
 @fastapi_app.get("/options")
 async def serve_options_dashboard(request: Request):
     return templates.TemplateResponse("options_dashboard.html", {"request": request})

@@ -3,7 +3,11 @@ import os
 from tradingview import Client
 
 import rookiepy
-raw_cookies = rookiepy.brave(['.tradingview.com'])
+try:
+    raw_cookies = rookiepy.brave(['.tradingview.com'])
+except Exception:
+    raw_cookies = None
+
 if raw_cookies:
     session_token = next((c['value'] for c in raw_cookies if c['name'] == 'sessionid'), None)
     signature = next((c['value'] for c in raw_cookies if c['name'] == 'sessionid_sign'), None)
@@ -27,8 +31,8 @@ else:
     
 async def main():
     client = Client(
-        token=session_token,
-        signature=signature
+        token=os.environ.get('TV_SESSION'),
+        signature=os.environ.get('TV_SIGNATURE')
     )
     await client.connect()
 
