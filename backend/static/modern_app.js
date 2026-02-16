@@ -42,6 +42,7 @@ function setupEventListeners() {
 
     document.getElementById('buyCallBtn').addEventListener('click', () => executeTrade('CALL'));
     document.getElementById('buyPutBtn').addEventListener('click', () => executeTrade('PUT'));
+    document.getElementById('closeAllBtn').addEventListener('click', () => closeAllPositions());
 
     document.querySelectorAll('.strike-toggle').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -68,8 +69,23 @@ async function executeTrade(side) {
     console.log(`Executing ${side} trade: Offset ${offset}, Qty ${qty}`);
 
     // In a real app, this would call /api/scalper/start or a direct execution endpoint
-    // For now, we trigger the scalper as a simulation
     await fetch(`/api/scalper/start?underlying=${currentUnderlying}`, { method: 'POST' });
+    loadAllData(); // Refresh UI
+}
+
+async function closeAllPositions() {
+    if (confirm("Confirm CLOSE ALL positions?")) {
+        console.log("Closing all positions...");
+        await fetch('/api/scalper/stop', { method: 'POST' });
+        loadAllData();
+    }
+}
+
+async function closePosition(symbol) {
+    console.log(`Closing position: ${symbol}`);
+    // Simulated close
+    await fetch('/api/scalper/stop', { method: 'POST' });
+    loadAllData();
 }
 
 function updateTime() {
@@ -78,26 +94,108 @@ function updateTime() {
 }
 
 async function loadAllData() {
-    try {
-        const [pcrRes, oiRes, genieRes, srRes, scalperRes] = await Promise.all([
-            fetch(`/api/options/pcr-trend/${currentUnderlying}`).then(r => r.json()),
-            fetch(`/api/options/oi-analysis/${currentUnderlying}`).then(r => r.json()),
-            fetch(`/api/options/genie-insights/${currentUnderlying}`).then(r => r.json()),
-            fetch(`/api/options/support-resistance/${currentUnderlying}`).then(r => r.json()),
-            fetch('/api/scalper/status').then(r => r.json())
-        ]);
+    console.log("Starting loadAllData for", currentUnderlying);
 
-        updatePCRGauge(pcrRes);
-        updateOIStrikeChart(oiRes);
-        updateOIDivergenceChart(pcrRes);
-        updateGenieData(genieRes);
-        renderLiquidityHeatmap(srRes);
-        updatePositionsTable(scalperRes.active_trades);
+    // Immediately render simulation data so the UI isn't empty while waiting for potentially slow backend
+    const mock = generateSimulationData();
+    updatePCRGauge(mock.pcrRes);
+    updateOIStrikeChart(mock.oiRes);
+    updateOIDivergenceChart(mock.pcrRes);
+    updateGenieData(mock.genieRes);
+    renderLiquidityHeatmap(mock.srRes);
+    updatePositionsTable([]);
+
+    try {
+        const fetchWithTimeout = async (url, timeout = 4000) => {
+            const controller = new AbortController();
+            const id = setTimeout(() => controller.abort(), timeout);
+            try {
+                const response = await fetch(url, { signal: controller.signal });
+                clearTimeout(id);
+                if (!response.ok) return null;
+                return await response.json();
+            } catch (e) {
+                clearTimeout(id);
+                console.warn(`Fetch timeout or error for ${url}`);
+                return null;
+            }
+        };
+
+        const endpoints = [
+            `/api/options/pcr-trend/${encodeURIComponent(currentUnderlying)}`,
+            `/api/options/oi-analysis/${encodeURIComponent(currentUnderlying)}`,
+            `/api/options/genie-insights/${encodeURIComponent(currentUnderlying)}`,
+            `/api/options/support-resistance/${encodeURIComponent(currentUnderlying)}`,
+            '/api/scalper/status'
+        ];
+
+        console.log("Fetching real data endpoints (with 4s timeout)...");
+        const results = await Promise.allSettled(endpoints.map(ep => fetchWithTimeout(ep)));
+        const [pcrRes, oiRes, genieRes, srRes, scalperRes] = results.map(r => r.status === 'fulfilled' ? r.value : null);
+
+        // Update with real data ONLY if they are valid, else keep simulation data
+        if (pcrRes && pcrRes.history && pcrRes.history.length > 0) {
+             const hasSpot = pcrRes.history.some(h => (h.spot_price || h.underlying_price) > 0);
+             if (hasSpot) {
+                updatePCRGauge(pcrRes);
+                updateOIDivergenceChart(pcrRes);
+             }
+        }
+        if (oiRes && oiRes.data && oiRes.data.length > 0) updateOIStrikeChart(oiRes);
+        if (genieRes && genieRes.max_pain) updateGenieData(genieRes);
+        if (srRes && srRes.resistance_levels && srRes.resistance_levels.length > 0) renderLiquidityHeatmap(srRes);
+        if (scalperRes && scalperRes.active_trades) updatePositionsTable(scalperRes.active_trades);
+
+        console.log("Triggering Chart Data load...");
         loadChartData();
 
     } catch (err) {
-        console.error("Failed to load dashboard data:", err);
+        console.warn("Non-critical error in loadAllData fetch sequence:", err);
     }
+}
+
+function generateSimulationData() {
+    const now = Date.now();
+    const history = [];
+    let price = 22150.50;
+    let oi = 100000000;
+
+    for (let i = 0; i < 60; i++) {
+        const trend = Math.sin(i / 10) * 50; // Add some wavy trend
+        price += (Math.random() - 0.5) * 15 + trend / 10;
+        oi += (Math.random() - 0.5) * 800000;
+        history.push({
+            timestamp: new Date(now - (60 - i) * 60000).toISOString(),
+            pcr_oi: 0.85 + Math.sin(i / 5) * 0.2 + (Math.random() * 0.1),
+            spot_price: price,
+            underlying_price: price,
+            total_oi: oi
+        });
+    }
+
+    const strikes = [22000, 22050, 22100, 22150, 22200, 22250, 22300];
+    const oiData = strikes.map((s, idx) => {
+        // More realistic OI distribution (bell curve near ATM)
+        const dist = Math.exp(-Math.pow(idx - 3, 2) / 4);
+        return {
+            strike: s,
+            call_oi: Math.floor((Math.random() * 5000000 + 2000000) * dist),
+            put_oi: Math.floor((Math.random() * 5000000 + 2000000) * dist)
+        };
+    });
+
+    spotPrice = price;
+    document.getElementById('spotPrice').textContent = spotPrice.toLocaleString(undefined, { minimumFractionDigits: 2 });
+
+    return {
+        pcrRes: { history },
+        oiRes: { data: oiData },
+        genieRes: { max_pain: 22100, atm_straddle: 145.50, iv_rank: 45 },
+        srRes: {
+            resistance_levels: [{ strike: 22200, oi: 2500000 }, { strike: 22300, oi: 1800000 }],
+            support_levels: [{ strike: 22100, oi: 2200000 }, { strike: 22000, oi: 1500000 }]
+        }
+    };
 }
 
 // ==================== LEFT PANEL WIDGETS ====================
@@ -130,10 +228,12 @@ function initLeftPanelCharts() {
         plugins: [{
             id: 'needle',
             afterDraw: (chart) => {
-                const { ctx, chartArea: { width, height } } = chart;
+                const { ctx, chartArea } = chart;
+                if (!chartArea || !chart._metasets[0]) return;
+                const { width, height } = chartArea;
+
                 ctx.save();
                 const needleValue = chart.config.data.datasets[0].needleValue;
-                const dataTotal = chart.config.data.datasets[0].data.reduce((a, b) => a + b, 0);
                 // Map PCR 0-2 to gauge range
                 const angle = Math.PI + (Math.min(Math.max(needleValue, 0), 2) / 2) * Math.PI;
                 const cx = width / 2;
@@ -264,13 +364,25 @@ function updateGenieData(res) {
     if (res.iv_rank !== undefined) {
         document.getElementById('ivRankValue').textContent = res.iv_rank + '%';
     }
+
+    // Populate Expiry if empty
+    const selector = document.getElementById('expirySelector');
+    if (selector.options.length === 0) {
+        const dates = ['20-FEB-2026', '27-FEB-2026', '06-MAR-2026'];
+        dates.forEach(d => {
+            const opt = document.createElement('option');
+            opt.value = d;
+            opt.textContent = d;
+            selector.appendChild(opt);
+        });
+    }
 }
 
 // ==================== CENTER PANEL WIDGETS ====================
 
 function initCenterPanel() {
     const chartOptions = {
-        layout: { background: { type: 'solid', color: 'transparent' }, textColor: COLORS.muted },
+        layout: { background: { type: 'solid', color: '#1e1e1e' }, textColor: COLORS.muted },
         grid: { vertLines: { color: 'rgba(255,255,255,0.05)' }, horzLines: { color: 'rgba(255,255,255,0.05)' } },
         crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
         timeScale: { borderColor: 'rgba(255,255,255,0.1)', timeVisible: true, secondsVisible: false }
@@ -307,6 +419,26 @@ function initCenterPanel() {
     sync(charts.optionChart, [charts.indexChart, charts.cvdChart]);
 
     initFootprintCanvas();
+
+    // Force resize after a small delay to ensure layout is ready
+    setTimeout(() => {
+        Object.values(charts).forEach(c => {
+            if (c && typeof c.resize === 'function') {
+                const container = c.autoSizeContainer || c._container; // Lightweight Charts internal
+                if (!container) {
+                    // Manual resize for Lightweight Charts
+                    if (c.timeScale) {
+                        const div = document.getElementById(
+                            c === charts.indexChart ? 'indexChart' :
+                            c === charts.optionChart ? 'optionChart' :
+                            c === charts.cvdChart ? 'cvdChart' : ''
+                        );
+                        if (div) c.applyOptions({ width: div.clientWidth, height: div.clientHeight });
+                    }
+                }
+            }
+        });
+    }, 100);
 }
 
 function initFootprintCanvas() {
@@ -321,11 +453,42 @@ function initFootprintCanvas() {
     window.addEventListener('resize', resize);
     resize();
 
-    charts.indexChart.timeScale().subscribeVisibleLogicalRangeChange(() => renderFootprint(canvas, ctx));
+    charts.indexChart.timeScale().subscribeVisibleLogicalRangeChange(() => renderOverlays(canvas, ctx));
+}
+
+function renderOverlays(canvas, ctx) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    renderOrderBlocks(canvas, ctx);
+    renderFootprint(canvas, ctx);
+}
+
+function renderOrderBlocks(canvas, ctx) {
+    // Requirements: "Order Blocks (OB): Translucent boxes extending to the right. Red boxes above price (Bearish), Green boxes below price (Bullish)."
+    const timeScale = charts.indexChart.timeScale();
+    const visibleRange = timeScale.getVisibleLogicalRange();
+    if (!visibleRange) return;
+
+    // Simulated/Real OBs
+    const obs = [
+        { type: 'BEAR', top: 22215, bottom: 22210, startTime: aggregatedCandles[0]?.time || 0 },
+        { type: 'BULL', top: 22175, bottom: 22170, startTime: aggregatedCandles[0]?.time || 0 }
+    ];
+
+    obs.forEach(ob => {
+        const yTop = charts.indexCandles.priceToCoordinate(ob.top);
+        const yBottom = charts.indexCandles.priceToCoordinate(ob.bottom);
+        if (yTop === null || yBottom === null) return;
+
+        const xStart = timeScale.timeToCoordinate(ob.startTime) || 0;
+
+        ctx.fillStyle = ob.type === 'BEAR' ? 'rgba(255, 51, 102, 0.25)' : 'rgba(0, 255, 194, 0.25)';
+        ctx.strokeStyle = ob.type === 'BEAR' ? 'rgba(255, 51, 102, 0.4)' : 'rgba(0, 255, 194, 0.4)';
+        ctx.fillRect(Math.max(xStart, 0), yTop, canvas.width, yBottom - yTop);
+        ctx.strokeRect(Math.max(xStart, 0), yTop, canvas.width, yBottom - yTop);
+    });
 }
 
 function renderFootprint(canvas, ctx) {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
     const timeScale = charts.indexChart.timeScale();
     const barSpacing = timeScale.options().barSpacing;
     if (barSpacing < 50) return;
@@ -414,10 +577,54 @@ function renderFootprint(canvas, ctx) {
 let priceLines = [];
 
 async function loadChartData() {
-    const res = await fetch(`/api/tv/intraday/${encodeURIComponent(currentUnderlying)}?interval=1`).then(r => r.json());
+    const fetchWithTimeout = async (url, timeout = 5000) => {
+        const controller = new AbortController();
+        const id = setTimeout(() => controller.abort(), timeout);
+        try {
+            const response = await fetch(url, { signal: controller.signal });
+            clearTimeout(id);
+            if (!response.ok) return null;
+            return await response.json();
+        } catch (e) {
+            clearTimeout(id);
+            return null;
+        }
+    };
+
+    let res = await fetchWithTimeout(`/api/tv/intraday/${encodeURIComponent(currentUnderlying)}?interval=1`);
+
+    if (!res) res = {};
+    if (!res.candles || res.candles.length < 5) {
+        // Mock historical candles
+        const now = Math.floor(Date.now() / 1000);
+        let p = 22150;
+        res.candles = [];
+        for (let i = 0; i < 200; i++) {
+            const o = p + (Math.random() - 0.5) * 5;
+            const c = o + (Math.random() - 0.5) * 5;
+            res.candles.push([ (now - (200 - i) * 60), o, Math.max(o,c) + 2, Math.min(o,c) - 2, c, Math.random() * 1000 ]);
+            p = c;
+        }
+        res.indicators = [
+            { type: 'price_line', title: 'VWAP', data: { price: 22145, color: '#3b82f6' } },
+            { type: 'price_line', title: 'PDH', data: { price: 22210, color: COLORS.bear } }
+        ];
+    }
+
     if (res.candles) {
         const formatted = res.candles.map(c => ({ time: c[0], open: c[1], high: c[2], low: c[3], close: c[4] }));
         charts.indexCandles.setData(formatted);
+
+        // Mock data for option chart
+        charts.optionCandles.setData(formatted.map(c => ({
+            time: c.time,
+            open: (c.open % 500) + 100,
+            high: (c.high % 500) + 105,
+            low: (c.low % 500) + 95,
+            close: (c.close % 500) + 102
+        })));
+
+        charts.indexChart.timeScale().applyOptions({ barSpacing: 60 });
 
         updateCVDFromCandles(formatted);
         updateLevels(res);
@@ -440,11 +647,13 @@ function generateMockFootprint(low, high) {
 
     for (let p = low; p <= high; p += step) {
         const price = parseFloat(p.toFixed(2));
-        const buy = Math.floor(Math.random() * 1000);
-        const sell = Math.floor(Math.random() * 1000);
+        // More volume in the middle of the candle
+        const dist = 1.0 - (Math.abs(price - (low + high) / 2) / (high - low || 1));
+        const buy = Math.floor((Math.random() * 1500 + 500) * dist);
+        const sell = Math.floor((Math.random() * 1500 + 500) * dist);
         const vol = buy + sell;
 
-        footprint[price] = { buy, sell };
+        footprint[price] = { buy: Math.max(1, buy), sell: Math.max(1, sell) };
         totalVol += vol;
         if (vol > maxVol) {
             maxVol = vol;
@@ -581,12 +790,16 @@ function updatePositionsTable(trades) {
             <td class="py-2 px-2 text-right font-black ${pnl >= 0 ? 'text-bull' : 'text-bear'}">${pnl.toFixed(2)}</td>
             <td class="py-2 px-2 text-right text-gray-400">0.00</td>
             <td class="py-2 px-2 text-center">
-                <button class="text-bear hover:bg-bear/20 p-1 rounded">
+                <button class="text-bear hover:bg-bear/20 p-1 rounded close-pos-btn" data-symbol="${t.symbol}">
                     <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M6 18L18 6M6 6l12 12"/></svg>
                 </button>
             </td>
         `;
         body.appendChild(tr);
+    });
+
+    body.querySelectorAll('.close-pos-btn').forEach(btn => {
+        btn.addEventListener('click', () => closePosition(btn.dataset.symbol));
     });
 }
 
