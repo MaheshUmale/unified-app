@@ -234,17 +234,14 @@ class Client:
                 # Use standard guest token
                 token = "unauthorized_user_token"
 
-            # 1. Set Auth Token
-            msg_auth = format_ws_packet({'m': 'set_auth_token', 'p': [token]})
-            logger.debug(f"Handshake: sending auth token: {msg_auth}")
-            await self._ws.send(msg_auth)
-
-            # 2. Set Locale (added for better compatibility with some TV servers)
-            msg_locale = format_ws_packet({'m': 'set_locale', 'p': ["en", "US"]})
-            logger.debug(f"Handshake: sending locale: {msg_locale}")
-            await self._ws.send(msg_locale)
-
+            # 1. Set Auth Token & Locale via unified send mechanism
+            # We temporarily set _logged to True to allow these messages to flow
             self._logged = True
+            await self.send('set_auth_token', [token])
+            await self.send('set_locale', ["en", "US"])
+
+            # 2. Skip default quote session creation for now (often optional for chart-only sessions)
+            # Component requiring quotes should create their own session.
 
             # Trigger connected event ONLY AFTER handshake is complete
             self._handle_event('connected')
@@ -270,10 +267,10 @@ class Client:
                     break
 
                 try:
-                    # Send a heartbeat packet per TradingView protocol (wrapped in ~m~len~m~)
+                    # Send a heartbeat packet per TradingView protocol (unwrapped)
                     import time
                     ping_id = int(time.time() * 1000)
-                    ping_message = format_ws_packet(f"~h~{ping_id}")
+                    ping_message = f"~h~{ping_id}"
 
                     await self._ws.send(ping_message)
                     if self._debug:
@@ -542,7 +539,8 @@ class Client:
             if not isinstance(packet_data, list):
                 packet_data = [packet_data]
 
-            logger.debug(f"Client.send: type={packet_type}, data={packet_data}")
+            if self._debug:
+                logger.debug(f"Client.send: type={packet_type}, data={packet_data}")
 
             # No manual stringification of nested items.
             # format_ws_packet's json.dumps will handle them as JSON objects.
@@ -552,9 +550,17 @@ class Client:
             })
 
             if formatted_packet:
+                # Filter out potentially problematic messages that might cause 'wrong data'
+                # or that are not part of our intended stable handshake.
+                if packet_type == 'quote_hibernate_all':
+                    logger.debug(f"Blocked problematic packet: {packet_type}")
+                    return
+
                 self._send_queue.append(formatted_packet)
-                # Ensure we are logged in or sending auth token
-                if self._logged or 'set_auth_token' in formatted_packet:
+                # Ensure we are logged in or sending auth token/locale/quote session
+                # Locale and quote sessions are part of the initial handshake
+                handshake_msgs = ['set_auth_token', 'set_locale', 'quote_create_session', 'quote_set_fields']
+                if self._logged or packet_type in handshake_msgs:
                     await self._send_queue_data()
             else:
                 self._handle_error("Failed to format packet")

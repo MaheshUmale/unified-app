@@ -134,7 +134,7 @@ class DataStreamer:
         self.scalper.log(f"Fetching historical data for {underlying} and ATM options...")
         for target, symbol in self.symbols.items():
             try:
-                hist = await asyncio.to_thread(tv_api.get_hist_candles, symbol, '1', 1000)
+                hist = await tv_api.get_hist_candles(symbol, '1', 1000)
                 if hist:
                     self.on_ohlcv(symbol, {'ohlcv': hist})
                     if target == 'underlying':
@@ -261,15 +261,15 @@ class SignalGenerator:
     def __init__(self, scalper):
         self.scalper = scalper
 
-    def check_signals(self):
+    async def check_signals(self):
         spot = self.scalper.current_spot
         in_zone, level = self.scalper.engine.is_in_signal_zone(spot)
 
-        oi_levels = options_manager.get_support_resistance(self.scalper.underlying)
+        oi_levels = await options_manager.get_support_resistance(self.scalper.underlying)
         sup_oi = [x['strike'] for x in oi_levels.get('support_levels', [])]
         res_oi = [x['strike'] for x in oi_levels.get('resistance_levels', [])]
 
-        chain_res = options_manager.get_chain_with_greeks(self.scalper.underlying)
+        chain_res = await options_manager.get_chain_with_greeks(self.scalper.underlying)
         chain_data = chain_res.get('chain', [])
         if spot == 0: spot = chain_res.get('spot_price', 0)
 
@@ -463,7 +463,7 @@ class OrderManager:
         self.scalper.log(f"ORDER SENT: BUY {side} @ {limit_price} | SL: {trade['sl']} | TP: {trade['tp']}")
         return trade
 
-    def manage_risk(self):
+    async def manage_risk(self):
         for trade in self.active_trades[:]:
             current_tick = self.scalper.last_ticks.get('atm_call' if trade['side'] == 'CALL' else 'atm_put')
             if not current_tick: continue
@@ -601,9 +601,8 @@ class NSEConfluenceScalper:
     async def _main_loop(self):
         while self.is_running:
             try:
-                # Offload heavy synchronous processing to a thread
-                await asyncio.to_thread(self.signal_generator.check_signals)
-                await asyncio.to_thread(self.order_manager.manage_risk)
+                await self.signal_generator.check_signals()
+                await self.order_manager.manage_risk()
             except Exception as e: logger.error(f"Scalper Loop Error: {e}")
             await asyncio.sleep(0.5)
 

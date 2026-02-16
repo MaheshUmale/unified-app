@@ -62,8 +62,8 @@ def initialize_default_providers():
     # Initialize Enhanced Provider
     enhanced_tv = EnhancedTradingViewProvider()
 
-    # Live Stream
-    live_stream_registry.register("tradingview", TradingViewLiveStreamProvider(), priority=10)
+    # Live Stream - Prioritize stable TradingViewWSS
+    live_stream_registry.register("tradingview", TradingViewLiveStreamProvider(), priority=30)
     live_stream_registry.register("enhanced_tv", enhanced_tv, priority=20)
 
     # Options Data
