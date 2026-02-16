@@ -270,10 +270,10 @@ class Client:
                     break
 
                 try:
-                    # Send a heartbeat packet per TradingView protocol (unwrapped)
+                    # Send a heartbeat packet per TradingView protocol (wrapped in ~m~len~m~)
                     import time
                     ping_id = int(time.time() * 1000)
-                    ping_message = f"~h~{ping_id}"
+                    ping_message = format_ws_packet(f"~h~{ping_id}")
 
                     await self._ws.send(ping_message)
                     if self._debug:
