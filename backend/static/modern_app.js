@@ -328,7 +328,7 @@ function renderFootprint(canvas, ctx) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     const timeScale = charts.indexChart.timeScale();
     const barSpacing = timeScale.options().barSpacing;
-    if (barSpacing < 50) return; // Only show footprint when zoomed in
+    if (barSpacing < 50) return;
 
     aggregatedCandles.forEach(candle => {
         const x = timeScale.timeToCoordinate(candle.time);
@@ -336,9 +336,21 @@ function renderFootprint(canvas, ctx) {
 
         const footprint = candle.footprint || {};
         const prices = Object.keys(footprint).map(Number).sort((a, b) => b - a);
-        const halfWidth = (barSpacing / 2) * 0.8;
+        const halfWidth = (barSpacing / 2) * 0.9;
 
-        prices.forEach(p => {
+        // 1. Draw Value Area (VA) Box
+        if (candle.vah && candle.val) {
+            const vahY = charts.indexCandles.priceToCoordinate(candle.vah);
+            const valY = charts.indexCandles.priceToCoordinate(candle.val);
+            if (vahY !== null && valY !== null) {
+                ctx.strokeStyle = 'rgba(59, 130, 246, 0.5)';
+                ctx.setLineDash([2, 2]);
+                ctx.strokeRect(x - halfWidth - 2, vahY - 6, halfWidth * 2 + 4, valY - vahY + 12);
+                ctx.setLineDash([]);
+            }
+        }
+
+        prices.forEach((p, i) => {
             const y = charts.indexCandles.priceToCoordinate(p);
             if (y === null || y < 0 || y > canvas.height) return;
 
@@ -347,15 +359,54 @@ function renderFootprint(canvas, ctx) {
             const sell = data.sell || 0;
             const delta = buy - sell;
 
-            // Background highlight based on delta
-            ctx.fillStyle = delta > 0 ? `rgba(0, 255, 194, ${Math.min(buy/1000, 0.3)})` : `rgba(255, 51, 102, ${Math.min(sell/1000, 0.3)})`;
-            ctx.fillRect(x - halfWidth, y - 6, halfWidth * 2, 12);
+            // 2. Diagonal Imbalance Detection (3:1 Ratio)
+            let isBuyImbalance = false;
+            let isSellImbalance = false;
+
+            if (i < prices.length - 1) {
+                const nextP = prices[i+1];
+                const prevSell = footprint[nextP]?.sell || 0;
+                if (buy >= prevSell * 3 && buy > 0 && prevSell > 0) isBuyImbalance = true;
+            }
+            if (i > 0) {
+                const prevP = prices[i-1];
+                const nextBuy = footprint[prevP]?.buy || 0;
+                if (sell >= nextBuy * 3 && sell > 0 && nextBuy > 0) isSellImbalance = true;
+            }
+
+            // Cell Background
+            if (isBuyImbalance) {
+                ctx.fillStyle = 'rgba(0, 255, 194, 0.3)';
+                ctx.fillRect(x, y - 6, halfWidth, 12);
+            } else if (isSellImbalance) {
+                ctx.fillStyle = 'rgba(255, 51, 102, 0.3)';
+                ctx.fillRect(x - halfWidth, y - 6, halfWidth, 12);
+            } else {
+                ctx.fillStyle = (p >= candle.val && p <= candle.vah) ? 'rgba(255, 255, 255, 0.08)' : 'rgba(255, 255, 255, 0.03)';
+                ctx.fillRect(x - halfWidth, y - 6, halfWidth * 2, 12);
+            }
+
+            // 3. Point of Control (POC) Highlight
+            if (p === candle.poc) {
+                ctx.strokeStyle = '#fbbf24';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(x - halfWidth, y - 6, halfWidth * 2, 12);
+                ctx.lineWidth = 1;
+            }
 
             // Numbers
-            ctx.font = '7px "IBM Plex Mono"';
-            ctx.textAlign = 'center';
-            ctx.fillStyle = COLORS.text;
-            ctx.fillText(`${sell} x ${buy}`, x, y + 3);
+            ctx.font = (isBuyImbalance || isSellImbalance) ? 'bold 7px "IBM Plex Mono"' : '6px "IBM Plex Mono"';
+            ctx.textAlign = 'right';
+            ctx.fillStyle = isSellImbalance ? COLORS.bear : COLORS.muted;
+            ctx.fillText(sell, x - 4, y + 3);
+
+            ctx.textAlign = 'left';
+            ctx.fillStyle = isBuyImbalance ? COLORS.bull : COLORS.muted;
+            ctx.fillText(buy, x + 4, y + 3);
+
+            // Center Split
+            ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+            ctx.beginPath(); ctx.moveTo(x, y - 4); ctx.lineTo(x, y + 4); ctx.stroke();
         });
     });
 }
@@ -381,15 +432,47 @@ async function loadChartData() {
 
 function generateMockFootprint(low, high) {
     const footprint = {};
-    const step = 0.5; // price step
+    const step = 0.5;
+    let totalVol = 0;
+    let maxVol = 0;
+    let poc = low;
+    const prices = [];
+
     for (let p = low; p <= high; p += step) {
         const price = parseFloat(p.toFixed(2));
-        footprint[price] = {
-            buy: Math.floor(Math.random() * 500),
-            sell: Math.floor(Math.random() * 500)
-        };
+        const buy = Math.floor(Math.random() * 1000);
+        const sell = Math.floor(Math.random() * 1000);
+        const vol = buy + sell;
+
+        footprint[price] = { buy, sell };
+        totalVol += vol;
+        if (vol > maxVol) {
+            maxVol = vol;
+            poc = price;
+        }
+        prices.push(price);
     }
-    return footprint;
+
+    // Mock Value Area (70% Volume)
+    const vaVol = totalVol * 0.7;
+    let currentVaVol = maxVol;
+    let sortedPrices = prices.sort((a, b) => a - b);
+    let lowerIdx = sortedPrices.indexOf(poc);
+    let upperIdx = lowerIdx;
+
+    while (currentVaVol < vaVol && (lowerIdx > 0 || upperIdx < sortedPrices.length - 1)) {
+        let lVol = lowerIdx > 0 ? (footprint[sortedPrices[lowerIdx-1]].buy + footprint[sortedPrices[lowerIdx-1]].sell) : 0;
+        let uVol = upperIdx < sortedPrices.length - 1 ? (footprint[sortedPrices[upperIdx+1]].buy + footprint[sortedPrices[upperIdx+1]].sell) : 0;
+        if (lVol >= uVol) { currentVaVol += lVol; lowerIdx--; }
+        else { currentVaVol += uVol; upperIdx++; }
+    }
+
+    return {
+        data: footprint,
+        poc: poc,
+        vah: sortedPrices[upperIdx],
+        val: sortedPrices[lowerIdx]
+    };
 }
 
 function updateLevels(res) {
