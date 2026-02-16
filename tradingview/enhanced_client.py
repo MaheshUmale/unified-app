@@ -54,8 +54,8 @@ class ConnectionMonitor:
         self.client_ref = client_ref  # Reference to the client, used to access connection state
 
         # Health check thresholds
-        self.max_latency = 5000  # 5 seconds
-        self.max_errors = 5
+        self.max_latency = 10000  # 10 seconds
+        self.max_errors = 10
         self.ping_interval = 30  # 30 seconds
 
     def record_ping(self) -> None:
@@ -113,9 +113,9 @@ class ConnectionMonitor:
 
         # Check connection uptime - ensure connection exists for a while before heartbeat check
         uptime = self.get_uptime()
-        if uptime > 60:  # Check heartbeat only after 60 seconds of uptime
+        if uptime > 120:  # Check heartbeat only after 120 seconds of uptime
             # Check heartbeat - if last_pong_time is 0 (just connected), give a grace period
-            if self.last_pong_time > 0 and time.time() - self.last_pong_time > self.ping_interval * 3:
+            if self.last_pong_time > 0 and time.time() - self.last_pong_time > self.ping_interval * 5:
                 return False
 
         return True

@@ -118,8 +118,8 @@ class GreeksCalculator:
         r: float,
         market_price: float,
         option_type: str,
-        precision: float = 0.0001,
-        max_iterations: int = 100
+        precision: float = 0.001,
+        max_iterations: int = 20
     ) -> float:
         """
         Calculate implied volatility using Newton-Raphson method.

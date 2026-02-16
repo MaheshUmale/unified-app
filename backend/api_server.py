@@ -55,11 +55,15 @@ async def lifespan(app: FastAPI):
     
     # Start WebSocket Feed
     logger.info("Starting TradingView WebSocket thread...")
-    data_engine.start_websocket_thread(None, INITIAL_INSTRUMENTS)
+
+    async def start_ws():
+        data_engine.start_websocket_thread(None, INITIAL_INSTRUMENTS)
+
+    asyncio.create_task(start_ws())
     
     # Start Options Management
     options_manager.set_socketio(sio, loop=main_loop)
-    await options_manager.start()
+    asyncio.create_task(options_manager.start())
 
     # Initialize Scalper
     scalper.set_socketio(sio, loop=main_loop)
@@ -262,34 +266,41 @@ async def get_intraday(instrument_key: str, interval: str = '1'):
             try:
                 import pandas as pd
                 analyzer_candles = sorted(tv_candles, key=lambda x: x[0])
-                df = pd.DataFrame(analyzer_candles, columns=['ts', 'o', 'h', 'l', 'c', 'v'])
-                
-                # EMA 9
-                ema9 = df['c'].ewm(span=9, adjust=False).mean()
+
+                # Technical Analysis Offloading
+                def calculate_indicators(candles):
+                    df = pd.DataFrame(candles, columns=['ts', 'o', 'h', 'l', 'c', 'v'])
+
+                    # EMA 9
+                    ema9 = df['c'].ewm(span=9, adjust=False).mean()
+                    e9_data = [{"time": candles[i][0], "value": float(val)}
+                              for i, val in enumerate(ema9) if i >= 8]
+
+                    # EMA 20
+                    ema20 = df['c'].ewm(span=20, adjust=False).mean()
+                    e20_data = [{"time": candles[i][0], "value": float(val)}
+                               for i, val in enumerate(ema20) if i >= 19]
+
+                    # Market Psychology Analyzer
+                    from brain.MarketPsychologyAnalyzer import MarketPsychologyAnalyzer
+                    analyzer = MarketPsychologyAnalyzer()
+                    zones, signals = analyzer.analyze(candles)
+
+                    return e9_data, e20_data, zones, signals
+
+                e9_data, e20_data, zones, signals = await asyncio.to_thread(calculate_indicators, analyzer_candles)
+
                 valid_indicators.append({
-                    "id": "ema_9",
-                    "title": "EMA 9",
-                    "type": "line",
+                    "id": "ema_9", "title": "EMA 9", "type": "line",
                     "style": {"color": "#3b82f6", "lineWidth": 1},
-                    "data": [{"time": analyzer_candles[i][0], "value": float(val)}
-                            for i, val in enumerate(ema9) if i >= 8]
+                    "data": e9_data
                 })
                 
-                # EMA 20
-                ema20 = df['c'].ewm(span=20, adjust=False).mean()
                 valid_indicators.append({
-                    "id": "ema_20",
-                    "title": "EMA 20",
-                    "type": "line",
+                    "id": "ema_20", "title": "EMA 20", "type": "line",
                     "style": {"color": "#f97316", "lineWidth": 1},
-                    "data": [{"time": analyzer_candles[i][0], "value": float(val)}
-                            for i, val in enumerate(ema20) if i >= 19]
+                    "data": e20_data
                 })
-                
-                # Market Psychology Analyzer
-                from brain.MarketPsychologyAnalyzer import MarketPsychologyAnalyzer
-                analyzer = MarketPsychologyAnalyzer()
-                zones, signals = analyzer.analyze(analyzer_candles)
                 
                 for i, zone in enumerate(zones):
                     valid_indicators.append({
@@ -341,7 +352,7 @@ async def get_intraday(instrument_key: str, interval: str = '1'):
 @fastapi_app.get("/api/options/chain/{underlying}")
 async def get_options_chain(underlying: str):
     """Returns the latest option chain with Greeks."""
-    return options_manager.get_chain_with_greeks(underlying)
+    return await options_manager.get_chain_with_greeks(underlying)
 
 
 @fastapi_app.get("/api/options/chain/{underlying}/with-greeks")
@@ -350,7 +361,7 @@ async def get_options_chain_with_greeks(
     spot_price: Optional[float] = None
 ):
     """Get option chain with calculated Greeks."""
-    chain_data = options_manager.get_chain_with_greeks(underlying)
+    chain_data = await options_manager.get_chain_with_greeks(underlying)
     
     if not spot_price:
         # Use robust spot price discovery
@@ -441,19 +452,19 @@ async def get_options_greeks(
 @fastapi_app.get("/api/options/oi-buildup/{underlying}")
 async def get_oi_buildup_analysis(underlying: str):
     """Get OI buildup analysis for underlying."""
-    return options_manager.get_oi_buildup_analysis(underlying)
+    return await options_manager.get_oi_buildup_analysis(underlying)
 
 
 @fastapi_app.get("/api/options/iv-analysis/{underlying}")
 async def get_iv_analysis(underlying: str):
     """Get IV analysis for underlying."""
-    return options_manager.get_iv_analysis(underlying)
+    return await options_manager.get_iv_analysis(underlying)
 
 
 @fastapi_app.get("/api/options/support-resistance/{underlying}")
 async def get_support_resistance(underlying: str, top_n: int = Query(default=3, ge=1, le=10)):
     """Get support and resistance levels based on OI."""
-    return options_manager.get_support_resistance(underlying)
+    return await options_manager.get_support_resistance(underlying)
 
 
 @fastapi_app.get("/api/options/genie-insights/{underlying}")
@@ -465,13 +476,14 @@ async def get_genie_insights(underlying: str):
 @fastapi_app.get("/api/options/high-activity/{underlying}")
 async def get_high_activity_strikes(underlying: str):
     """Get strikes with maximum activity."""
-    return options_manager.get_high_activity_strikes(underlying)
+    return await options_manager.get_high_activity_strikes(underlying)
 
 
 @fastapi_app.get("/api/options/pcr-trend/{underlying}")
 async def get_pcr_trend(underlying: str):
     """Returns historical PCR data for current trading day."""
-    history = db.query(
+    history = await asyncio.to_thread(
+        db.query,
         """
         SELECT timestamp,
             AVG(pcr_oi) as pcr_oi,
@@ -490,7 +502,7 @@ async def get_pcr_trend(underlying: str):
         ORDER BY timestamp ASC
         """,
         (underlying, underlying),
-        json_serialize=True
+        True # json_serialize
     )
     
     return {"history": history}
@@ -499,7 +511,8 @@ async def get_pcr_trend(underlying: str):
 @fastapi_app.get("/api/options/full-history/{underlying}")
 async def get_full_options_history(underlying: str):
     """Returns all PCR and Option Snapshots for today for REPLAY."""
-    pcr_history = db.query(
+    pcr_history = await asyncio.to_thread(
+        db.query,
         """
         SELECT timestamp,
             AVG(pcr_oi) as pcr_oi,
@@ -518,10 +531,11 @@ async def get_full_options_history(underlying: str):
         ORDER BY timestamp ASC
         """,
         (underlying, underlying),
-        json_serialize=True
+        True # json_serialize
     )
 
-    snapshots = db.query(
+    snapshots = await asyncio.to_thread(
+        db.query,
         """
         SELECT timestamp, strike, option_type, oi, oi_change, volume, ltp, iv, delta, theta
         FROM options_snapshots
@@ -531,7 +545,7 @@ async def get_full_options_history(underlying: str):
         ORDER BY timestamp ASC, strike ASC
         """,
         (underlying,),
-        json_serialize=True
+        True # json_serialize
     )
 
     return {
@@ -543,7 +557,8 @@ async def get_full_options_history(underlying: str):
 @fastapi_app.get("/api/options/oi-analysis/{underlying}")
 async def get_oi_analysis(underlying: str):
     """Returns OI distribution data for latest snapshot."""
-    latest_ts_res = db.query(
+    latest_ts_res = await asyncio.to_thread(
+        db.query,
         "SELECT MAX(timestamp) as ts FROM options_snapshots WHERE underlying = ?",
         (underlying,)
     )
@@ -552,7 +567,8 @@ async def get_oi_analysis(underlying: str):
         return {"data": []}
     
     latest_ts = latest_ts_res[0]['ts']
-    data = db.query(
+    data = await asyncio.to_thread(
+        db.query,
         """
         SELECT strike,
             SUM(CASE WHEN option_type = 'call' THEN oi ELSE 0 END) as call_oi,
@@ -568,7 +584,7 @@ async def get_oi_analysis(underlying: str):
         ORDER BY strike ASC
         """,
         (underlying, latest_ts),
-        json_serialize=True
+        True # json_serialize
     )
     
     return {"timestamp": latest_ts, "data": data}
@@ -863,10 +879,11 @@ async def get_tick_history(instrument_key: str, limit: int = 10000):
         logger.info(f"Fetching tick history for {clean_key} (limit: {limit})")
 
         # Fetch ticks from DuckDB ticks table
-        history = db.query(
+        history = await asyncio.to_thread(
+            db.query,
             "SELECT ts_ms, price, qty FROM ticks WHERE instrumentKey = ? ORDER BY ts_ms DESC LIMIT ?",
             (clean_key, limit),
-            json_serialize=True
+            True # json_serialize
         )
 
         logger.info(f"Retrieved {len(history)} ticks for {clean_key}")
@@ -916,11 +933,11 @@ async def db_viewer(request: Request):
 @fastapi_app.get("/api/db/tables")
 async def get_db_tables():
     try:
-        tables = db.get_tables()
+        tables = await asyncio.to_thread(db.get_tables)
         result = []
         for table in tables:
-            schema = db.get_table_schema(table, json_serialize=True)
-            count_res = db.query(f'SELECT COUNT(*) as count FROM "{table}"')
+            schema = await asyncio.to_thread(db.get_table_schema, table, True)
+            count_res = await asyncio.to_thread(db.query, f'SELECT COUNT(*) as count FROM "{table}"')
             row_count = count_res[0]['count'] if count_res else 0
             result.append({"name": table, "schema": schema, "row_count": row_count})
         return {"tables": result}
@@ -937,7 +954,7 @@ async def run_db_query(request: Request):
         if not sql:
             raise HTTPException(status_code=400, detail="SQL query is required")
         
-        results = db.query(sql, json_serialize=True)
+        results = await asyncio.to_thread(db.query, sql, (), True)
         return {"results": results}
     except Exception as e:
         logger.error(f"Error running query: {e}")
@@ -952,7 +969,7 @@ async def export_db_query(request: Request):
         if not sql:
             raise HTTPException(status_code=400, detail="SQL query is required")
         
-        results = db.query(sql, json_serialize=False)
+        results = await asyncio.to_thread(db.query, sql, (), False)
         if not results:
             return {"error": "No data to export"}
         

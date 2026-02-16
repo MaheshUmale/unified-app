@@ -138,9 +138,9 @@ def on_message(message: Union[Dict, str]):
 
             sym_feeds[inst_key] = feed_datum
 
-        # Throttled UI Emission
+        # Throttled UI Emission - Increased to 0.2s (5Hz) for better stability in resource-constrained environments
         now = time.time()
-        if now - last_emit_times.get('GLOBAL_TICK', 0) > 0.05:
+        if now - last_emit_times.get('GLOBAL_TICK', 0) > 0.2:
             for inst_key, feed in sym_feeds.items():
                 # Emit to specific technical symbol room
                 emit_event('raw_tick', {inst_key: feed}, room=inst_key.upper())

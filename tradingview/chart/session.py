@@ -421,12 +421,13 @@ class ChartSession:
                 # Wait for symbol resolution before creating series
                 try:
                     # Increased timeout for better reliability
-                    await asyncio.wait_for(self._symbol_resolved_event.wait(), timeout=20.0)
+                    await asyncio.wait_for(self._symbol_resolved_event.wait(), timeout=30.0)
                 except asyncio.TimeoutError:
-                    logger.warning(f"Timeout waiting for symbol resolution: {symbol}. Proceeding to set series anyway.")
+                    logger.warning(f"Timeout waiting for symbol resolution: {symbol}. Aborting series creation.")
+                    return
 
                 # Set series
-                self.set_series(
+                await self.set_series(
                     options.get('timeframe', '240'),
                     options.get('range', 100),
                     options.get('to')

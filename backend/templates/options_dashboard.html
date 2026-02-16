@@ -208,18 +208,18 @@
 
         <!-- Tabs -->
         <div class="flex gap-6 border-b border-white/10 pt-2">
-            <button class="tab-btn tab-active pb-2 text-xs uppercase tracking-wider" data-tab="chain">Chain</button>
-            <button class="tab-btn pb-2 text-xs uppercase tracking-wider" data-tab="overview">Analysis Overview</button>
+            <button class="tab-btn tab-active pb-2 text-xs uppercase tracking-wider" data-tab="overview">Analysis Overview</button>
             <button class="tab-btn pb-2 text-xs uppercase tracking-wider" data-tab="strategies">Strategies</button>
             <button class="tab-btn pb-2 text-xs uppercase tracking-wider" data-tab="alerts">Alerts</button>
             <button class="tab-btn pb-2 text-xs uppercase tracking-wider" data-tab="scalper">Scalper</button>
             <button class="tab-btn pb-2 text-xs uppercase tracking-wider" data-tab="system">System</button>
+            <button class="tab-btn pb-2 text-xs uppercase tracking-wider" data-tab="chain">Chain</button>
         </div>
 
         <!-- Tab Content -->
         <div id="tabContent">
             <!-- Option Chain Tab -->
-            <div id="chainTab" class="tab-pane">
+            <div id="chainTab" class="tab-pane hidden">
                 <div class="glass-panel rounded-xl overflow-hidden">
                     <div class="overflow-x-auto">
                         <table class="w-full text-[10px]">
@@ -254,7 +254,7 @@
             </div>
 
             <!-- Overview Tab -->
-            <div id="overviewTab" class="tab-pane hidden">
+            <div id="overviewTab" class="tab-pane">
                 <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
                     <!-- Left: Charts -->
                     <div class="lg:col-span-8 space-y-4">
@@ -530,6 +530,12 @@
     </main>
 
     <script>
+        // Global Error Handler
+        window.onerror = function(msg, url, line, col, error) {
+            console.error("[OPTIONS GLOBAL ERROR]", msg, "at", url, ":", line);
+            return false;
+        };
+
         // Global state
         let currentUnderlying = 'NSE:NIFTY';
         let socket = null;
@@ -639,15 +645,23 @@
             });
 
             socket.on('options_quote_update', (data) => {
+                handleOptionUpdate(data);
+            });
+
+            socket.on('options_batch_update', (batch) => {
+                if (Array.isArray(batch)) {
+                    batch.forEach(data => handleOptionUpdate(data));
+                }
+            });
+
+            function handleOptionUpdate(data) {
                 // Real-time quote updates for chain rows
                 if (data.underlying === currentUnderlying) {
                     // Update LTP in the table if possible
-                    const strike = data.symbol.match(/\d{5}/);
-                    if (strike) {
-                        // This would require a more complex mapping, skipping for now
-                    }
+                    // In the table, we don't have IDs for strikes, so we'd need to find the row
+                    // For now, we update the spot price if it matches underlying
                 }
-            });
+            }
 
             socket.on('options_alert', (data) => {
                 showAlert(data.message);
@@ -1202,39 +1216,47 @@
             allLevels.forEach(level => {
                 const isSup = level.type === 'SUP';
                 const color = isSup ? 'text-green-500' : 'text-red-500';
+                const strokeColor = isSup ? '#22c55e' : '#ef4444';
                 const bgColor = isSup ? 'bg-green-500/5' : 'bg-red-500/5';
                 const borderColor = isSup ? 'border-green-500/20' : 'border-red-500/20';
                 const label = level.oi > 1000000 ? '(ss)' : level.oi > 500000 ? '(s)' : '';
 
-                // Sparkline generator for Trend
+                // Sparkline generator for Trend - Improved and Styled
                 let sparkline = '';
                 if (level.oi_history && level.oi_history.length > 1) {
                     const min = Math.min(...level.oi_history);
                     const max = Math.max(...level.oi_history);
-                    const range = max - min || 1;
+                    const range = (max - min) || 1;
                     const points = level.oi_history.map((val, i) => {
-                        const x = (i / (level.oi_history.length - 1)) * 50;
-                        const y = 12 - ((val - min) / range) * 10;
+                        const x = (i / (level.oi_history.length - 1)) * 80;
+                        const y = 25 - ((val - min) / range) * 20;
                         return `${x},${y}`;
                     }).join(' ');
-                    sparkline = `<svg class="w-12 h-3 overflow-visible" viewBox="0 0 50 12"><polyline points="${points}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="${color} opacity-70"/></svg>`;
+                    // Overlay sparkline with absolute positioning
+                    sparkline = `
+                        <div class="absolute top-1 right-2 opacity-60">
+                            <svg width="60" height="25" viewBox="0 0 80 25">
+                                <polyline points="${points}" fill="none" stroke="${strokeColor}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+                            </svg>
+                        </div>
+                    `;
                 }
 
                 const div = document.createElement('div');
-                div.className = `flex justify-between items-center py-2 px-3 ${bgColor} border-l-4 ${borderColor} rounded-r mb-1.5 shadow-sm transition-all hover:translate-x-1`;
+                div.className = `relative flex justify-between items-center py-2 px-3 ${bgColor} border-l-4 ${borderColor} rounded-lg mb-1.5 shadow-sm transition-all hover:translate-x-1 h-14 overflow-hidden`;
                 div.innerHTML = `
-                    <div class="flex items-center gap-3">
+                    ${sparkline}
+                    <div class="flex items-center gap-3 z-10">
                         <div class="flex flex-col">
                             <span class="text-xs font-black ${color} tracking-tighter">${level.strike}</span>
-                            <span class="text-[7px] text-gray-500 font-black uppercase">${isSup ? 'Support' : 'Resist'}</span>
+                            <span class="text-[8px] text-gray-500 font-black uppercase opacity-60">${isSup ? 'Support' : 'Resistance'}</span>
                         </div>
                     </div>
-                    <div class="flex items-center gap-4">
+                    <div class="flex items-center gap-4 z-10">
                         <div class="flex flex-col items-end">
-                             <div class="mb-0.5">${sparkline}</div>
-                             <div class="flex items-center gap-1.5">
-                                 <span class="text-[9px] text-gray-400 font-black">${(level.oi/1000000).toFixed(2)}M</span>
-                                 <span class="text-[10px] font-black ${color}">${label}</span>
+                             <div class="flex items-center gap-1.5 mt-4">
+                                 <span class="text-xs font-black text-gray-700 dark:text-gray-300 tracking-tighter">${(level.oi/1000000).toFixed(2)}M</span>
+                                 <span class="text-xs font-black ${color}">${label}</span>
                              </div>
                         </div>
                     </div>

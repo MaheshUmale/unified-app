@@ -44,7 +44,8 @@ class EnhancedTradingViewProvider(ILiveStreamProvider, IHistoricalDataProvider):
     async def _run_client(self):
         success = await self.client.connect()
         if success:
-            logger.info("Enhanced TV Provider client connected")
+            logger.info("Enhanced TV Provider client connected. Waiting for stability...")
+            await asyncio.sleep(2.0) # Wait for connection stability
             # Re-subscribe existing
             for symbol, interval in self._subscriptions.items():
                 await self._subscribe_internal(symbol, interval)
