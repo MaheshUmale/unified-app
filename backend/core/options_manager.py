@@ -196,7 +196,7 @@ class OptionsManager:
                 
                 for ts_str in time_slots:
                     # Yield more frequently to keep API responsive
-                    await asyncio.sleep(0.2)
+                    await asyncio.sleep(0.5)
 
                     # Only skip if we already have a valid (non-zero) spot price for this slot
                     if ts_str in existing_times_with_price and existing_times_with_price[ts_str] > 0:
@@ -273,9 +273,9 @@ class OptionsManager:
         time_to_expiry = days_to_expiry / 365.0
         
         for i, (strike_str, strike_data) in enumerate(oi_data.items()):
-            # Yield occasionally to keep event loop free
-            if i % 10 == 0:
-                await asyncio.sleep(0)
+            # Yield frequently to keep event loop free
+            if i % 5 == 0:
+                await asyncio.sleep(0.01)
 
             strike = float(strike_str)
             call_sym = self.symbol_map_cache.get(underlying, {}).get(f"{strike}_call")
@@ -611,9 +611,9 @@ class OptionsManager:
             time_to_expiry = 0.03  # Default ~11 days
         
         for i, (strike_str, strike_data) in enumerate(oi_data.items()):
-            # Yield occasionally
-            if i % 10 == 0:
-                await asyncio.sleep(0)
+            # Yield frequently
+            if i % 5 == 0:
+                await asyncio.sleep(0.01)
 
             strike = float(strike_str)
             c_sym = self.symbol_map_cache.get(underlying, {}).get(f"{strike}_call")
