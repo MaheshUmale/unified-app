@@ -3,7 +3,25 @@
  * Handles Socket.IO connection and multiple TradingView Lightweight Charts instances.
  */
 
-const socket = io();
+// Global Error Handler
+window.onerror = function(msg, url, line, col, error) {
+    console.error("[PRODESK GLOBAL ERROR]", msg, "at", url, ":", line);
+    const loading = document.getElementById('loading');
+    if (loading) {
+        loading.style.backgroundColor = 'red';
+        loading.classList.remove('hidden');
+    }
+    return false;
+};
+
+const socket = io({
+    reconnectionAttempts: 5,
+    timeout: 10000
+});
+
+socket.on('connect_error', (err) => {
+    console.error("[SOCKET CONNECT ERROR]", err);
+});
 
 // --- ChartInstance Class ---
 class ChartInstance {
@@ -286,27 +304,21 @@ class ChartInstance {
             if (resData.hrn) this.hrn = resData.hrn;
             let candles = resData.candles || [];
 
-            // Filter market hours for NSE
+            // Filter market hours for NSE - Temporarily disabled for debugging
+            /*
             if (candles.length > 0 && this.symbol.startsWith('NSE:') && !['D', 'W'].includes(this.interval)) {
-                const todayIST = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', year: 'numeric', month: 'numeric', day: 'numeric' }).format(new Date());
-                candles = candles.filter(c => {
-                    const ts = typeof c.timestamp === 'number' ? c.timestamp : Math.floor(new Date(c.timestamp).getTime() / 1000);
-                    const date = new Date(ts * 1000);
-                    const dateIST = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', year: 'numeric', month: 'numeric', day: 'numeric' }).format(date);
-                    if (dateIST !== todayIST) return true;
-                    const istTime = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: 'numeric', hourCycle: 'h23' }).format(date);
-                    const [h, m] = istTime.split(':').map(Number);
-                    const mins = h * 60 + m;
-                    return mins >= 555 && mins <= 930;
-                });
+                // ...
             }
+            */
 
             if (candles.length > 0) {
+                console.log(`[PRODESK] Received ${candles.length} raw candles for ${this.symbol}`);
                 const chartData = candles.map(c => ({
                     time: typeof c.timestamp === 'number' ? c.timestamp : Math.floor(new Date(c.timestamp).getTime() / 1000),
                     open: Number(c.open), high: Number(c.high), low: Number(c.low), close: Number(c.close), volume: Number(c.volume)
                 })).filter(c => !isNaN(c.open) && c.open > 0).sort((a, b) => a.time - b.time);
 
+                console.log(`[PRODESK] Processed ${chartData.length} valid candles for ${this.symbol}`);
                 chartData.forEach(c => this.fullHistory.candles.set(c.time, c));
                 this.lastCandle = chartData[chartData.length - 1];
 
@@ -324,6 +336,8 @@ class ChartInstance {
                 const lastIdx = chartData.length - 1;
                 if (!isNaN(lastIdx) && lastIdx >= 0) {
                     this.chart.timeScale().setVisibleLogicalRange({ from: lastIdx - 100, to: lastIdx + 10 });
+                    // Ensure content is visible
+                    setTimeout(() => this.chart.timeScale().fitContent(), 100);
                 }
             }
 
@@ -352,8 +366,12 @@ class ChartInstance {
     }
 
     renderData() {
-        if (this.fullHistory.candles.size === 0) return;
+        if (this.fullHistory.candles.size === 0) {
+            console.warn(`[PRODESK] No candles to render for ${this.symbol}`);
+            return;
+        }
         let displayCandles = Array.from(this.fullHistory.candles.values()).sort((a, b) => a.time - b.time);
+        console.log(`[PRODESK] Rendering ${displayCandles.length} candles for ${this.symbol}`);
         if (!displayCandles.some(c => c.hasExplicitColor)) {
             displayCandles = applyRvolColoring(displayCandles);
         }
@@ -378,6 +396,7 @@ class ChartInstance {
 
     updateRealtimeCandle(quote) {
         if (!this.mainSeries || this.isReplayMode) return;
+        console.debug(`[PRODESK] Tick for ${this.symbol}: ${quote.last_price}`);
         const intervalMap = { '1': 60, '5': 300, '15': 900, '30': 1800, '60': 3600, 'D': 86400 };
         const duration = intervalMap[this.interval] || 60;
         const tickTime = Math.floor(quote.ts_ms / 1000);
@@ -748,6 +767,23 @@ let currentLayout = 1;
 let showAnalysisSidebar = false;
 
 function init() {
+    console.log("[PRODESK] Initializing UI...");
+
+    if (typeof LightweightCharts === 'undefined') {
+        console.error("[PRODESK] LightweightCharts is NOT loaded!");
+        document.body.insertAdjacentHTML('afterbegin', `
+            <div class="fixed inset-0 z-[9999] bg-red-900/90 flex items-center justify-center p-10 text-white text-center backdrop-blur-md">
+                <div class="max-w-md">
+                    <h1 class="text-2xl font-black mb-4">CHARTING ENGINE ERROR</h1>
+                    <p class="font-bold opacity-80">The TradingView Lightweight Charts library could not be loaded from the CDN.</p>
+                    <p class="mt-4 text-xs opacity-60">Check your internet connection or firewall settings.</p>
+                    <button onclick="window.location.reload()" class="mt-8 px-6 py-2 bg-white text-red-900 font-black rounded-full">RETRY</button>
+                </div>
+            </div>
+        `);
+        return;
+    }
+
     loadLayout();
     initLayoutSelector();
     initFullscreen();

@@ -31,6 +31,7 @@ class TradingViewWSS:
         self.history = {} # (symbol, interval) -> data
         self.ohlcv_map = {} # (symbol, interval) -> {timestamp: candle}
         self.indicator_metadata = {}
+        self.last_indicator_calc = {} # (symbol, interval) -> timestamp
         self.stop_event = threading.Event()
         self.thread = None
 
@@ -163,7 +164,9 @@ class TradingViewWSS:
         payloads = [p for p in re.split(r"~m~\d+~m~", message) if p]
         for msg in payloads:
             if msg.startswith("~h~"):
-                try: ws.send(msg)
+                try:
+                    # Standard TradingView heartbeat response (unwrapped)
+                    ws.send(msg)
                 except: pass
                 continue
             try:
@@ -212,6 +215,10 @@ class TradingViewWSS:
         symbol = meta['symbol']
         interval = meta['interval']
         hist_key = (symbol, interval)
+
+        # Throttle indicator calculation to once per second
+        now = time.time()
+        should_calc_indicators = now - self.last_indicator_calc.get(hist_key, 0) > 1.0
         # Use full technical symbol as instrumentKey
         update_msg = {'type': 'chart_update', 'instrumentKey': symbol, 'interval': interval, 'data': {}}
 
@@ -247,7 +254,8 @@ class TradingViewWSS:
                 update_msg['data']['ohlcv'] = full_ohlcv if len(candles) > 10 else candles
 
         # Recalculate indicators from history
-        if hist_key in self.history and 'ohlcv' in self.history[hist_key]:
+        if should_calc_indicators and hist_key in self.history and 'ohlcv' in self.history[hist_key]:
+            self.last_indicator_calc[hist_key] = now
             ohlcv_data = self.history[hist_key]['ohlcv']
             indicators = []
             try:

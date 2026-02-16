@@ -111,6 +111,7 @@ class OptionsWSS(ILiveStreamProvider):
 
     def on_message(self, ws, message):
         if message.startswith("~h~"):
+            # Standard TradingView heartbeat response (unwrapped)
             ws.send(message)
             return
 

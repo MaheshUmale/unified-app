@@ -30,6 +30,7 @@ class DataStreamer:
         self.cum_vol = {'underlying': 0, 'atm_call': 0, 'atm_put': 0}
         self.cum_pv = {'underlying': 0, 'atm_call': 0, 'atm_put': 0}
         self.vwap = {'underlying': 0, 'atm_call': 0, 'atm_put': 0}
+        self.last_analysis_time = 0
 
     def on_tick(self, instrument_key, tick_data):
         target = self.instrument_map.get(instrument_key)
@@ -73,13 +74,25 @@ class DataStreamer:
         # Update levels
         if target == 'underlying':
             self.scalper.engine.find_levels(new_df, 'underlying')
-            # Market Psychology Analysis
-            try:
-                zones, signals = self.scalper.psych_analyzer.analyze(candle_data['ohlcv'])
-                self.scalper.psych_data['zones'] = zones
-                self.scalper.psych_data['signals'] = signals
-            except Exception as e:
-                logger.error(f"Psychology analysis error: {e}")
+
+            # Throttle psychology analysis to once per second
+            now = time.time()
+            if now - self.last_analysis_time > 1.0:
+                self.last_analysis_time = now
+                # Market Psychology Analysis
+                try:
+                    # Offload psychology analysis to a thread to avoid blocking the event loop
+                    def run_analysis():
+                        zones, signals = self.scalper.psych_analyzer.analyze(candle_data['ohlcv'])
+                        self.scalper.psych_data['zones'] = zones
+                        self.scalper.psych_data['signals'] = signals
+
+                    if self.scalper.loop:
+                        asyncio.run_coroutine_threadsafe(asyncio.to_thread(run_analysis), self.scalper.loop)
+                    else:
+                        run_analysis()
+                except Exception as e:
+                    logger.error(f"Psychology analysis error: {e}")
         else:
             self.scalper.engine.update_option_levels(instrument_key, new_df)
 
@@ -588,8 +601,9 @@ class NSEConfluenceScalper:
     async def _main_loop(self):
         while self.is_running:
             try:
-                self.signal_generator.check_signals()
-                self.order_manager.manage_risk()
+                # Offload heavy synchronous processing to a thread
+                await asyncio.to_thread(self.signal_generator.check_signals)
+                await asyncio.to_thread(self.order_manager.manage_risk)
             except Exception as e: logger.error(f"Scalper Loop Error: {e}")
             await asyncio.sleep(0.5)
 
