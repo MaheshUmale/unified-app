@@ -98,11 +98,11 @@ Start the application from the project root:
 python3 backend/api_server.py
 ```
 
-- **Main Terminal**: `http://localhost:5051/`
-- **Options Dashboard**: `http://localhost:5051/options`
-- **Tick Chart**: `http://localhost:5051/tick`
-- **Renko Chart**: `http://localhost:5051/renko`
-- **DB Viewer**: `http://localhost:5051/db-viewer`
+- **Main Terminal**: `http://localhost:3000/`
+- **Options Dashboard**: `http://localhost:3000/options`
+- **Tick Chart**: `http://localhost:3000/tick`
+- **Renko Chart**: `http://localhost:3000/renko`
+- **DB Viewer**: `http://localhost:3000/db-viewer`
 
 ## User Guide
 

@@ -101,16 +101,16 @@ This PR introduces comprehensive enhancements to the NSE Options Trading App, ad
 python backend/api_server.py
 
 # Test Greeks calculation
-curl "http://localhost:5051/api/options/greeks/NSE:NIFTY?strike=25000&option_type=call&spot_price=24800"
+curl "http://localhost:3000/api/options/greeks/NSE:NIFTY?strike=25000&option_type=call&spot_price=24800"
 
 # Test IV analysis
-curl "http://localhost:5051/api/options/iv-analysis/NSE:NIFTY"
+curl "http://localhost:3000/api/options/iv-analysis/NSE:NIFTY"
 
 # Test OI buildup
-curl "http://localhost:5051/api/options/oi-buildup/NSE:NIFTY"
+curl "http://localhost:3000/api/options/oi-buildup/NSE:NIFTY"
 
 # Create strategy
-curl -X POST "http://localhost:5051/api/strategy/bull-call-spread" \
+curl -X POST "http://localhost:3000/api/strategy/bull-call-spread" \
   -H "Content-Type: application/json" \
   -d '{"underlying":"NSE:NIFTY","spot_price":25000,"lower_strike":24800,"higher_strike":25200,"lower_premium":150,"higher_premium":50,"expiry":"2024-02-29"}'
 ```
