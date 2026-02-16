@@ -14,8 +14,7 @@ import pandas as pd
 from config import OPTIONS_UNDERLYINGS, SNAPSHOT_CONFIG
 from db.local_db import db
 from core.interfaces import ILiveStreamProvider
-from core.provider_registry import options_data_registry, historical_data_registry
-from external.tv_options_wss import OptionsWSS
+from core.provider_registry import options_data_registry, historical_data_registry, live_stream_registry
 
 # Import new modules
 from core.greeks_calculator import greeks_calculator
@@ -107,13 +106,23 @@ class OptionsManager:
         
         self._task = asyncio.create_task(self._snapshot_loop())
         
-        # Start WSS for active underlyings in background
-        async def start_all_wss():
-            for underlying in self.active_underlyings:
-                self.start_wss(underlying)
-                await asyncio.sleep(0.1)
+        # Use shared provider for options data
+        async def start_shared_wss():
+            provider = live_stream_registry.get_primary()
+            if provider:
+                provider.set_callback(self._on_shared_wss_data)
+                provider.start()
 
-        asyncio.create_task(start_all_wss())
+                for underlying in self.active_underlyings:
+                    # Initial symbol fetch and subscription
+                    await self._refresh_wss_symbols(underlying)
+                    symbols = list(self.symbol_map_cache.get(underlying, {}).values())
+                    if symbols:
+                        logger.info(f"Subscribing to {len(symbols)} option symbols for {underlying}")
+                        provider.subscribe(symbols[:400])
+                    await asyncio.sleep(0.5)
+
+        asyncio.create_task(start_shared_wss())
         
         # Create preset alerts
         for underlying in self.active_underlyings:
@@ -371,17 +380,33 @@ class OptionsManager:
         
         logger.info("Options management stopped")
     
-    def start_wss(self, underlying: str):
-        if underlying in self.wss_clients:
+    def _on_shared_wss_data(self, data: Any):
+        """Unified callback for all option data from shared WSS."""
+        if data.get('type') != 'live_feed':
             return
-        
-        def on_data(data):
-            self.handle_wss_data(underlying, data)
-        
-        wss = OptionsWSS(underlying, on_data)
-        wss.start()
-        self.wss_clients[underlying] = wss
-    
+
+        feeds = data.get('feeds', {})
+        for symbol, feed in feeds.items():
+            # Find which underlying this symbol belongs to
+            underlying = self._find_underlying_for_symbol(symbol)
+            if underlying:
+                self.handle_wss_data(underlying, feed)
+
+    def _find_underlying_for_symbol(self, symbol: str) -> Optional[str]:
+        """Maps an option symbol back to its underlying."""
+        for underlying, symbol_map in self.symbol_map_cache.items():
+            if symbol in symbol_map.values():
+                return underlying
+        return None
+
+    def start_wss(self, underlying: str):
+        """Maintained for backward compatibility but now uses shared provider."""
+        provider = live_stream_registry.get_primary()
+        if provider:
+            symbols = list(self.symbol_map_cache.get(underlying, {}).values())
+            if symbols:
+                provider.subscribe(symbols[:400])
+
     def handle_wss_data(self, underlying: str, data: Any):
         symbol = data.get('symbol')
         if not symbol:
@@ -401,11 +426,15 @@ class OptionsManager:
             if underlying not in self.emit_buffers:
                 self.emit_buffers[underlying] = {}
 
+            # Use data.get('lp') or data.get('last_price')
+            price = data.get('lp') or data.get('last_price')
+            vol = data.get('volume') or data.get('tv_volume')
+
             self.emit_buffers[underlying][symbol] = {
                 'underlying': underlying,
                 'symbol': symbol,
-                'lp': data.get('lp'),
-                'volume': data.get('volume'),
+                'lp': price,
+                'volume': vol,
                 'bid': data.get('bid'),
                 'ask': data.get('ask')
             }
@@ -818,13 +847,15 @@ class OptionsManager:
             await self._calculate_pcr(underlying, timestamp, rows, spot_price)
             logger.info(f"Saved TV snapshot for {underlying} with {len(rows)} rows")
             
-            if underlying in self.wss_clients:
+            # Subscribe to discovered symbols via primary provider
+            provider = live_stream_registry.get_primary()
+            if provider:
                 atm_strike = sum(r['strike'] for r in rows) / len(rows) if rows else 0
                 filtered_symbols = [
                     r['symbol'] for r in rows
                     if r['symbol'] and (atm_strike == 0 or abs(r['strike'] - atm_strike) / atm_strike < 0.05)
                 ]
-                self.wss_clients[underlying].add_symbols(filtered_symbols[:400])
+                provider.subscribe(filtered_symbols[:400])
     
     async def _refresh_wss_symbols(self, underlying: str):
         provider = options_data_registry.get_primary()
@@ -858,8 +889,10 @@ class OptionsManager:
                 all_symbols.append(symbol)
                 self.symbol_map_cache[underlying][f"{strike}_{opt_type}"] = symbol
 
-        if all_symbols and underlying in self.wss_clients:
-            self.wss_clients[underlying].add_symbols(list(set(all_symbols))[:400])
+        if all_symbols:
+            provider = live_stream_registry.get_primary()
+            if provider:
+                provider.subscribe(list(set(all_symbols))[:400])
     
     async def _calculate_pcr(self, underlying, timestamp, rows, spot_price=0):
         """Calculate PCR with enhanced metrics."""

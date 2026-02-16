@@ -148,8 +148,8 @@ def on_message(message: Union[Dict, str]):
 
         with buffer_lock:
             tick_buffer.extend(list(sym_feeds.values()))
-            if len(tick_buffer) >= TICK_BATCH_SIZE:
-                threading.Thread(target=flush_tick_buffer, daemon=True).start()
+            # Removed per-batch thread creation to reduce overhead.
+            # Relying on periodic_flush (every 10s) and manual flushes if needed.
     except Exception as e:
         logger.error(f"Error in data_engine on_message: {e}")
 

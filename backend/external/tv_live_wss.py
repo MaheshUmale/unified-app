@@ -14,7 +14,9 @@ logger = logging.getLogger(__name__)
 
 class TradingViewWSS:
     def __init__(self, on_message_callback):
-        self.callback = on_message_callback
+        self.callbacks = set()
+        if on_message_callback:
+            self.callbacks.add(on_message_callback)
         self.ws = None
         self.session = self._generate_session()
         self.quote_session = self._generate_session("qs_")
@@ -49,7 +51,9 @@ class TradingViewWSS:
             logger.error(f"Error sending message to TV WSS: {e}")
 
     def subscribe(self, symbols, interval="1"):
-        symbols = [s.upper() for s in symbols]
+        if not symbols: return
+        # Filter out None and non-string symbols
+        symbols = [s.upper() for s in symbols if isinstance(s, str)]
         new_symbols = [s for s in symbols if s not in self.symbols]
         self.symbols.extend(new_symbols)
         if self.ws and self.ws.sock and self.ws.sock.connected:
@@ -157,7 +161,8 @@ class TradingViewWSS:
         self._send_message("set_auth_token", [token])
         self._send_message("set_locale", ["en", "US"])
         self._send_message("quote_create_session", [self.quote_session])
-        self._send_message("quote_set_fields", [self.quote_session, "lp", "lp_time", "volume"])
+        # Standard quote fields for both indices and options
+        self._send_message("quote_set_fields", [self.quote_session, "lp", "lp_time", "volume", "ask", "bid", "open_interest"])
 
     def on_message(self, ws, message):
         if isinstance(message, bytes): message = message.decode('utf-8')
@@ -165,9 +170,8 @@ class TradingViewWSS:
         for msg in payloads:
             if msg.startswith("~h~"):
                 try:
-                    # Send wrapped heartbeat response
-                    wrapped = f"~m~{len(msg)}~m~{msg}"
-                    ws.send(wrapped)
+                    # Standard TradingView heartbeat response (unwrapped)
+                    ws.send(msg)
                 except: pass
                 continue
             try:
@@ -187,6 +191,8 @@ class TradingViewWSS:
         symbol = quote_data["n"]
         clean_symbol = symbol[1:] if symbol.startswith('=') else symbol
         values = quote_data.get("v", {})
+
+        # Update persistent state
         if 'lp' in values: self.last_prices[clean_symbol] = values['lp']
         if 'lp_time' in values: self.last_times[clean_symbol] = values['lp_time']
         if 'volume' in values: self.last_volumes[clean_symbol] = float(values['volume'])
@@ -194,20 +200,35 @@ class TradingViewWSS:
         price = self.last_prices.get(clean_symbol)
         if price is not None:
             ts_ms = int(self.last_times.get(clean_symbol, time.time()) * 1000)
+
+            # Extract bid/ask for options support
+            bid = values.get('bid')
+            ask = values.get('ask')
+            oi = values.get('open_interest')
+
             # Use full technical symbol for feeds to avoid mixups
             feed_msg = {
                 'type': 'live_feed',
                 'feeds': {
                     clean_symbol: {
+                        'symbol': clean_symbol,
                         'last_price': float(price),
+                        'lp': float(price),
                         'ts_ms': ts_ms,
                         'tv_volume': self.last_volumes.get(clean_symbol),
-                        'oi': float(values.get('open_interest', 0)),
+                        'volume': self.last_volumes.get(clean_symbol),
+                        'oi': float(oi) if oi is not None else 0,
+                        'bid': float(bid) if bid is not None else None,
+                        'ask': float(ask) if ask is not None else None,
                         'source': 'tradingview_wss'
                     }
                 }
             }
-            self.callback(feed_msg)
+            for cb in list(self.callbacks):
+                try:
+                    cb(feed_msg)
+                except Exception as e:
+                    logger.error(f"Error in TV WSS quote callback: {e}")
 
     def _handle_chart_update(self, session_id, chart_data):
         meta = self.chart_sessions.get(session_id)
@@ -321,14 +342,59 @@ class TradingViewWSS:
                 logger.error(f"Error calculating indicators live: {e}")
 
         if update_msg['data']:
-            self.callback(update_msg)
+            for cb in list(self.callbacks):
+                try:
+                    cb(update_msg)
+                except Exception as e:
+                    logger.error(f"Error in TV WSS update callback: {e}")
 
     def start(self):
+        if self.thread and self.thread.is_alive():
+            logger.info("TV WSS thread already running.")
+            return
+
         self.stop_event.clear()
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", "Origin": "https://www.tradingview.com"}
-        self.ws = websocket.WebSocketApp("wss://data.tradingview.com/socket.io/websocket?type=chart", header=headers, on_open=self.on_open, on_message=self.on_message, on_error=lambda ws,e: logger.error(f"TV WSS Error: {e}"), on_close=lambda ws,sc,msg: logger.info(f"TV WSS Closed: {sc} {msg}"))
-        self.thread = threading.Thread(target=self.ws.run_forever, kwargs={"skip_utf8_validation": True, "ping_interval": 20, "ping_timeout": 10}, daemon=True)
+        self.thread = threading.Thread(target=self._run_loop, daemon=True)
         self.thread.start()
+
+    def _run_loop(self):
+        """Managed connection loop with reconnection logic."""
+        retry_delay = 1
+        max_delay = 30
+
+        while not self.stop_event.is_set():
+            try:
+                headers = {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                    "Origin": "https://www.tradingview.com"
+                }
+
+                self.ws = websocket.WebSocketApp(
+                    "wss://data.tradingview.com/socket.io/websocket?type=chart",
+                    header=headers,
+                    on_open=self.on_open,
+                    on_message=self.on_message,
+                    on_error=lambda ws, e: logger.error(f"TV WSS Error: {e}"),
+                    on_close=lambda ws, sc, msg: logger.info(f"TV WSS Closed: {sc} {msg}")
+                )
+
+                self.ws.run_forever(
+                    skip_utf8_validation=True,
+                    ping_interval=20,
+                    ping_timeout=10
+                )
+
+                # If we get here, connection was closed
+                if self.stop_event.is_set():
+                    break
+
+                logger.info(f"TV WSS connection lost. Reconnecting in {retry_delay}s...")
+                time.sleep(retry_delay)
+                retry_delay = min(retry_delay * 2, max_delay)
+
+            except Exception as e:
+                logger.error(f"Critical error in TV WSS run loop: {e}")
+                time.sleep(5)
 
     def stop(self):
         self.stop_event.set()
@@ -341,5 +407,8 @@ def start_tv_wss(on_message_callback, symbols=None):
         tv_wss = TradingViewWSS(on_message_callback)
         if symbols: tv_wss.subscribe(symbols)
         tv_wss.start()
+    else:
+        if on_message_callback:
+            tv_wss.callbacks.add(on_message_callback)
     return tv_wss
 def get_tv_wss(): return tv_wss

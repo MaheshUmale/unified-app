@@ -54,9 +54,12 @@ def parse_ws_packet(data: str) -> List[Any]:
 def format_ws_packet(packet: Any) -> str:
     """
     Format data packet for TradingView WebSocket.
-    All packets (including heartbeats) are wrapped in ~m~LEN~m~.
     """
     try:
+        # TradingView heartbeats (~h~) should usually NOT be wrapped in ~m~LEN~m~
+        if isinstance(packet, str) and packet.startswith('~h~'):
+            return packet
+
         if isinstance(packet, dict):
             msg = json.dumps(packet, separators=(',', ':'))
         else:

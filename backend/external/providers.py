@@ -14,7 +14,9 @@ class TradingViewLiveStreamProvider(ILiveStreamProvider):
     """TradingView WebSocket Implementation."""
     def __init__(self, callback: Callable = None):
         self.wss = TradingViewWSS(callback)
-        self.callback = callback
+        self.callbacks = set()
+        if callback:
+            self.callbacks.add(callback)
 
     def subscribe(self, symbols: List[str], interval: str = "1"):
         self.wss.subscribe(symbols, interval)
@@ -23,8 +25,8 @@ class TradingViewLiveStreamProvider(ILiveStreamProvider):
         self.wss.unsubscribe(symbol, interval)
 
     def set_callback(self, callback: Callable):
-        self.callback = callback
-        self.wss.callback = callback
+        self.callbacks.add(callback)
+        self.wss.callbacks.add(callback)
 
     def start(self):
         self.wss.start()
@@ -123,4 +125,4 @@ class NSEOptionsProvider(IOptionsDataProvider):
 class TradingViewHistoricalProvider(IHistoricalDataProvider):
     """TradingView Historical Data Implementation."""
     async def get_hist_candles(self, symbol: str, interval: str, count: int) -> List[List]:
-        return await asyncio.to_thread(tv_api.get_hist_candles, symbol, interval, count)
+        return await tv_api.get_hist_candles(symbol, interval, count)

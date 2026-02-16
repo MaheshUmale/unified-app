@@ -259,7 +259,7 @@ async def get_intraday(instrument_key: str, interval: str = '1'):
         clean_key = unquote(instrument_key)
         hrn = symbol_mapper.get_hrn(clean_key)
         
-        tv_candles = await asyncio.to_thread(tv_api.get_hist_candles, clean_key, interval, 1000)
+        tv_candles = await tv_api.get_hist_candles(clean_key, interval, 1000)
         
         valid_indicators = []
         if tv_candles:

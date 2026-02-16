@@ -49,6 +49,7 @@ class ChartSession:
 
         # Initialize data
         self._periods = {}
+        self._cached_periods = None
         self._infos = {}
         self._indexes = {}
         self._timezone = 'Etc/UTC'
@@ -148,6 +149,8 @@ class ChartSession:
                                             'low': p['v'][3],   # Alias
                                             'volume': round(p['v'][5] * 100) / 100 if len(p['v']) > 5 else 0,
                                         }
+                                        # Invalidate cache on update
+                                        self._cached_periods = None
 
                             continue
 
@@ -274,7 +277,10 @@ class ChartSession:
 
     @property
     def periods(self):
-        """Get all K-line periods, sorted descending by time"""
+        """Get all K-line periods, sorted descending by time (cached)"""
+        if self._cached_periods is not None:
+            return self._cached_periods
+
         from types import SimpleNamespace
 
         # Get sorted period data
@@ -300,7 +306,38 @@ class ChartSession:
 
             periods_list.append(period)
 
+        self._cached_periods = periods_list
         return periods_list
+
+    @property
+    def last_period(self):
+        """Get the latest K-line period without sorting the entire list"""
+        if self._cached_periods:
+            return self._cached_periods[0]
+
+        if not self._periods:
+            return None
+
+        # Efficiently find max time
+        latest_ts = max(self._periods.keys())
+        period_data = self._periods[latest_ts]
+
+        from types import SimpleNamespace
+        period = SimpleNamespace()
+        period.time = period_data['time']
+        period.open = period_data['open']
+        period.high = period_data['high']
+        period.max = period_data['high']
+        period.low = period_data['low']
+        period.min = period_data['low']
+        period.close = period_data['close']
+        period.volume = period_data['volume']
+
+        for key, value in period_data.items():
+            if key not in ['time', 'open', 'high', 'low', 'close', 'volume']:
+                setattr(period, key, value)
+
+        return period
 
     @property
     def infos(self):
