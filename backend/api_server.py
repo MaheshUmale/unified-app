@@ -885,6 +885,8 @@ async def resume_alert(alert_id: str):
 @fastapi_app.get("/api/ticks/history/{instrument_key}")
 async def get_tick_history(instrument_key: str, limit: int = 10000):
     """Fetches last N ticks for an instrument."""
+    import time
+    start_ts = time.time()
     try:
         clean_key = unquote(instrument_key)
         logger.info(f"Fetching tick history for {clean_key} (limit: {limit})")
@@ -897,10 +899,11 @@ async def get_tick_history(instrument_key: str, limit: int = 10000):
             json_serialize=True
         )
 
-        logger.info(f"Retrieved {len(history)} ticks for {clean_key}")
+        elapsed = time.time() - start_ts
+        logger.info(f"Retrieved {len(history)} ticks for {clean_key} in {elapsed:.4f}s")
 
         # Return in ascending order for the chart
-        return {"history": history[::-1]}
+        return {"history": history[::-1], "elapsed": elapsed}
     except Exception as e:
         logger.error(f"Error fetching tick history for {instrument_key}: {e}")
         return {"history": []}
