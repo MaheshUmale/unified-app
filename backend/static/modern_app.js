@@ -119,7 +119,7 @@ async function loadAllData() {
     updatePositionsTable([]);
 
     try {
-        const fetchWithTimeout = async (url, timeout = 4000) => {
+        const fetchWithTimeout = async (url, timeout = 5000) => {
             const controller = new AbortController();
             const id = setTimeout(() => controller.abort(), timeout);
             try {
@@ -134,29 +134,37 @@ async function loadAllData() {
             }
         };
 
-        const endpoints = [
-            `/api/options/pcr-trend/${encodeURIComponent(currentUnderlying)}`,
-            `/api/options/oi-analysis/${encodeURIComponent(currentUnderlying)}`,
-            `/api/options/genie-insights/${encodeURIComponent(currentUnderlying)}`,
-            `/api/options/support-resistance/${encodeURIComponent(currentUnderlying)}`,
-            '/api/scalper/status'
-        ];
+        console.log("Fetching consolidated data...");
+        const data = await fetchWithTimeout(`/api/modern/data/${encodeURIComponent(currentUnderlying)}`);
 
-        console.log("Fetching real data endpoints (with 4s timeout)...");
-        const results = await Promise.allSettled(endpoints.map(ep => fetchWithTimeout(ep)));
-        const [pcrRes, oiRes, genieRes, srRes, scalperRes] = results.map(r => r.status === 'fulfilled' ? r.value : null);
+        if (data && !data.error) {
+            // Update with real data
+            if (data.pcr_trend && data.pcr_trend.length > 0) {
+                updatePCRGauge({ history: data.pcr_trend });
+                updateOIDivergenceChart({ history: data.pcr_trend });
+            }
 
-        // Update with real data ONLY if they are valid, else keep simulation data
-        if (pcrRes && pcrRes.history && pcrRes.history.length > 0) {
-             const hasSpot = pcrRes.history.some(h => (h.spot_price || h.underlying_price) > 0);
-             if (hasSpot) {
-                updatePCRGauge(pcrRes);
-                updateOIDivergenceChart(pcrRes);
-             }
+            // Map OI data for the chart
+            if (data.oi_buildup && data.oi_buildup.strikes) {
+                const oiFormatted = { data: data.oi_buildup.strikes.map(s => ({
+                    strike: s.strike,
+                    call_oi: s.call_oi,
+                    put_oi: s.put_oi
+                }))};
+                updateOIStrikeChart(oiFormatted);
+            }
+
+            if (data.genie) updateGenieData(data.genie);
+            if (data.sr_levels) renderLiquidityHeatmap(data.sr_levels);
+
+            if (data.spot_price) {
+                spotPrice = data.spot_price;
+                document.getElementById('spotPrice').textContent = spotPrice.toLocaleString(undefined, { minimumFractionDigits: 2 });
+            }
         }
-        if (oiRes && oiRes.data && oiRes.data.length > 0) updateOIStrikeChart(oiRes);
-        if (genieRes && genieRes.max_pain) updateGenieData(genieRes);
-        if (srRes && srRes.resistance_levels && srRes.resistance_levels.length > 0) renderLiquidityHeatmap(srRes);
+
+        // Still need scalper status separately as it's more dynamic
+        const scalperRes = await fetchWithTimeout('/api/scalper/status');
         if (scalperRes && scalperRes.active_trades) updatePositionsTable(scalperRes.active_trades);
 
         console.log("Triggering Chart Data load...");
@@ -852,9 +860,22 @@ socket.on('chart_update', (data) => {
 });
 
 socket.on('options_quote_update', (data) => {
-    // Update options chart if it matches selected option
+    // Update options chart live
+    if (data && data.ohlcv && data.ohlcv.length > 0) {
+        const candle = data.ohlcv[0];
+        const formatted = {
+            time: candle[0],
+            open: candle[1],
+            high: candle[2],
+            low: candle[3],
+            close: candle[4]
+        };
+        charts.optionCandles.update(formatted);
+    }
 });
 
 socket.on('scalper_metrics', (data) => {
-    // Update dashboard metrics
+    if (data.active_trades) {
+        updatePositionsTable(data.active_trades);
+    }
 });

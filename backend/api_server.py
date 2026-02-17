@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
 from urllib.parse import unquote
 
-from config import LOGGING_CONFIG, INITIAL_INSTRUMENTS
+from config import LOGGING_CONFIG, INITIAL_INSTRUMENTS, SERVER_PORT
 from core import data_engine
 from core.provider_registry import initialize_default_providers
 from core.options_manager import options_manager
@@ -1037,5 +1037,5 @@ app = socketio.ASGIApp(sio, fastapi_app)
 if __name__ == "__main__":
     import uvicorn
     # Use port 3000 for live preview
-    port = int(os.getenv("PORT", 3000))
+    port = int(os.getenv("PORT", SERVER_PORT))
     uvicorn.run("api_server:app", host="0.0.0.0", port=port, reload=False)

@@ -7,7 +7,7 @@ from typing import List, Dict, Any
 
 # Server Configuration
 SERVER_HOST = os.getenv("SERVER_HOST", "0.0.0.0")
-SERVER_PORT = int(os.getenv("SERVER_PORT", "5051"))
+SERVER_PORT = int(os.getenv("SERVER_PORT", "3000"))
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 
 # Logging Configuration
