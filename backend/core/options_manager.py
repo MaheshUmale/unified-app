@@ -849,7 +849,17 @@ class OptionsManager:
         self.iv_history[underlying] = self.iv_history[underlying][-252:]
     
     # New API methods for enhanced features
-    
+
+    async def get_expiry_dates(self, underlying: str) -> List[str]:
+        """Fetch available expiry dates for an underlying."""
+        provider = options_data_registry.get_primary()
+        if provider:
+            try:
+                return await provider.get_expiry_dates(underlying)
+            except Exception as e:
+                logger.error(f"Error fetching expiries for {underlying}: {e}")
+        return []
+
     def get_chain_with_greeks(self, underlying: str) -> Dict[str, Any]:
         """Get option chain with Greeks calculated."""
         latest_ts_res = db.query(
