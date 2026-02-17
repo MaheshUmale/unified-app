@@ -88,8 +88,9 @@ class TickAggregator {
         this.currentCandle = null;
     }
 
-    processTick(tick) {
-        const price = Number(tick.price);
+    processTick(tick, deferAnalytics = false) {
+        // Round price to 0.05 step for efficiency
+        const price = Math.round(Number(tick.price) / 0.05) * 0.05;
         const qty = Number(tick.qty || 0);
         let ts = Math.floor(tick.ts_ms / 1000);
 
@@ -112,7 +113,7 @@ class TickAggregator {
                 volume: qty, delta: delta, cvd: this.cvd,
                 footprint: {}
             };
-            this.updateFootprint(this.currentCandle, price, side, qty);
+            this.updateFootprint(this.currentCandle, price, side, qty, deferAnalytics);
             this.currentTickCount = 1;
             return { type: 'new', candle: this.currentCandle };
         } else {
@@ -122,24 +123,30 @@ class TickAggregator {
             this.currentCandle.volume += qty;
             this.currentCandle.delta += delta;
             this.currentCandle.cvd = this.cvd;
-            this.updateFootprint(this.currentCandle, price, side, qty);
+            this.updateFootprint(this.currentCandle, price, side, qty, deferAnalytics);
             this.currentTickCount++;
             return { type: 'update', candle: this.currentCandle };
         }
     }
 
-    updateFootprint(candle, price, side, qty) {
+    updateFootprint(candle, price, side, qty, deferAnalytics = false) {
         if (!candle.footprint[price]) {
             candle.footprint[price] = { buy: 0, sell: 0 };
         }
         if (side === 1) candle.footprint[price].buy += qty;
         else candle.footprint[price].sell += qty;
 
+        if (deferAnalytics) return;
+        this.calculateAnalytics(candle);
+    }
+
+    calculateAnalytics(candle) {
         const priceLevels = Object.keys(candle.footprint).map(Number).sort((a,b) => a-b);
+        if (priceLevels.length === 0) return;
 
         let maxVol = 0;
         let totalVol = 0;
-        let poc = candle.open;
+        let poc = priceLevels[0];
         for (let p of priceLevels) {
             let vol = candle.footprint[p].buy + candle.footprint[p].sell;
             totalVol += vol;
@@ -447,27 +454,33 @@ async function loadHistory() {
         aggregator.currentCandle = null;
         aggregator.currentTickCount = 0;
 
-        ticks.forEach(t => {
-            const result = aggregator.processTick(t);
-            if (result.type === 'new') candles.push({ ...result.candle });
-            else if (candles.length > 0) candles[candles.length - 1] = { ...result.candle };
+        ticks.forEach((t, idx) => {
+            // Defer heavy analytics during bulk load
+            const result = aggregator.processTick(t, true);
+            if (result.type === 'new') {
+                if (candles.length > 0) aggregator.calculateAnalytics(candles[candles.length - 1]);
+                candles.push({ ...result.candle });
+            } else if (candles.length > 0) {
+                candles[candles.length - 1] = { ...result.candle };
+            }
         });
+
+        // Ensure the last candle gets its analytics calculated
+        if (candles.length > 0) aggregator.calculateAnalytics(candles[candles.length - 1]);
 
         charts.candles.setData(candles);
         charts.cvdSeries.setData(candles.map(c => ({ time: c.time, value: c.cvd })));
         aggregatedCandles = candles;
 
-        // Force an initial zoom to show the footprint if data is present
         if (candles.length > 0) {
             charts.main.timeScale().applyOptions({ barSpacing: 60 });
+            updatePriceUI(candles[candles.length - 1]);
         }
 
         updateSignals();
         setTimeout(() => {
             renderFootprint(document.getElementById('footprint-canvas'), document.getElementById('footprint-canvas').getContext('2d'));
-        }, 100);
-
-        if (candles.length > 0) updatePriceUI(candles[candles.length - 1]);
+        }, 50);
 
         updateStatus('Live', 'bg-[#00ffc2]');
     } catch (e) {
