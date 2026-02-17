@@ -278,12 +278,12 @@ class TradingViewWSS:
                     indicators.append({
                         "id": f"battle_zone_{i}",
                         "type": "price_line",
-                        "title": "BATTLE ZONE",
+                        "title": "",
                         "data": {
                             "price": zone['price'],
                             "color": "rgba(59, 130, 246, 0.4)",
                             "lineStyle": 2,
-                            "title": "BATTLE ZONE"
+                            "title": ""
                         }
                     })
 

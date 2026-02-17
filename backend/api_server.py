@@ -295,12 +295,12 @@ async def get_intraday(instrument_key: str, interval: str = '1'):
                     valid_indicators.append({
                         "id": f"battle_zone_{i}",
                         "type": "price_line",
-                        "title": "BATTLE ZONE",
+                        "title": "",
                         "data": {
                             "price": zone['price'],
                             "color": "rgba(59, 130, 246, 0.4)",
                             "lineStyle": 2,
-                            "title": "BATTLE ZONE"
+                            "title": ""
                         }
                     })
                 
@@ -979,12 +979,10 @@ async def get_modern_dashboard_data(underlying: str):
         genie = await options_manager.get_genie_insights(underlying)
 
         # 6. Spot Price
-        res = await asyncio.to_thread(
-            db.query,
-            "SELECT price FROM ticks WHERE instrumentKey = ? ORDER BY ts_ms DESC LIMIT 1",
-            (underlying,)
-        )
-        spot_price = res[0]['price'] if res else 0
+        spot_price = await options_manager.get_spot_price(underlying)
+
+        # 7. Expiries
+        expiries = await options_manager.get_expiry_dates(underlying)
 
         return {
             "underlying": underlying,
@@ -994,6 +992,7 @@ async def get_modern_dashboard_data(underlying: str):
             "pcr_trend": pcr_trend[::-1], # Return in chronological order
             "sr_levels": sr_levels,
             "genie": genie,
+            "expiries": expiries,
             "timestamp": datetime.now().isoformat()
         }
     except Exception as e:

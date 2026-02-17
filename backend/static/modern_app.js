@@ -20,6 +20,7 @@ const COLORS = {
 };
 
 let currentATMStrike = 0;
+let currentOptionSymbol = null;
 let aggregatedCandles = []; // For footprint
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -56,21 +57,22 @@ function setupEventListeners() {
 
 function updateTime() {
     const now = new Date();
-    document.getElementById('currentTime').textContent = now.toLocaleTimeString('en-IN', { hour12: false });
+    const options = {
+        timeZone: 'Asia/Kolkata',
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+    };
+    const formatter = new Intl.DateTimeFormat('en-IN', options);
+    document.getElementById('currentTime').textContent = formatter.format(now) + " IST";
 }
 
 async function loadAllData() {
     console.log("Starting loadAllData for", currentUnderlying);
 
-    // Immediately render simulation data so the UI isn't empty while waiting for potentially slow backend
-    const mock = generateSimulationData();
-    updatePCRGauge(mock.pcrRes);
-    updateOIStrikeChart(mock.oiRes);
-    updateOIDivergenceChart(mock.pcrRes);
-    updateGenieData(mock.genieRes);
-
     try {
-        const fetchWithTimeout = async (url, timeout = 5000) => {
+        const fetchWithTimeout = async (url, timeout = 10000) => {
             const controller = new AbortController();
             const id = setTimeout(() => controller.abort(), timeout);
             try {
@@ -111,58 +113,33 @@ async function loadAllData() {
                 spotPrice = data.spot_price;
                 document.getElementById('spotPrice').textContent = spotPrice.toLocaleString(undefined, { minimumFractionDigits: 2 });
             }
+
+            if (data.expiries) {
+                updateExpirySelector(data.expiries);
+            }
+
+            // Identify ATM Strike and Symbol for Chart consistency
+            if (data.spot_price && data.chain && data.chain.length > 0) {
+                const closest = data.chain.reduce((prev, curr) =>
+                    Math.abs(curr.strike - data.spot_price) < Math.abs(prev.strike - data.spot_price) ? curr : prev
+                );
+                currentATMStrike = closest.strike;
+
+                // Find ATM Call symbol
+                const atmCall = data.chain.find(c => c.strike === currentATMStrike && c.option_type === 'call');
+                if (atmCall) {
+                    currentOptionSymbol = atmCall.symbol;
+                    document.getElementById('optionTypeLabel').textContent = `${currentATMStrike} CE`;
+                }
+            }
         }
 
         console.log("Triggering Chart Data load...");
         loadChartData();
 
     } catch (err) {
-        console.warn("Non-critical error in loadAllData fetch sequence:", err);
+        console.error("Critical error in loadAllData:", err);
     }
-}
-
-function generateSimulationData() {
-    const now = Date.now();
-    const history = [];
-    let price = 22150.50;
-    let oi = 100000000;
-
-    for (let i = 0; i < 60; i++) {
-        const trend = Math.sin(i / 10) * 50; // Add some wavy trend
-        price += (Math.random() - 0.5) * 15 + trend / 10;
-        oi += (Math.random() - 0.5) * 800000;
-        history.push({
-            timestamp: new Date(now - (60 - i) * 60000).toISOString(),
-            pcr_oi: 0.85 + Math.sin(i / 5) * 0.2 + (Math.random() * 0.1),
-            spot_price: price,
-            underlying_price: price,
-            total_oi: oi
-        });
-    }
-
-    const strikes = [22000, 22050, 22100, 22150, 22200, 22250, 22300];
-    const oiData = strikes.map((s, idx) => {
-        // More realistic OI distribution (bell curve near ATM)
-        const dist = Math.exp(-Math.pow(idx - 3, 2) / 4);
-        return {
-            strike: s,
-            call_oi: Math.floor((Math.random() * 5000000 + 2000000) * dist),
-            put_oi: Math.floor((Math.random() * 5000000 + 2000000) * dist)
-        };
-    });
-
-    spotPrice = price;
-    document.getElementById('spotPrice').textContent = spotPrice.toLocaleString(undefined, { minimumFractionDigits: 2 });
-
-    return {
-        pcrRes: { history },
-        oiRes: { data: oiData },
-        genieRes: { max_pain: 22100, atm_straddle: 145.50, iv_rank: 45 },
-        srRes: {
-            resistance_levels: [{ strike: 22200, oi: 2500000 }, { strike: 22300, oi: 1800000 }],
-            support_levels: [{ strike: 22100, oi: 2200000 }, { strike: 22000, oi: 1500000 }]
-        }
-    };
 }
 
 // ==================== LEFT PANEL WIDGETS ====================
@@ -331,17 +308,20 @@ function updateGenieData(res) {
     if (res.iv_rank !== undefined) {
         document.getElementById('ivRankValue').textContent = res.iv_rank + '%';
     }
+}
 
-    // Populate Expiry if empty
+function updateExpirySelector(expiries) {
     const selector = document.getElementById('expirySelector');
-    if (selector.options.length === 0) {
-        const dates = ['20-FEB-2026', '27-FEB-2026', '06-MAR-2026'];
-        dates.forEach(d => {
-            const opt = document.createElement('option');
-            opt.value = d;
-            opt.textContent = d;
-            selector.appendChild(opt);
-        });
+    const currentVal = selector.value;
+    selector.innerHTML = '';
+    expiries.forEach(d => {
+        const opt = document.createElement('option');
+        opt.value = d;
+        opt.textContent = d;
+        selector.appendChild(opt);
+    });
+    if (currentVal && expiries.includes(currentVal)) {
+        selector.value = currentVal;
     }
 }
 
@@ -544,7 +524,7 @@ function renderFootprint(canvas, ctx) {
 let priceLines = [];
 
 async function loadChartData() {
-    const fetchWithTimeout = async (url, timeout = 5000) => {
+    const fetchWithTimeout = async (url, timeout = 10000) => {
         const controller = new AbortController();
         const id = setTimeout(() => controller.abort(), timeout);
         try {
@@ -558,51 +538,35 @@ async function loadChartData() {
         }
     };
 
-    let res = await fetchWithTimeout(`/api/tv/intraday/${encodeURIComponent(currentUnderlying)}?interval=1`);
+    // Load Index History
+    console.log("Loading Index History for", currentUnderlying);
+    let indexRes = await fetchWithTimeout(`/api/tv/intraday/${encodeURIComponent(currentUnderlying)}?interval=1`);
 
-    if (!res) res = {};
-    if (!res.candles || res.candles.length < 5) {
-        // Mock historical candles
-        const now = Math.floor(Date.now() / 1000);
-        let p = 22150;
-        res.candles = [];
-        for (let i = 0; i < 200; i++) {
-            const o = p + (Math.random() - 0.5) * 5;
-            const c = o + (Math.random() - 0.5) * 5;
-            res.candles.push([ (now - (200 - i) * 60), o, Math.max(o,c) + 2, Math.min(o,c) - 2, c, Math.random() * 1000 ]);
-            p = c;
-        }
-        res.indicators = [
-            { type: 'price_line', title: 'VWAP', data: { price: 22145, color: '#3b82f6' } },
-            { type: 'price_line', title: 'PDH', data: { price: 22210, color: COLORS.bear } }
-        ];
-    }
-
-    if (res.candles && res.candles.length > 0) {
-        // Sort candles ascending for Lightweight Charts
-        const sortedCandles = [...res.candles].sort((a, b) => a[0] - b[0]);
-        const formatted = sortedCandles.map(c => ({ time: c[0], open: c[1], high: c[2], low: c[3], close: c[4] }));
-        charts.indexCandles.setData(formatted);
-
-        // Mock data for option chart
-        charts.optionCandles.setData(formatted.map(c => ({
-            time: c.time,
-            open: (c.open % 500) + 100,
-            high: (c.high % 500) + 105,
-            low: (c.low % 500) + 95,
-            close: (c.close % 500) + 102
-        })));
+    if (indexRes && indexRes.candles && indexRes.candles.length > 0) {
+        const sortedIndex = [...indexRes.candles].sort((a, b) => a[0] - b[0]);
+        const formattedIndex = sortedIndex.map(c => ({ time: c[0], open: c[1], high: c[2], low: c[3], close: c[4] }));
+        charts.indexCandles.setData(formattedIndex);
 
         charts.indexChart.timeScale().applyOptions({ barSpacing: 60 });
+        updateCVDFromCandles(formattedIndex);
+        updateLevels(indexRes);
 
-        updateCVDFromCandles(formatted);
-        updateLevels(res);
-
-        // Populate aggregatedCandles for Footprint visualization
-        aggregatedCandles = formatted.map(c => ({
+        // Footprint simulation based on real OHLC
+        aggregatedCandles = formattedIndex.map(c => ({
             ...c,
             footprint: generateMockFootprint(c.low, c.high)
         }));
+    }
+
+    // Load Option History for fixed ATM symbol to ensure consistency
+    if (currentOptionSymbol) {
+        console.log("Loading Option History for", currentOptionSymbol);
+        let optRes = await fetchWithTimeout(`/api/tv/intraday/${encodeURIComponent(currentOptionSymbol)}?interval=1`);
+        if (optRes && optRes.candles && optRes.candles.length > 0) {
+            const sortedOpt = [...optRes.candles].sort((a, b) => a[0] - b[0]);
+            const formattedOpt = sortedOpt.map(c => ({ time: c[0], open: c[1], high: c[2], low: c[3], close: c[4] }));
+            charts.optionCandles.setData(formattedOpt);
+        }
     }
 }
 

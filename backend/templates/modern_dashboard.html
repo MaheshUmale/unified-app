@@ -70,7 +70,7 @@
                 <select id="assetSelector" class="bg-transparent text-xs font-bold outline-none cursor-pointer text-cyan-400">
                     <option value="NSE:NIFTY">NIFTY 50</option>
                     <option value="NSE:BANKNIFTY">BANKNIFTY</option>
-                    <option value="NSE:CNXFINANCE">FINNIFTY</option>
+                    <option value="NSE:FINNIFTY">FINNIFTY</option>
                 </select>
                 <select id="expirySelector" class="bg-transparent text-[10px] font-bold outline-none cursor-pointer text-gray-400">
                     <!-- Dynamic -->
@@ -104,18 +104,20 @@
     <main class="flex-1 flex gap-1 overflow-hidden">
         <!-- Left Column: Analytics & Sentiment -->
         <aside class="col-left flex flex-col gap-1 overflow-y-auto custom-scrollbar">
-            <!-- Widget 1: PCR Gauge -->
-            <section class="glass-panel p-3 flex flex-col gap-2 min-h-[220px]">
-                <h3 class="text-[9px] font-black uppercase tracking-widest text-gray-500">Sentiment Gauge (PCR)</h3>
-                <div class="flex-1 relative flex items-center justify-center">
-                    <canvas id="pcrGauge"></canvas>
-                    <div class="absolute bottom-4 flex flex-col items-center">
-                        <span id="pcrValue" class="text-2xl font-black mono text-white">0.00</span>
-                        <span id="pcrLabel" class="text-[8px] font-bold text-gray-500 uppercase tracking-tighter">Neutral</span>
+            <!-- Widget 1: PCR Gauge (Shrunken) -->
+            <section class="glass-panel p-2 flex flex-col gap-1 min-h-[120px]">
+                <h3 class="text-[8px] font-black uppercase tracking-widest text-gray-500">Sentiment (PCR)</h3>
+                <div class="flex gap-2 items-center">
+                    <div class="w-24 h-16 relative">
+                        <canvas id="pcrGauge"></canvas>
+                        <div class="absolute bottom-1 w-full flex flex-col items-center">
+                            <span id="pcrValue" class="text-sm font-black mono text-white leading-none">0.00</span>
+                            <span id="pcrLabel" class="text-[7px] font-bold text-gray-500 uppercase tracking-tighter">Neutral</span>
+                        </div>
                     </div>
-                </div>
-                <div class="h-10">
-                    <canvas id="pcrTrendChart"></canvas>
+                    <div class="flex-1 h-12">
+                        <canvas id="pcrTrendChart"></canvas>
+                    </div>
                 </div>
             </section>
 
