@@ -77,8 +77,19 @@
             </div>
             <div class="h-4 w-px bg-white/10"></div>
             <div class="flex items-center gap-2 bg-black/20 rounded-md px-2 py-1">
-                <span class="text-[9px] font-bold text-gray-500 uppercase">Ticks:</span>
-                <input type="number" id="ticks-input" value="100" class="bg-transparent text-[10px] font-black w-10 outline-none text-[#3b82f6]" min="1">
+                <span class="text-[9px] font-bold text-gray-500 uppercase">TPC:</span>
+                <input type="number" id="ticks-input" value="100" class="bg-transparent text-[10px] font-black w-24 outline-none text-[#3b82f6]" min="1">
+            </div>
+            <div class="h-4 w-px bg-white/10"></div>
+            <div class="flex items-center gap-2 bg-black/20 rounded-md px-2 py-1">
+                <span class="text-[9px] font-bold text-gray-500 uppercase">Step:</span>
+                <select id="step-input" class="bg-transparent text-[10px] font-black outline-none text-[#3b82f6]">
+                    <option value="0.05">0.05</option>
+                    <option value="0.10">0.10</option>
+                    <option value="0.50">0.50</option>
+                    <option value="1.00">1.00</option>
+                    <option value="5.00">5.00</option>
+                </select>
             </div>
             <button id="replay-btn" class="text-[10px] font-black px-3 py-1 bg-[#3b82f6]/10 text-[#3b82f6] hover:bg-[#3b82f6]/20 rounded border border-[#3b82f6]/30 transition-all uppercase tracking-tighter">Replay</button>
         </div>
@@ -129,5 +140,19 @@
     </main>
 
     <script src="/static/orderflow_app.js"></script>
+
+    <!-- Re-aggregation Overlay -->
+    <div id="reaggregate-overlay" class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center hidden backdrop-blur-sm">
+        <div class="bg-[#0d1117] border border-white/10 p-8 rounded-2xl flex flex-col items-center gap-6 shadow-2xl">
+            <div class="relative">
+                <div class="w-12 h-12 rounded-full border-2 border-[#3b82f6]/20"></div>
+                <div class="absolute top-0 left-0 w-12 h-12 rounded-full border-t-2 border-[#3b82f6] animate-spin"></div>
+            </div>
+            <div class="text-center">
+                <p class="text-xs font-black text-[#3b82f6] uppercase tracking-[0.2em] mb-1">Processing</p>
+                <p id="reaggregate-status" class="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Re-aggregating Order Flow...</p>
+            </div>
+        </div>
+    </div>
 </body>
 </html>

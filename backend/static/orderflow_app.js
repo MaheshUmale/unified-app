@@ -8,7 +8,8 @@ let currentSymbol = 'NSE:NIFTY';
 let charts = {};
 let aggregator;
 let aggregatedCandles = [];
-let historicalTicks = [];
+let historicalTicks = []; // Cache of raw ticks
+let baseCandles = []; // Cache of 20-tick base candles for fast re-aggregation
 let cachedMarkers = [];
 let renderRequested = false;
 let lastSignalUpdate = 0;
@@ -40,11 +41,30 @@ document.addEventListener('DOMContentLoaded', () => {
     setupUIListeners();
 });
 
+let pendingTpcChange = null;
+
 function setupUIListeners() {
     document.getElementById('ticks-input').addEventListener('change', (e) => {
         const tpc = parseInt(e.target.value) || 100;
+        if (isReaggregating) {
+            pendingTpcChange = { type: 'tpc', value: tpc };
+            return;
+        }
         aggregator.setTicksPerCandle(tpc);
-        loadHistory();
+        if (historicalTicks.length > 0) reaggregate();
+        else loadHistory();
+    });
+
+    document.getElementById('step-input').addEventListener('change', (e) => {
+        const step = parseFloat(e.target.value) || 0.05;
+        if (isReaggregating) {
+            pendingTpcChange = { type: 'step', value: step };
+            return;
+        }
+        aggregator.setPriceStep(step);
+        baseCandles = []; // Invalidate base candles on step change
+        if (historicalTicks.length > 0) reaggregate();
+        else loadHistory();
     });
 
     document.getElementById('replay-btn').addEventListener('click', () => {
@@ -75,25 +95,43 @@ function setupUIListeners() {
 }
 
 class TickAggregator {
-    constructor(tpc) {
+    constructor(tpc, priceStep = 0.05) {
         this.tpc = tpc;
+        this.priceStep = priceStep;
         this.currentTickCount = 0;
         this.currentCandle = null;
         this.lastTime = 0;
         this.lastPrice = 0;
         this.lastSide = 1;
         this.cvd = 0;
+        this.baseSize = 20;
+        this.currentBaseTickCount = 0;
+        this.currentBaseCandle = null;
     }
 
     setTicksPerCandle(tpc) {
         this.tpc = tpc;
-        this.currentTickCount = 0;
-        this.currentCandle = null;
+        this.resetState();
     }
 
-    processTick(tick, deferAnalytics = false) {
-        // Round price to 0.05 step and fix to 2 decimals to avoid floating point noise in object keys
-        const price = Number((Math.round(Number(tick.price) / 0.05) * 0.05).toFixed(2));
+    setPriceStep(step) {
+        this.priceStep = step;
+        this.resetState();
+    }
+
+    resetState() {
+        this.currentTickCount = 0;
+        this.currentCandle = null;
+        this.cvd = 0;
+        this.lastPrice = 0;
+        this.lastTime = 0;
+        this.lastSide = 1;
+        // Do NOT reset baseCandles here, they are persistent for re-aggregation
+    }
+
+    processTick(tick, deferAnalytics = false, updateBase = true) {
+        // Quantize price based on current priceStep
+        const price = Number((Math.round(Number(tick.price) / this.priceStep) * this.priceStep).toFixed(2));
         const qty = Number(tick.qty || 0);
         let ts = Math.floor(tick.ts_ms / 1000);
 
@@ -106,12 +144,10 @@ class TickAggregator {
         this.lastPrice = price;
         this.lastSide = side;
 
-        if (!this.currentCandle || this.currentTickCount >= this.tpc) {
-            // Finalize previous candle
-            if (this.currentCandle) {
-                this.calculateAnalytics(this.currentCandle);
-            }
+        if (updateBase) this.updateBaseCandle(tick, price, side, qty);
 
+        if (!this.currentCandle || this.currentTickCount >= this.tpc) {
+            if (this.currentCandle) this.calculateAnalytics(this.currentCandle);
             if (ts <= this.lastTime) ts = this.lastTime + 1;
             this.lastTime = ts;
 
@@ -134,6 +170,71 @@ class TickAggregator {
             this.updateFootprint(this.currentCandle, price, side, qty, deferAnalytics);
             this.currentTickCount++;
             return { type: 'update', candle: this.currentCandle };
+        }
+    }
+
+    mergeBaseCandle(bc) {
+        if (!this.currentCandle || this.currentTickCount >= this.tpc) {
+            if (this.currentCandle) this.calculateAnalytics(this.currentCandle);
+
+            const footprintClone = {};
+            for (let p in bc.footprint) {
+                footprintClone[p] = { buy: bc.footprint[p].buy, sell: bc.footprint[p].sell };
+            }
+
+            this.currentCandle = {
+                time: bc.time,
+                open: bc.open, high: bc.high, low: bc.low, close: bc.close,
+                volume: bc.volume, delta: bc.delta,
+                footprint: footprintClone
+            };
+            this.currentTickCount = this.baseSize;
+            return { type: 'new', candle: this.currentCandle };
+        } else {
+            this.currentCandle.high = Math.max(this.currentCandle.high, bc.high);
+            this.currentCandle.low = Math.min(this.currentCandle.low, bc.low);
+            this.currentCandle.close = bc.close;
+            this.currentCandle.volume += bc.volume;
+            this.currentCandle.delta += bc.delta;
+
+            const targetFootprint = this.currentCandle.footprint;
+            const sourceFootprint = bc.footprint;
+            for (let p in sourceFootprint) {
+                if (!targetFootprint[p]) {
+                    targetFootprint[p] = { buy: sourceFootprint[p].buy, sell: sourceFootprint[p].sell };
+                } else {
+                    targetFootprint[p].buy += sourceFootprint[p].buy;
+                    targetFootprint[p].sell += sourceFootprint[p].sell;
+                }
+            }
+            this.currentTickCount += this.baseSize;
+            return { type: 'update', candle: this.currentCandle };
+        }
+    }
+
+    updateBaseCandle(tick, price, side, qty) {
+        if (!this.currentBaseCandle || this.currentBaseTickCount >= this.baseSize) {
+            if (this.currentBaseCandle) {
+                this.calculateAnalytics(this.currentBaseCandle);
+                baseCandles.push({ ...this.currentBaseCandle });
+                if (baseCandles.length > 1000) baseCandles.shift();
+            }
+            this.currentBaseCandle = {
+                time: Math.floor(tick.ts_ms / 1000),
+                open: price, high: price, low: price, close: price,
+                volume: qty, delta: side * qty,
+                footprint: {}
+            };
+            this.updateFootprint(this.currentBaseCandle, price, side, qty, true);
+            this.currentBaseTickCount = 1;
+        } else {
+            this.currentBaseCandle.high = Math.max(this.currentBaseCandle.high, price);
+            this.currentBaseCandle.low = Math.min(this.currentBaseCandle.low, price);
+            this.currentBaseCandle.close = price;
+            this.currentBaseCandle.volume += qty;
+            this.currentBaseCandle.delta += (side * qty);
+            this.updateFootprint(this.currentBaseCandle, price, side, qty, true);
+            this.currentBaseTickCount++;
         }
     }
 
@@ -202,7 +303,7 @@ class TickAggregator {
     }
 }
 
-aggregator = new TickAggregator(100);
+aggregator = new TickAggregator(100, 0.05);
 
 function initCharts() {
     const mainEl = document.getElementById('main-chart');
@@ -413,11 +514,15 @@ function updateStatus(text, colorClass) {
 }
 
 function processNewTick(tick) {
-    const result = aggregator.processTick({
+    const raw = {
         price: tick.last_price,
         qty: tick.ltq,
         ts_ms: tick.ts_ms
-    });
+    };
+    historicalTicks.push(raw);
+    if (historicalTicks.length > 15000) historicalTicks.shift();
+
+    const result = aggregator.processTick(raw);
 
     charts.candles.update(result.candle);
     charts.cvdSeries.update({ time: result.candle.time, value: result.candle.cvd });
@@ -522,6 +627,8 @@ async function loadHistory() {
             ticks = [...generateSimulatedHistory(), ...ticks];
         }
 
+        historicalTicks = ticks;
+        baseCandles = [];
         const candles = [];
         aggregator.cvd = 0;
         aggregator.currentCandle = null;
@@ -584,6 +691,99 @@ async function loadHistory() {
         console.error("History load failed", e);
         updateStatus('Error', 'bg-red-500');
     }
+}
+
+let isReaggregating = false;
+
+function reaggregate() {
+    if (isReaggregating) return;
+    isReaggregating = true;
+
+    const overlay = document.getElementById('reaggregate-overlay');
+    if (overlay) overlay.classList.remove('hidden');
+
+    updateStatus('Re-aggregating...', 'bg-yellow-500');
+
+    const tempAggregator = new TickAggregator(aggregator.tpc, aggregator.priceStep);
+    tempAggregator.currentBaseCandle = aggregator.currentBaseCandle;
+    tempAggregator.currentBaseTickCount = aggregator.currentBaseTickCount;
+
+    const candles = [];
+    let currentIdx = 0;
+
+    const finalizeReaggregation = (candles) => {
+        if (candles.length > 0) tempAggregator.calculateAnalytics(candles[candles.length - 1]);
+
+        aggregator = tempAggregator;
+        aggregatedCandles = candles;
+
+        charts.candles.setData(candles);
+        charts.cvdSeries.setData(candles.map(c => ({ time: c.time, value: c.cvd })));
+
+        cachedMarkers = [];
+        for (let i = 1; i < candles.length; i++) {
+            updateMarkersForCandle(i);
+        }
+        charts.candles.setMarkers(cachedMarkers);
+
+        if (overlay) overlay.classList.add('hidden');
+        isReaggregating = false;
+        requestRender();
+        updateStatus('Live', 'bg-[#00ffc2]');
+
+        if (pendingTpcChange) {
+            const change = pendingTpcChange;
+            pendingTpcChange = null;
+            if (change.type === 'tpc') aggregator.setTicksPerCandle(change.value);
+            else { aggregator.setPriceStep(change.value); baseCandles = []; }
+            reaggregate();
+        }
+    };
+
+    // Use fast path if possible
+    if (aggregator.tpc >= aggregator.baseSize && aggregator.tpc % aggregator.baseSize === 0 && baseCandles.length > 0) {
+        console.log("Using Fast Path");
+        const processBaseBatch = () => {
+            const startTime = performance.now();
+            while (currentIdx < baseCandles.length && (performance.now() - startTime < 16)) {
+                const result = tempAggregator.mergeBaseCandle(baseCandles[currentIdx]);
+                if (result.type === 'new') {
+                    if (candles.length > 0) tempAggregator.calculateAnalytics(candles[candles.length - 1]);
+                    candles.push({ ...result.candle });
+                } else if (candles.length > 0) {
+                    candles[candles.length - 1] = { ...result.candle };
+                }
+                currentIdx++;
+            }
+            if (currentIdx < baseCandles.length) requestAnimationFrame(processBaseBatch);
+            else finalizeReaggregation(candles);
+        };
+        processBaseBatch();
+        return;
+    }
+
+    const ticks = historicalTicks;
+    const processBatch = () => {
+        const startTime = performance.now();
+        while (currentIdx < ticks.length && (performance.now() - startTime < 16)) {
+            const result = tempAggregator.processTick(ticks[currentIdx], true, false);
+            if (result.type === 'new') {
+                if (candles.length > 0) tempAggregator.calculateAnalytics(candles[candles.length - 1]);
+                candles.push({ ...result.candle });
+            } else if (candles.length > 0) {
+                candles[candles.length - 1] = { ...result.candle };
+            }
+            currentIdx++;
+        }
+
+        const progress = Math.round((currentIdx / ticks.length) * 100);
+        const statusEl = document.getElementById('reaggregate-status');
+        if (statusEl) statusEl.textContent = `Re-aggregating: ${progress}%`;
+
+        if (currentIdx < ticks.length) requestAnimationFrame(processBatch);
+        else finalizeReaggregation(candles);
+    };
+    requestAnimationFrame(processBatch);
 }
 
 function generateSimulatedHistory() {
