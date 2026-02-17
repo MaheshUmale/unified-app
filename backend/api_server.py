@@ -13,6 +13,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
 from urllib.parse import unquote
@@ -946,6 +947,9 @@ async def serve_options_dashboard(request: Request):
     return templates.TemplateResponse("options_dashboard.html", {"request": request})
 
 
+@fastapi_app.get("/db-viewer")
+async def db_viewer(request: Request):
+    return templates.TemplateResponse("db_viewer.html", {"request": request})
 
 
 @fastapi_app.get("/modern")
@@ -1016,6 +1020,51 @@ async def get_db_tables():
         return {"tables": result}
     except Exception as e:
         logger.error(f"Error fetching tables: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@fastapi_app.post("/api/db/query")
+async def run_db_query(request: Request):
+    try:
+        body = await request.json()
+        sql = body.get("sql")
+        if not sql:
+            raise HTTPException(status_code=400, detail="SQL query is required")
+
+        results = await asyncio.to_thread(db.query, sql, json_serialize=True)
+        return {"results": results}
+    except Exception as e:
+        logger.error(f"Error running query: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@fastapi_app.post("/api/db/export")
+async def export_db_query(request: Request):
+    try:
+        body = await request.json()
+        sql = body.get("sql")
+        if not sql:
+            raise HTTPException(status_code=400, detail="SQL query is required")
+
+        results = await asyncio.to_thread(db.query, sql, json_serialize=False)
+        if not results:
+            raise HTTPException(status_code=400, detail="No data to export")
+
+        import pandas as pd
+        import io
+
+        df = pd.DataFrame(results)
+        stream = io.StringIO()
+        df.to_csv(stream, index=False)
+
+        response = StreamingResponse(
+            iter([stream.getvalue()]),
+            media_type="text/csv"
+        )
+        response.headers["Content-Disposition"] = "attachment; filename=export.csv"
+        return response
+    except Exception as e:
+        logger.error(f"Error exporting query: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
