@@ -14,9 +14,7 @@ class TradingViewLiveStreamProvider(ILiveStreamProvider):
     """TradingView WebSocket Implementation."""
     def __init__(self, callback: Callable = None):
         self.wss = TradingViewWSS(callback)
-        self.callbacks = set()
-        if callback:
-            self.callbacks.add(callback)
+        self.callback = callback
 
     def subscribe(self, symbols: List[str], interval: str = "1"):
         self.wss.subscribe(symbols, interval)
@@ -25,8 +23,8 @@ class TradingViewLiveStreamProvider(ILiveStreamProvider):
         self.wss.unsubscribe(symbol, interval)
 
     def set_callback(self, callback: Callable):
-        self.callbacks.add(callback)
-        self.wss.callbacks.add(callback)
+        self.callback = callback
+        self.wss.callback = callback
 
     def start(self):
         self.wss.start()
@@ -44,7 +42,7 @@ class TrendlyneOptionsProvider(IOptionsDataProvider):
         self.symbol_map = {
             "NSE:NIFTY": "NIFTY 50",
             "NSE:BANKNIFTY": "BANKNIFTY",
-            "NSE:CNXFINANCE": "CNXFINANCE"
+            "NSE:FINNIFTY": "FINNIFTY"
         }
 
     async def get_option_chain(self, underlying: str) -> Dict[str, Any]:
@@ -71,7 +69,7 @@ class NSEOptionsProvider(IOptionsDataProvider):
     """NSE India Direct Implementation for Options data."""
     async def get_option_chain(self, underlying: str) -> Dict[str, Any]:
         symbol = underlying.split(':')[-1]
-        if symbol == "CNXFINANCE": symbol = "CNXFINANCE"
+        if symbol == "CNXFINANCE": symbol = "FINNIFTY"
         data = await asyncio.to_thread(fetch_nse_oi_data, symbol)
         # Transform NSE format to a unified format if necessary
         return data
@@ -125,4 +123,4 @@ class NSEOptionsProvider(IOptionsDataProvider):
 class TradingViewHistoricalProvider(IHistoricalDataProvider):
     """TradingView Historical Data Implementation."""
     async def get_hist_candles(self, symbol: str, interval: str, count: int) -> List[List]:
-        return await tv_api.get_hist_candles(symbol, interval, count)
+        return await asyncio.to_thread(tv_api.get_hist_candles, symbol, interval, count)

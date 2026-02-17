@@ -7,7 +7,7 @@ from typing import List, Dict, Any
 
 # Server Configuration
 SERVER_HOST = os.getenv("SERVER_HOST", "0.0.0.0")
-SERVER_PORT = int(os.getenv("SERVER_PORT", "3000"))
+SERVER_PORT = int(os.getenv("SERVER_PORT", "5051"))
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 
 # Logging Configuration
@@ -23,7 +23,7 @@ LOGGING_CONFIG = {
         "console": {
             "class": "logging.StreamHandler",
             "formatter": "default",
-            "level": "DEBUG"
+            "level": "INFO"
         },
         "file": {
             "class": "logging.FileHandler",
@@ -42,14 +42,14 @@ LOGGING_CONFIG = {
 OPTIONS_UNDERLYINGS: List[str] = [
     "NSE:NIFTY",
     "NSE:BANKNIFTY",
-    "NSE:CNXFINANCE"
+    "NSE:FINNIFTY"
 ]
 
 # Initial instruments for WebSocket feed
 INITIAL_INSTRUMENTS: List[str] = [
     "NSE:NIFTY",
     "NSE:BANKNIFTY",
-    "NSE:CNXFINANCE"
+    "NSE:FINNIFTY"
 ]
 
 # Greeks Calculator Configuration
@@ -109,21 +109,15 @@ STRATEGY_CONFIG = {
 }
 
 # TradingView Cookie (Optional)
-TV_COOKIE = os.getenv("TV_COOKIE", None)
+TV_COOKIE = os.getenv("TV_COOKIE", "")
 try:
-    # Use unified session manager from tradingview module
-    from tradingview.auth_config import get_tradingview_cookie_jar
-    TV_COOKIE = get_tradingview_cookie_jar()
-    if TV_COOKIE:
-        print("TradingView cookies loaded via unified session manager")
+    import rookiepy
+    # Retrieve Brave cookies for TradingView
+    TV_COOKIE = rookiepy.to_cookiejar(rookiepy.brave(['.tradingview.com']))
+    print("TradingView cookies loaded via rookiepy (Brave)")
 except Exception as e:
-    # Fallback to manual rookiepy if module not fully loaded or other issues
-    try:
-        import rookiepy
-        TV_COOKIE = rookiepy.to_cookiejar(rookiepy.brave(['.tradingview.com']))
-        print("TradingView cookies loaded via fallback rookiepy")
-    except:
-        pass
+    # Fallback to env var string if rookiepy fails or isn't needed
+    pass
 
 TV_STUDY_ID = os.getenv("TV_STUDY_ID", "USER:f9c7fa68b382417ba34df4122c632dcf")
 

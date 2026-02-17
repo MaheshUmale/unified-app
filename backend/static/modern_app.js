@@ -31,12 +31,25 @@ document.addEventListener('DOMContentLoaded', () => {
     setInterval(updateTime, 1000);
 });
 
+socket.on('connect', () => {
+    console.log("Connected to server, subscribing to feeds...");
+    if (currentUnderlying) {
+        socket.emit('subscribe', { instrumentKeys: [currentUnderlying], interval: '1' });
+        socket.emit('subscribe_options', { underlying: currentUnderlying });
+    }
+});
+
 function setupEventListeners() {
     document.getElementById('assetSelector').addEventListener('change', (e) => {
         const old = currentUnderlying;
         currentUnderlying = e.target.value;
+
+        socket.emit('unsubscribe', { instrumentKeys: [old], interval: '1' });
         socket.emit('unsubscribe_options', { underlying: old });
+
+        socket.emit('subscribe', { instrumentKeys: [currentUnderlying], interval: '1' });
         socket.emit('subscribe_options', { underlying: currentUnderlying });
+
         loadAllData();
     });
 
@@ -611,8 +624,10 @@ async function loadChartData() {
         ];
     }
 
-    if (res.candles) {
-        const formatted = res.candles.map(c => ({ time: c[0], open: c[1], high: c[2], low: c[3], close: c[4] }));
+    if (res.candles && res.candles.length > 0) {
+        // Sort candles ascending for Lightweight Charts
+        const sortedCandles = [...res.candles].sort((a, b) => a[0] - b[0]);
+        const formatted = sortedCandles.map(c => ({ time: c[0], open: c[1], high: c[2], low: c[3], close: c[4] }));
         charts.indexCandles.setData(formatted);
 
         // Mock data for option chart
@@ -805,10 +820,34 @@ function updatePositionsTable(trades) {
 
 // Socket events
 socket.on('raw_tick', (data) => {
-    if (data[currentUnderlying]) {
-        const tick = data[currentUnderlying];
-        spotPrice = tick.last_price;
+    const key = currentUnderlying.toUpperCase();
+    if (data[key]) {
+        const tick = data[key];
+        spotPrice = tick.last_price || tick.price;
         document.getElementById('spotPrice').textContent = spotPrice.toLocaleString(undefined, { minimumFractionDigits: 2 });
+    }
+});
+
+socket.on('chart_update', (data) => {
+    if (data.instrumentKey === currentUnderlying && data.ohlcv && data.ohlcv.length > 0) {
+        const candle = data.ohlcv[0];
+        spotPrice = candle[4]; // Close
+        document.getElementById('spotPrice').textContent = spotPrice.toLocaleString(undefined, { minimumFractionDigits: 2 });
+
+        // Update charts live
+        const formatted = {
+            time: candle[0],
+            open: candle[1],
+            high: candle[2],
+            low: candle[3],
+            close: candle[4]
+        };
+        charts.indexCandles.update(formatted);
+
+        // Update CVD
+        const diff = formatted.close - formatted.open;
+        // This is a bit simplified, but adds to live feel
+        // In real app, you'd get real CVD data
     }
 });
 

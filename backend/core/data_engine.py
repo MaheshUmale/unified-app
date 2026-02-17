@@ -38,27 +38,15 @@ def set_socketio(sio, loop=None):
 def emit_event(event: str, data: Any, room: Optional[str] = None):
     global socketio_instance, main_event_loop
     if not socketio_instance: return
-
     if isinstance(data, (dict, list)):
         data = json.loads(json.dumps(data, cls=LocalDBJSONEncoder))
-
     try:
         if main_event_loop and main_event_loop.is_running():
-            # Check if we are in the same loop
-            try:
-                current_loop = asyncio.get_running_loop()
-            except RuntimeError:
-                current_loop = None
-
-            if current_loop == main_event_loop:
-                asyncio.create_task(socketio_instance.emit(event, data, to=room))
-            else:
-                asyncio.run_coroutine_threadsafe(socketio_instance.emit(event, data, to=room), main_event_loop)
-
+            asyncio.run_coroutine_threadsafe(socketio_instance.emit(event, data, to=room), main_event_loop)
             if room:
                 logger.info(f"Emitted {event} to room {room}")
     except Exception as e:
-        logger.error(f"Emit Error for {event} to room {room}: {e}")
+        logger.error(f"Emit Error: {e}")
 
 def flush_tick_buffer():
     global tick_buffer
@@ -138,9 +126,9 @@ def on_message(message: Union[Dict, str]):
 
             sym_feeds[inst_key] = feed_datum
 
-        # Throttled UI Emission - Increased to 0.2s (5Hz) for better stability in resource-constrained environments
+        # Throttled UI Emission
         now = time.time()
-        if now - last_emit_times.get('GLOBAL_TICK', 0) > 0.2:
+        if now - last_emit_times.get('GLOBAL_TICK', 0) > 0.05:
             for inst_key, feed in sym_feeds.items():
                 # Emit to specific technical symbol room
                 emit_event('raw_tick', {inst_key: feed}, room=inst_key.upper())
@@ -148,8 +136,8 @@ def on_message(message: Union[Dict, str]):
 
         with buffer_lock:
             tick_buffer.extend(list(sym_feeds.values()))
-            # Removed per-batch thread creation to reduce overhead.
-            # Relying on periodic_flush (every 10s) and manual flushes if needed.
+            if len(tick_buffer) >= TICK_BATCH_SIZE:
+                threading.Thread(target=flush_tick_buffer, daemon=True).start()
     except Exception as e:
         logger.error(f"Error in data_engine on_message: {e}")
 
@@ -163,16 +151,9 @@ def subscribe_instrument(instrument_key: str, sid: str, interval: str = "1"):
         room_subscribers[key].add(sid)
         logger.info(f"Room {instrument_key} ({interval}m) now has {len(room_subscribers[key])} subscribers")
 
-    # Use the primary live stream provider (highest priority)
-    from core.provider_registry import live_stream_registry
-    provider = live_stream_registry.get_primary()
-    if provider:
-        try:
-            provider.set_callback(on_message)
-            provider.start()
-            provider.subscribe([instrument_key], interval=interval)
-        except Exception as e:
-            logger.error(f"Error subscribing with primary provider: {e}")
+    from external.tv_live_wss import start_tv_wss
+    wss = start_tv_wss(on_message)
+    wss.subscribe([instrument_key], interval=interval)
 
 def is_sid_using_instrument(sid: str, instrument_key: str) -> bool:
     """Check if a specific client is still using this instrument in any interval."""
@@ -192,13 +173,10 @@ def unsubscribe_instrument(instrument_key: str, sid: str, interval: str = "1"):
 
         if len(room_subscribers[key]) == 0:
             logger.info(f"Unsubscribing from {instrument_key} ({interval}m) as no more subscribers")
-            from core.provider_registry import live_stream_registry
-            provider = live_stream_registry.get_primary()
-            if provider:
-                try:
-                    provider.unsubscribe(instrument_key, interval=interval)
-                except Exception as e:
-                    logger.error(f"Error unsubscribing with primary provider: {e}")
+            from external.tv_live_wss import get_tv_wss
+            wss = get_tv_wss()
+            if wss:
+                wss.unsubscribe(instrument_key, interval=interval)
             del room_subscribers[key]
 
 def handle_disconnect(sid: str):
@@ -212,12 +190,5 @@ def handle_disconnect(sid: str):
         unsubscribe_instrument(key, sid, interval)
 
 def start_websocket_thread(token: str, keys: List[str]):
-    from core.provider_registry import live_stream_registry
-    provider = live_stream_registry.get_primary()
-    if provider:
-        try:
-            provider.set_callback(on_message)
-            provider.start()
-            provider.subscribe(keys or INITIAL_INSTRUMENTS)
-        except Exception as e:
-            logger.error(f"Error starting primary provider: {e}")
+    from external.tv_live_wss import start_tv_wss
+    start_tv_wss(on_message, INITIAL_INSTRUMENTS)

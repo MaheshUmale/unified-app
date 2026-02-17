@@ -14,7 +14,8 @@ import pandas as pd
 from config import OPTIONS_UNDERLYINGS, SNAPSHOT_CONFIG
 from db.local_db import db
 from core.interfaces import ILiveStreamProvider
-from core.provider_registry import options_data_registry, historical_data_registry, live_stream_registry
+from core.provider_registry import options_data_registry, historical_data_registry
+from external.tv_options_wss import OptionsWSS
 
 # Import new modules
 from core.greeks_calculator import greeks_calculator
@@ -43,7 +44,7 @@ class OptionsManager:
         self.tl_symbol_map = {
             "NSE:NIFTY": "NIFTY 50",
             "NSE:BANKNIFTY": "BANKNIFTY",
-            "NSE:CNXFINANCE": "CNXFINANCE"
+            "NSE:FINNIFTY": "FINNIFTY"
         }
         self.running = False
         self._task = None
@@ -59,13 +60,6 @@ class OptionsManager:
         # New feature: IV tracking per underlying
         self.iv_history: Dict[str, List[float]] = {}
         
-        # Cache for Greek calculations during backfill
-        self.greeks_cache = {}
-
-        # Throttling for UI updates
-        self.last_emit_times = {}
-        self.emit_buffers = {} # underlying -> {symbol: data}
-
     def set_socketio(self, sio, loop=None):
         self.sio = sio
         self.loop = loop
@@ -86,19 +80,15 @@ class OptionsManager:
             return
         self.running = True
         
-        # Initialize symbols cache in background to not block startup
-        async def init_symbols():
-            for underlying in self.active_underlyings:
-                try:
-                    await self._refresh_wss_symbols(underlying)
-                except Exception as e:
-                    logger.error(f"Error initializing symbols for {underlying}: {e}")
-
-        asyncio.create_task(init_symbols())
+        # Initialize symbols cache
+        for underlying in self.active_underlyings:
+            try:
+                await self._refresh_wss_symbols(underlying)
+            except Exception as e:
+                logger.error(f"Error initializing symbols for {underlying}: {e}")
         
         # Trigger backfill and repair in background
         async def backfill_and_repair():
-            await asyncio.sleep(30) # Wait 30s before starting heavy backfill
             await self.backfill_today()
             await self.repair_zero_spot_prices()
 
@@ -106,23 +96,9 @@ class OptionsManager:
         
         self._task = asyncio.create_task(self._snapshot_loop())
         
-        # Use shared provider for options data
-        async def start_shared_wss():
-            provider = live_stream_registry.get_primary()
-            if provider:
-                provider.set_callback(self._on_shared_wss_data)
-                provider.start()
-
-                for underlying in self.active_underlyings:
-                    # Initial symbol fetch and subscription
-                    await self._refresh_wss_symbols(underlying)
-                    symbols = list(self.symbol_map_cache.get(underlying, {}).values())
-                    if symbols:
-                        logger.info(f"Subscribing to {len(symbols)} option symbols for {underlying}")
-                        provider.subscribe(symbols[:400])
-                    await asyncio.sleep(0.5)
-
-        asyncio.create_task(start_shared_wss())
+        # Start WSS for active underlyings
+        for underlying in self.active_underlyings:
+            self.start_wss(underlying)
         
         # Create preset alerts
         for underlying in self.active_underlyings:
@@ -204,9 +180,6 @@ class OptionsManager:
                 default_expiry = expiries[0]
                 
                 for ts_str in time_slots:
-                    # Yield more frequently to keep API responsive
-                    await asyncio.sleep(0.5)
-
                     # Only skip if we already have a valid (non-zero) spot price for this slot
                     if ts_str in existing_times_with_price and existing_times_with_price[ts_str] > 0:
                         continue
@@ -235,12 +208,12 @@ class OptionsManager:
                             spot_price = spot_map[potential_ts[-1]]
                     
                     # Process chain data with enhanced metrics
-                    rows = await self._process_chain_data(
+                    rows = self._process_chain_data(
                         oi_data, underlying, snapshot_time, default_expiry, spot_price
                     )
                     
                     if rows:
-                        await asyncio.to_thread(db.insert_options_snapshot, rows)
+                        db.insert_options_snapshot(rows)
                         await self._calculate_pcr(underlying, snapshot_time, rows, spot_price)
                 
                 logger.info(f"Backfill complete for {underlying}")
@@ -249,7 +222,7 @@ class OptionsManager:
             except Exception as e:
                 logger.error(f"Error backfilling {underlying}: {e}")
     
-    async def _process_chain_data(
+    def _process_chain_data(
         self,
         oi_data: Dict[str, Any],
         underlying: str,
@@ -260,10 +233,6 @@ class OptionsManager:
         """Process chain data with Greeks calculation."""
         rows = []
         
-        # Clear cache every 100 rows to avoid memory bloat
-        if len(self.greeks_cache) > 500:
-            self.greeks_cache = {}
-
         # Robust date parsing
         expiry_date = None
         if isinstance(expiry, str):
@@ -281,11 +250,7 @@ class OptionsManager:
         days_to_expiry = max((expiry_date - today).days, 0)
         time_to_expiry = days_to_expiry / 365.0
         
-        for i, (strike_str, strike_data) in enumerate(oi_data.items()):
-            # Yield frequently to keep event loop free
-            if i % 5 == 0:
-                await asyncio.sleep(0.01)
-
+        for strike_str, strike_data in oi_data.items():
             strike = float(strike_str)
             call_sym = self.symbol_map_cache.get(underlying, {}).get(f"{strike}_call")
             put_sym = self.symbol_map_cache.get(underlying, {}).get(f"{strike}_put")
@@ -295,16 +260,10 @@ class OptionsManager:
             call_oi = int(strike_data.get('callOi', 0))
             call_oi_change = int(strike_data.get('callOiChange', 0))
             
-            # Calculate Greeks for call with caching
-            cache_key = f"c_{spot_price}_{strike}_{time_to_expiry}_{call_ltp}"
-            if cache_key in self.greeks_cache:
-                call_greeks = self.greeks_cache[cache_key]
-            else:
-                call_greeks = greeks_calculator.calculate_all_greeks(
-                    spot_price, strike, time_to_expiry, 0.20, 'call', call_ltp
-                )
-                self.greeks_cache[cache_key] = call_greeks
-
+            # Calculate Greeks for call
+            call_greeks = greeks_calculator.calculate_all_greeks(
+                spot_price, strike, time_to_expiry, 0.20, 'call', call_ltp
+            )
             
             rows.append({
                 'timestamp': timestamp,
@@ -332,15 +291,10 @@ class OptionsManager:
             put_oi = int(strike_data.get('putOi', 0))
             put_oi_change = int(strike_data.get('putOiChange', 0))
             
-            # Calculate Greeks for put with caching
-            cache_key = f"p_{spot_price}_{strike}_{time_to_expiry}_{put_ltp}"
-            if cache_key in self.greeks_cache:
-                put_greeks = self.greeks_cache[cache_key]
-            else:
-                put_greeks = greeks_calculator.calculate_all_greeks(
-                    spot_price, strike, time_to_expiry, 0.20, 'put', put_ltp
-                )
-                self.greeks_cache[cache_key] = put_greeks
+            # Calculate Greeks for put
+            put_greeks = greeks_calculator.calculate_all_greeks(
+                spot_price, strike, time_to_expiry, 0.20, 'put', put_ltp
+            )
             
             rows.append({
                 'timestamp': timestamp,
@@ -380,32 +334,16 @@ class OptionsManager:
         
         logger.info("Options management stopped")
     
-    def _on_shared_wss_data(self, data: Any):
-        """Unified callback for all option data from shared WSS."""
-        if data.get('type') != 'live_feed':
+    def start_wss(self, underlying: str):
+        if underlying in self.wss_clients:
             return
 
-        feeds = data.get('feeds', {})
-        for symbol, feed in feeds.items():
-            # Find which underlying this symbol belongs to
-            underlying = self._find_underlying_for_symbol(symbol)
-            if underlying:
-                self.handle_wss_data(underlying, feed)
+        def on_data(data):
+            self.handle_wss_data(underlying, data)
 
-    def _find_underlying_for_symbol(self, symbol: str) -> Optional[str]:
-        """Maps an option symbol back to its underlying."""
-        for underlying, symbol_map in self.symbol_map_cache.items():
-            if symbol in symbol_map.values():
-                return underlying
-        return None
-
-    def start_wss(self, underlying: str):
-        """Maintained for backward compatibility but now uses shared provider."""
-        provider = live_stream_registry.get_primary()
-        if provider:
-            symbols = list(self.symbol_map_cache.get(underlying, {}).values())
-            if symbols:
-                provider.subscribe(symbols[:400])
+        wss = OptionsWSS(underlying, on_data)
+        wss.start()
+        self.wss_clients[underlying] = wss
 
     def handle_wss_data(self, underlying: str, data: Any):
         symbol = data.get('symbol')
@@ -422,39 +360,23 @@ class OptionsManager:
         self.latest_chains[underlying][symbol] = existing
         
         if self.sio:
-            # Batch and throttle options updates to the UI
-            if underlying not in self.emit_buffers:
-                self.emit_buffers[underlying] = {}
-
-            # Use data.get('lp') or data.get('last_price')
-            price = data.get('lp') or data.get('last_price')
-            vol = data.get('volume') or data.get('tv_volume')
-
-            self.emit_buffers[underlying][symbol] = {
+            event_data = {
                 'underlying': underlying,
                 'symbol': symbol,
-                'lp': price,
-                'volume': vol,
+                'lp': data.get('lp'),
+                'volume': data.get('volume'),
                 'bid': data.get('bid'),
                 'ask': data.get('ask')
             }
 
-            import time
-            now = time.time()
-            if now - self.last_emit_times.get(underlying, 0) > 0.5: # 2Hz for options
-                batch_data = list(self.emit_buffers[underlying].values())
-                self.emit_buffers[underlying] = {}
-                self.last_emit_times[underlying] = now
+            async def emit():
+                try:
+                    await self.sio.emit('options_quote_update', event_data, room=f"options_{underlying}")
+                except Exception as e:
+                    logger.error(f"Error emitting options quote: {e}")
 
-                async def emit(d):
-                    try:
-                        # Send as a batch instead of individual messages
-                        await self.sio.emit('options_batch_update', d, room=f"options_{underlying}")
-                    except Exception as e:
-                        logger.error(f"Error emitting options batch: {e}")
-
-                if self.loop:
-                    asyncio.run_coroutine_threadsafe(emit(batch_data), self.loop)
+            if self.loop:
+                asyncio.run_coroutine_threadsafe(emit(), self.loop)
     
     def is_market_open(self):
         ist = pytz.timezone('Asia/Kolkata')
@@ -494,7 +416,7 @@ class OptionsManager:
             if not oi_data:
                 return await self._take_snapshot_tv(underlying)
             
-            rows = await self._process_oi_data(
+            rows = self._process_oi_data(
                 oi_data, underlying, default_expiry, wss_data, spot_price, oi_source
             )
             
@@ -502,7 +424,7 @@ class OptionsManager:
                 # Store previous chain for buildup analysis
                 self.previous_chains[underlying] = rows.copy()
                 
-                await asyncio.to_thread(db.insert_options_snapshot, rows)
+                db.insert_options_snapshot(rows)
                 # Use the same timestamp as in rows
                 snap_ts = rows[0]['timestamp'] if rows else datetime.now(pytz.utc)
                 await self._calculate_pcr(underlying, snap_ts, rows, spot_price)
@@ -529,19 +451,15 @@ class OptionsManager:
                 target_keys.extend(["NSE_INDEX|NIFTY 50", "NSE|NIFTY", "NIFTY"])
             elif hrn == "BANKNIFTY":
                 target_keys.extend(["NSE_INDEX|NIFTY BANK", "NSE|BANKNIFTY", "BANKNIFTY"])
-            elif hrn == "CNXFINANCE":
-                target_keys.extend(["NSE_INDEX|NIFTY FIN SERVICE", "NSE|CNXFINANCE", "CNXFINANCE"])
+            elif hrn == "FINNIFTY":
+                target_keys.extend(["NSE_INDEX|NIFTY FIN SERVICE", "NSE|CNXFINANCE", "FINNIFTY"])
 
             placeholders = ",".join(["?"] * len(target_keys))
-            res = await asyncio.to_thread(
-                db.query,
-                f"""
+            res = db.query(f"""
                 SELECT price FROM ticks
                 WHERE instrumentKey IN ({placeholders})
                 ORDER BY ts_ms DESC LIMIT 1
-                """,
-                tuple(target_keys)
-            )
+            """, tuple(target_keys))
             
             if res and res[0]['price'] > 0:
                 logger.info(f"Spot Price discovered from Ticks for {underlying}: {res[0]['price']}")
@@ -559,15 +477,11 @@ class OptionsManager:
 
             # Layer 3: PCR History (Last recorded price)
             logger.info(f"Hist candles failed for {underlying}, trying PCR history fallback...")
-            last_pcr = await asyncio.to_thread(
-                db.query,
-                """
+            last_pcr = db.query("""
                 SELECT spot_price, underlying_price FROM pcr_history
                 WHERE underlying = ? AND (spot_price > 0 OR underlying_price > 0)
                 ORDER BY timestamp DESC LIMIT 1
-                """,
-                (underlying,)
-            )
+            """, (underlying,))
 
             if last_pcr:
                 price = last_pcr[0].get('spot_price') or last_pcr[0].get('underlying_price') or 0
@@ -604,7 +518,7 @@ class OptionsManager:
 
         return None, None, None
     
-    async def _process_oi_data(
+    def _process_oi_data(
         self,
         oi_data: Dict[str, Any],
         underlying: str,
@@ -617,10 +531,6 @@ class OptionsManager:
         rows = []
         timestamp = datetime.now(pytz.utc)
         
-        # Clear cache if large
-        if len(self.greeks_cache) > 500:
-            self.greeks_cache = {}
-
         # Robust date parsing
         expiry_date = None
         if isinstance(default_expiry, str):
@@ -639,11 +549,7 @@ class OptionsManager:
         else:
             time_to_expiry = 0.03  # Default ~11 days
         
-        for i, (strike_str, strike_data) in enumerate(oi_data.items()):
-            # Yield frequently
-            if i % 5 == 0:
-                await asyncio.sleep(0.01)
-
+        for strike_str, strike_data in oi_data.items():
             strike = float(strike_str)
             c_sym = self.symbol_map_cache.get(underlying, {}).get(f"{strike}_call")
             p_sym = self.symbol_map_cache.get(underlying, {}).get(f"{strike}_put")
@@ -652,15 +558,9 @@ class OptionsManager:
             
             # Call option
             call_ltp = c_wss.get('lp', 0.0) or float(strike_data.get('callLtp', 0) or 0)
-
-            cache_key = f"c_{spot_price}_{strike}_{time_to_expiry}_{call_ltp}"
-            if cache_key in self.greeks_cache:
-                call_greeks = self.greeks_cache[cache_key]
-            else:
-                call_greeks = greeks_calculator.calculate_all_greeks(
-                    spot_price, strike, time_to_expiry, 0.20, 'call', call_ltp
-                )
-                self.greeks_cache[cache_key] = call_greeks
+            call_greeks = greeks_calculator.calculate_all_greeks(
+                spot_price, strike, time_to_expiry, 0.20, 'call', call_ltp
+            )
             
             rows.append({
                 'timestamp': timestamp,
@@ -685,15 +585,9 @@ class OptionsManager:
             
             # Put option
             put_ltp = p_wss.get('lp', 0.0) or float(strike_data.get('putLtp', 0) or 0)
-
-            cache_key = f"p_{spot_price}_{strike}_{time_to_expiry}_{put_ltp}"
-            if cache_key in self.greeks_cache:
-                put_greeks = self.greeks_cache[cache_key]
-            else:
-                put_greeks = greeks_calculator.calculate_all_greeks(
-                    spot_price, strike, time_to_expiry, 0.20, 'put', put_ltp
-                )
-                self.greeks_cache[cache_key] = put_greeks
+            put_greeks = greeks_calculator.calculate_all_greeks(
+                spot_price, strike, time_to_expiry, 0.20, 'put', put_ltp
+            )
             
             rows.append({
                 'timestamp': timestamp,
@@ -757,10 +651,7 @@ class OptionsManager:
         if underlying not in self.symbol_map_cache:
             self.symbol_map_cache[underlying] = {}
         
-        for i, item in enumerate(data['symbols']):
-            if i % 10 == 0:
-                await asyncio.sleep(0)
-
+        for item in data['symbols']:
             f = item['f']
             try:
                 symbol = f[0]
@@ -843,19 +734,17 @@ class OptionsManager:
                 continue
         
         if rows:
-            await asyncio.to_thread(db.insert_options_snapshot, rows)
-            await self._calculate_pcr(underlying, timestamp, rows, spot_price)
+            db.insert_options_snapshot(rows)
+            await self._calculate_pcr(underlying, timestamp, rows)
             logger.info(f"Saved TV snapshot for {underlying} with {len(rows)} rows")
             
-            # Subscribe to discovered symbols via primary provider
-            provider = live_stream_registry.get_primary()
-            if provider:
+            if underlying in self.wss_clients:
                 atm_strike = sum(r['strike'] for r in rows) / len(rows) if rows else 0
                 filtered_symbols = [
                     r['symbol'] for r in rows
                     if r['symbol'] and (atm_strike == 0 or abs(r['strike'] - atm_strike) / atm_strike < 0.05)
                 ]
-                provider.subscribe(filtered_symbols[:400])
+                self.wss_clients[underlying].add_symbols(filtered_symbols[:400])
     
     async def _refresh_wss_symbols(self, underlying: str):
         provider = options_data_registry.get_primary()
@@ -877,8 +766,7 @@ class OptionsManager:
         # Fallback to local DB if symbols not found via provider
         if not self.symbol_map_cache[underlying]:
             logger.info(f"Symbols not found via provider for {underlying}, trying local DB fallback...")
-            db_res = await asyncio.to_thread(
-                db.query,
+            db_res = db.query(
                 "SELECT DISTINCT symbol, strike, option_type FROM options_snapshots WHERE underlying = ? ORDER BY timestamp DESC LIMIT 200",
                 (underlying,)
             )
@@ -889,10 +777,8 @@ class OptionsManager:
                 all_symbols.append(symbol)
                 self.symbol_map_cache[underlying][f"{strike}_{opt_type}"] = symbol
 
-        if all_symbols:
-            provider = live_stream_registry.get_primary()
-            if provider:
-                provider.subscribe(list(set(all_symbols))[:400])
+        if all_symbols and underlying in self.wss_clients:
+            self.wss_clients[underlying].add_symbols(list(set(all_symbols))[:400])
     
     async def _calculate_pcr(self, underlying, timestamp, rows, spot_price=0):
         """Calculate PCR with enhanced metrics."""
@@ -913,39 +799,28 @@ class OptionsManager:
         pcr_vol = total_put_vol / total_call_vol if total_call_vol > 0 else 0
         pcr_oi_change = total_put_oi_chg / total_call_oi_chg if total_call_oi_chg != 0 else 0
         
-        # Calculate max pain using vectorized approach if possible
-        max_pain = 0
-        try:
-            strikes = sorted(list(set(r['strike'] for r in rows)))
-            if strikes:
-                call_df = pd.DataFrame(calls)
-                put_df = pd.DataFrame(puts)
+        # Calculate max pain
+        strikes = sorted(list(set(r['strike'] for r in rows)))
+        min_pain = float('inf')
+        max_pain = strikes[0] if strikes else 0
 
-                min_pain = float('inf')
-                max_pain = strikes[0]
-
-                for s in strikes:
-                    # Optimized pain calculation
-                    c_pain = ((s - call_df[call_df['strike'] < s]['strike']) * call_df[call_df['strike'] < s]['oi']).sum()
-                    p_pain = ((put_df[put_df['strike'] > s]['strike'] - s) * put_df[put_df['strike'] > s]['oi']).sum()
-
-                    total_pain = c_pain + p_pain
-                    if total_pain < min_pain:
-                        min_pain = total_pain
-                        max_pain = s
-
-                    # Yield occasionally if in backfill
-                    if len(rows) > 200: # Heuristic for backfill rows
-                        await asyncio.sleep(0)
-        except Exception as e:
-            logger.error(f"Error calculating max pain: {e}")
-            max_pain = 0
+        for s in strikes:
+            pain = 0
+            for r in calls:
+                if s > r['strike']:
+                    pain += (s - r['strike']) * r['oi']
+            for r in puts:
+                if r['strike'] > s:
+                    pain += (r['strike'] - s) * r['oi']
+            if pain < min_pain:
+                min_pain = pain
+                max_pain = s
         
         # Get underlying price
         # We now rely on the robust spot_price discovery performed by the caller (take_snapshot)
         underlying_price = spot_price
         
-        await asyncio.to_thread(db.insert_pcr_history, {
+        db.insert_pcr_history({
             'timestamp': timestamp,
             'underlying': underlying,
             'pcr_oi': pcr_oi,
@@ -969,10 +844,9 @@ class OptionsManager:
     
     # New API methods for enhanced features
     
-    async def get_chain_with_greeks(self, underlying: str) -> Dict[str, Any]:
+    def get_chain_with_greeks(self, underlying: str) -> Dict[str, Any]:
         """Get option chain with Greeks calculated."""
-        latest_ts_res = await asyncio.to_thread(
-            db.query,
+        latest_ts_res = db.query(
             "SELECT MAX(timestamp) as ts FROM options_snapshots WHERE underlying = ?",
             (underlying,)
         )
@@ -981,18 +855,16 @@ class OptionsManager:
             return {"chain": []}
         
         latest_ts = latest_ts_res[0]['ts']
-        chain = await asyncio.to_thread(
-            db.query,
+        chain = db.query(
             "SELECT * FROM options_snapshots WHERE underlying = ? AND timestamp = ? ORDER BY strike ASC",
             (underlying, latest_ts),
-            True # json_serialize
+            json_serialize=True
         )
 
         source = chain[0].get('source', 'unknown') if chain else 'unknown'
         
         # Fetch spot price from pcr_history
-        spot_res = await asyncio.to_thread(
-            db.query,
+        spot_res = db.query(
             "SELECT spot_price, underlying_price FROM pcr_history WHERE underlying = ? AND timestamp <= ? ORDER BY timestamp DESC LIMIT 1",
             (underlying, latest_ts)
         )
@@ -1013,22 +885,21 @@ class OptionsManager:
             "net_theta": round(net_theta, 2)
         }
     
-    async def get_oi_buildup_analysis(self, underlying: str) -> Dict[str, Any]:
+    def get_oi_buildup_analysis(self, underlying: str) -> Dict[str, Any]:
         """Get OI buildup analysis."""
-        chain_data = await self.get_chain_with_greeks(underlying)
-        current_chain = chain_data.get('chain', [])
+        current_chain = self.get_chain_with_greeks(underlying).get('chain', [])
         previous_chain = self.previous_chains.get(underlying, [])
         
-        return await asyncio.to_thread(oi_buildup_analyzer.analyze_chain_buildup, current_chain, previous_chain)
+        return oi_buildup_analyzer.analyze_chain_buildup(current_chain, previous_chain)
     
-    async def get_iv_analysis(self, underlying: str) -> Dict[str, Any]:
+    def get_iv_analysis(self, underlying: str) -> Dict[str, Any]:
         """Get IV analysis for underlying."""
         current_iv = 20.0  # Default
         
         if underlying in self.iv_history and self.iv_history[underlying]:
             current_iv = self.iv_history[underlying][-1]
         
-        metrics = await asyncio.to_thread(iv_analyzer.get_iv_metrics, underlying, current_iv)
+        metrics = iv_analyzer.get_iv_metrics(underlying, current_iv)
         signal = iv_analyzer.get_iv_signal(metrics.iv_rank, metrics.iv_percentile)
         
         return {
@@ -1041,15 +912,14 @@ class OptionsManager:
             'signal': signal
         }
     
-    async def get_support_resistance(self, underlying: str) -> Dict[str, Any]:
+    def get_support_resistance(self, underlying: str) -> Dict[str, Any]:
         """Get support and resistance levels based on OI with historical trend."""
-        chain_res = await self.get_chain_with_greeks(underlying)
+        chain_res = self.get_chain_with_greeks(underlying)
         chain = chain_res.get('chain', [])
-        sr_data = await asyncio.to_thread(oi_buildup_analyzer.get_support_resistance_from_oi, chain)
+        sr_data = oi_buildup_analyzer.get_support_resistance_from_oi(chain)
 
         # Add historical trend for these strikes
-        latest_ts_res = await asyncio.to_thread(
-            db.query,
+        latest_ts_res = db.query(
             "SELECT DISTINCT timestamp FROM options_snapshots WHERE underlying = ? ORDER BY timestamp DESC LIMIT 10",
             (underlying,)
         )
@@ -1064,11 +934,10 @@ class OptionsManager:
                 strike = level['strike']
                 opt_type = 'call' if level_type == 'resistance_levels' else 'put'
 
-                history = await asyncio.to_thread(
-                    db.query,
+                history = db.query(
                     f"SELECT timestamp, oi FROM options_snapshots WHERE underlying = ? AND strike = ? AND option_type = ? AND timestamp IN ({','.join(['?']*len(timestamps))}) ORDER BY timestamp ASC",
                     (underlying, strike, opt_type, *timestamps),
-                    True # json_serialize
+                    json_serialize=True
                 )
                 level['oi_history'] = [h['oi'] for h in history]
 
@@ -1088,7 +957,7 @@ class OptionsManager:
         lower = spot * (1 - daily_iv)
 
         # Fine tune with OI concentrations
-        sr = await self.get_support_resistance(underlying)
+        sr = self.get_support_resistance(underlying)
         if sr.get('resistance_levels'):
             upper = min(upper, sr['resistance_levels'][0]['strike'])
         if sr.get('support_levels'):
@@ -1100,10 +969,9 @@ class OptionsManager:
             "spot": spot
         }
 
-    async def get_high_activity_strikes(self, underlying: str) -> List[Dict[str, Any]]:
+    def get_high_activity_strikes(self, underlying: str) -> List[Dict[str, Any]]:
         """Highlights strikes with maximum OI, volume, and activity."""
-        chain_data = await self.get_chain_with_greeks(underlying)
-        chain = chain_data.get('chain', [])
+        chain = self.get_chain_with_greeks(underlying).get('chain', [])
         if not chain: return []
 
         # Sort by Net Score: OI + Volume + |OI Change|
@@ -1117,20 +985,19 @@ class OptionsManager:
 
     async def get_genie_insights(self, underlying: str) -> Dict[str, Any]:
         """Consolidated Genie insights for the dashboard."""
-        chain_res = await self.get_chain_with_greeks(underlying)
+        chain_res = self.get_chain_with_greeks(underlying)
         chain = chain_res.get('chain', [])
         spot = chain_res.get('spot_price', 0)
 
-        distribution = await asyncio.to_thread(oi_buildup_analyzer.detect_institutional_distribution, chain, spot)
-        control = await asyncio.to_thread(oi_buildup_analyzer.detect_market_control, chain)
+        distribution = oi_buildup_analyzer.detect_institutional_distribution(chain, spot)
+        control = oi_buildup_analyzer.detect_market_control(chain)
 
         # Fetch history for sideways prediction
-        history_res = await asyncio.to_thread(
-            db.query,
+        history_res = db.query(
             "SELECT spot_price, underlying_price FROM pcr_history WHERE underlying = ? ORDER BY timestamp DESC LIMIT 10",
             (underlying,)
         )
-        sideways = await asyncio.to_thread(oi_buildup_analyzer.predict_sideways_session, history_res)
+        sideways = oi_buildup_analyzer.predict_sideways_session(history_res)
 
         boundaries = await self.get_price_boundaries(underlying)
 
@@ -1148,14 +1015,11 @@ class OptionsManager:
 
         try:
             # Find records with invalid spot prices
-            invalid_records = await asyncio.to_thread(
-                db.query,
-                """
+            invalid_records = db.query("""
                 SELECT timestamp, underlying FROM pcr_history
                 WHERE spot_price <= 0 OR spot_price IS NULL
                 ORDER BY timestamp DESC
-                """
-            )
+            """)
 
             if not invalid_records:
                 logger.info("No invalid spot prices found to repair.")
@@ -1199,15 +1063,11 @@ class OptionsManager:
                 if best_price > 0 and closest_diff <= 600:
                     logger.info(f"Repairing {underlying} at {ts}: New Spot Price = {best_price}")
                     # Update pcr_history
-                    await asyncio.to_thread(
-                        db.execute,
-                        """
+                    db.execute("""
                         UPDATE pcr_history
                         SET spot_price = ?, underlying_price = ?
                         WHERE underlying = ? AND timestamp = ?
-                        """,
-                        (best_price, best_price, underlying, ts)
-                    )
+                    """, (best_price, best_price, underlying, ts))
 
             logger.info("Spot price repair completed.")
 

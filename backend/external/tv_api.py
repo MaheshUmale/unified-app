@@ -17,28 +17,24 @@ logger = logging.getLogger(__name__)
 
 class TradingViewAPI:
     def __init__(self):
-        self._tv = None
+        username = os.getenv('TV_USERNAME')
+        password = os.getenv('TV_PASSWORD')
+        if TvDatafeed:
+            self.tv = TvDatafeed(username, password) if username and password else TvDatafeed()
+            logger.info("TradingViewAPI initialized with tvDatafeed")
+        else:
+            self.tv = None
+            logger.warning("tvDatafeed not installed, falling back to Streamer only")
+
         self.streamer = Streamer(export_result=False)
         self.symbol_map = {
             'NIFTY': {'symbol': 'NIFTY', 'exchange': 'NSE'},
             'BANKNIFTY': {'symbol': 'BANKNIFTY', 'exchange': 'NSE'},
-            'CNXFINANCE': {'symbol': 'CNXFINANCE', 'exchange': 'NSE'},
+            'FINNIFTY': {'symbol': 'CNXFINANCE', 'exchange': 'NSE'},
             'INDIA VIX': {'symbol': 'INDIAVIX', 'exchange': 'NSE'}
         }
 
-    @property
-    def tv(self):
-        if self._tv is None and TvDatafeed:
-            username = os.getenv('TV_USERNAME')
-            password = os.getenv('TV_PASSWORD')
-            try:
-                self._tv = TvDatafeed(username, password) if username and password else TvDatafeed()
-                logger.info("TradingViewAPI initialized with tvDatafeed")
-            except Exception as e:
-                logger.error(f"Failed to initialize tvDatafeed: {e}")
-        return self._tv
-
-    async def get_hist_candles(self, symbol_or_hrn, interval_min='1', n_bars=1000):
+    def get_hist_candles(self, symbol_or_hrn, interval_min='1', n_bars=1000):
         try:
             logger.info(f"Fetching historical candles for {symbol_or_hrn}")
             if not symbol_or_hrn: return None
@@ -60,21 +56,8 @@ class TradingViewAPI:
                 tv_symbol = 'NIFTY'
             elif symbol_or_hrn.upper() == 'BANKNIFTY':
                 tv_symbol = 'BANKNIFTY'
-            elif symbol_or_hrn.upper() == 'CNXFINANCE':
+            elif symbol_or_hrn.upper() == 'FINNIFTY':
                 tv_symbol = 'CNXFINANCE'
-
-            # Primary: Try via Registry (leveraging Enhanced Provider)
-            try:
-                import asyncio
-                from core.provider_registry import historical_data_registry
-                provider = historical_data_registry.get_primary()
-                if provider:
-                    candles = await provider.get_hist_candles(symbol_or_hrn, interval_min, n_bars)
-                    if candles:
-                        logger.info(f"Retrieved {len(candles)} candles via Provider Registry")
-                        return candles[::-1] # Convert to newest first for tv_api consistency
-            except Exception as reg_e:
-                logger.debug(f"Registry hist fetch skipped or failed: {reg_e}")
 
             # Try Streamer first
             try:
@@ -85,16 +68,13 @@ class TradingViewAPI:
 
                 logger.info(f"Using timeframe {tf} for Streamer (interval_min={interval_min})")
 
-                def do_stream():
-                    with contextlib.redirect_stdout(io.StringIO()):
-                        return self.streamer.stream(
-                            exchange=tv_exchange,
-                            symbol=tv_symbol,
-                            timeframe=tf,
-                            numb_price_candles=n_bars
-                        )
-
-                stream = await asyncio.to_thread(do_stream)
+                with contextlib.redirect_stdout(io.StringIO()):
+                    stream = self.streamer.stream(
+                        exchange=tv_exchange,
+                        symbol=tv_symbol,
+                        timeframe=tf,
+                        numb_price_candles=n_bars
+                    )
 
                 data = None
                 for item in stream:
@@ -132,11 +112,7 @@ class TradingViewAPI:
                 elif interval_min == 'D' or interval_min == '1d': tv_interval = Interval.in_daily
                 elif interval_min == 'W' or interval_min == '1w': tv_interval = Interval.in_weekly
 
-                def get_data():
-                    return self.tv.get_hist(symbol=tv_symbol, exchange=tv_exchange, interval=tv_interval, n_bars=n_bars)
-
-                df = await asyncio.to_thread(get_data)
-
+                df = self.tv.get_hist(symbol=tv_symbol, exchange=tv_exchange, interval=tv_interval, n_bars=n_bars)
                 if df is not None and not df.empty:
                     candles = []
                     import pytz
@@ -165,23 +141,20 @@ class TradingViewAPI:
                 duration = interval_map.get(interval_min, 60)
 
                 # Fetch last 1000 bars worth of ticks using arg_min/max for accurate OHLC
-                def query_db():
-                    return db.query(f"""
-                        SELECT
-                            (ts_ms / 1000 / {duration}) * {duration} as bucket,
-                            arg_min(price, ts_ms) as o,
-                            MAX(price) as h,
-                            MIN(price) as l,
-                            arg_max(price, ts_ms) as c,
-                            SUM(qty) as v
-                        FROM ticks
-                        WHERE instrumentKey = ?
-                        GROUP BY bucket
-                        ORDER BY bucket DESC
-                        LIMIT ?
-                    """, (symbol_or_hrn, n_bars))
-
-                res = await asyncio.to_thread(query_db)
+                res = db.query(f"""
+                    SELECT
+                        (ts_ms / 1000 / {duration}) * {duration} as bucket,
+                        arg_min(price, ts_ms) as o,
+                        MAX(price) as h,
+                        MIN(price) as l,
+                        arg_max(price, ts_ms) as c,
+                        SUM(qty) as v
+                    FROM ticks
+                    WHERE instrumentKey = ?
+                    GROUP BY bucket
+                    ORDER BY bucket DESC
+                    LIMIT ?
+                """, (symbol_or_hrn, n_bars))
 
                 if res:
                     candles = [[int(r['bucket']), float(r['o']), float(r['h']), float(r['l']), float(r['c']), float(r['v'])] for r in res]

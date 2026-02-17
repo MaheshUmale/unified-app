@@ -10,7 +10,7 @@ class TrendlyneAPI:
         'NIFTY 50': 1887,
         'BANKNIFTY': 1898,
         'BANK NIFTY': 1898,
-        'CNXFINANCE': 1900,
+        'FINNIFTY': 1900,
         'FIN NIFTY': 1900
     }
 
