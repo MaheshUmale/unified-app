@@ -55,15 +55,11 @@ async def lifespan(app: FastAPI):
     
     # Start WebSocket Feed
     logger.info("Starting TradingView WebSocket thread...")
-
-    async def start_ws():
-        data_engine.start_websocket_thread(None, INITIAL_INSTRUMENTS)
-
-    asyncio.create_task(start_ws())
+    data_engine.start_websocket_thread(None, INITIAL_INSTRUMENTS)
     
     # Start Options Management
     options_manager.set_socketio(sio, loop=main_loop)
-    asyncio.create_task(options_manager.start())
+    await options_manager.start()
 
     # Initialize Scalper
     scalper.set_socketio(sio, loop=main_loop)
@@ -192,7 +188,7 @@ async def tv_search(text: str = Query(..., min_length=1)):
     
     # Augmented search for options
     upper_text = search_text.upper()
-    indices = ["NIFTY", "BANKNIFTY", "CNXFINANCE"]
+    indices = ["NIFTY", "BANKNIFTY", "FINNIFTY"]
     underlying = None
     
     for idx in indices:
@@ -259,49 +255,42 @@ async def get_intraday(instrument_key: str, interval: str = '1'):
         clean_key = unquote(instrument_key)
         hrn = symbol_mapper.get_hrn(clean_key)
         
-        tv_candles = await tv_api.get_hist_candles(clean_key, interval, 1000)
+        tv_candles = await asyncio.to_thread(tv_api.get_hist_candles, clean_key, interval, 1000)
         
         valid_indicators = []
         if tv_candles:
             try:
                 import pandas as pd
                 analyzer_candles = sorted(tv_candles, key=lambda x: x[0])
+                df = pd.DataFrame(analyzer_candles, columns=['ts', 'o', 'h', 'l', 'c', 'v'])
 
-                # Technical Analysis Offloading
-                def calculate_indicators(candles):
-                    df = pd.DataFrame(candles, columns=['ts', 'o', 'h', 'l', 'c', 'v'])
-
-                    # EMA 9
-                    ema9 = df['c'].ewm(span=9, adjust=False).mean()
-                    e9_data = [{"time": candles[i][0], "value": float(val)}
-                              for i, val in enumerate(ema9) if i >= 8]
-
-                    # EMA 20
-                    ema20 = df['c'].ewm(span=20, adjust=False).mean()
-                    e20_data = [{"time": candles[i][0], "value": float(val)}
-                               for i, val in enumerate(ema20) if i >= 19]
-
-                    # Market Psychology Analyzer
-                    from brain.MarketPsychologyAnalyzer import MarketPsychologyAnalyzer
-                    analyzer = MarketPsychologyAnalyzer()
-                    zones, signals = analyzer.analyze(candles)
-
-                    return e9_data, e20_data, zones, signals
-
-                e9_data, e20_data, zones, signals = await asyncio.to_thread(calculate_indicators, analyzer_candles)
-
+                # EMA 9
+                ema9 = df['c'].ewm(span=9, adjust=False).mean()
                 valid_indicators.append({
-                    "id": "ema_9", "title": "EMA 9", "type": "line",
+                    "id": "ema_9",
+                    "title": "EMA 9",
+                    "type": "line",
                     "style": {"color": "#3b82f6", "lineWidth": 1},
-                    "data": e9_data
+                    "data": [{"time": analyzer_candles[i][0], "value": float(val)}
+                            for i, val in enumerate(ema9) if i >= 8]
                 })
                 
+                # EMA 20
+                ema20 = df['c'].ewm(span=20, adjust=False).mean()
                 valid_indicators.append({
-                    "id": "ema_20", "title": "EMA 20", "type": "line",
+                    "id": "ema_20",
+                    "title": "EMA 20",
+                    "type": "line",
                     "style": {"color": "#f97316", "lineWidth": 1},
-                    "data": e20_data
+                    "data": [{"time": analyzer_candles[i][0], "value": float(val)}
+                            for i, val in enumerate(ema20) if i >= 19]
                 })
                 
+                # Market Psychology Analyzer
+                from brain.MarketPsychologyAnalyzer import MarketPsychologyAnalyzer
+                analyzer = MarketPsychologyAnalyzer()
+                zones, signals = analyzer.analyze(analyzer_candles)
+
                 for i, zone in enumerate(zones):
                     valid_indicators.append({
                         "id": f"battle_zone_{i}",
@@ -352,7 +341,7 @@ async def get_intraday(instrument_key: str, interval: str = '1'):
 @fastapi_app.get("/api/options/chain/{underlying}")
 async def get_options_chain(underlying: str):
     """Returns the latest option chain with Greeks."""
-    return await options_manager.get_chain_with_greeks(underlying)
+    return options_manager.get_chain_with_greeks(underlying)
 
 
 @fastapi_app.get("/api/options/chain/{underlying}/with-greeks")
@@ -361,7 +350,7 @@ async def get_options_chain_with_greeks(
     spot_price: Optional[float] = None
 ):
     """Get option chain with calculated Greeks."""
-    chain_data = await options_manager.get_chain_with_greeks(underlying)
+    chain_data = options_manager.get_chain_with_greeks(underlying)
     
     if not spot_price:
         # Use robust spot price discovery
@@ -452,19 +441,19 @@ async def get_options_greeks(
 @fastapi_app.get("/api/options/oi-buildup/{underlying}")
 async def get_oi_buildup_analysis(underlying: str):
     """Get OI buildup analysis for underlying."""
-    return await options_manager.get_oi_buildup_analysis(underlying)
+    return options_manager.get_oi_buildup_analysis(underlying)
 
 
 @fastapi_app.get("/api/options/iv-analysis/{underlying}")
 async def get_iv_analysis(underlying: str):
     """Get IV analysis for underlying."""
-    return await options_manager.get_iv_analysis(underlying)
+    return options_manager.get_iv_analysis(underlying)
 
 
 @fastapi_app.get("/api/options/support-resistance/{underlying}")
 async def get_support_resistance(underlying: str, top_n: int = Query(default=3, ge=1, le=10)):
     """Get support and resistance levels based on OI."""
-    return await options_manager.get_support_resistance(underlying)
+    return options_manager.get_support_resistance(underlying)
 
 
 @fastapi_app.get("/api/options/genie-insights/{underlying}")
@@ -476,14 +465,13 @@ async def get_genie_insights(underlying: str):
 @fastapi_app.get("/api/options/high-activity/{underlying}")
 async def get_high_activity_strikes(underlying: str):
     """Get strikes with maximum activity."""
-    return await options_manager.get_high_activity_strikes(underlying)
+    return options_manager.get_high_activity_strikes(underlying)
 
 
 @fastapi_app.get("/api/options/pcr-trend/{underlying}")
 async def get_pcr_trend(underlying: str):
     """Returns historical PCR data for current trading day."""
-    history = await asyncio.to_thread(
-        db.query,
+    history = db.query(
         """
         SELECT timestamp,
             AVG(pcr_oi) as pcr_oi,
@@ -502,7 +490,7 @@ async def get_pcr_trend(underlying: str):
         ORDER BY timestamp ASC
         """,
         (underlying, underlying),
-        True # json_serialize
+        json_serialize=True
     )
     
     return {"history": history}
@@ -511,8 +499,7 @@ async def get_pcr_trend(underlying: str):
 @fastapi_app.get("/api/options/full-history/{underlying}")
 async def get_full_options_history(underlying: str):
     """Returns all PCR and Option Snapshots for today for REPLAY."""
-    pcr_history = await asyncio.to_thread(
-        db.query,
+    pcr_history = db.query(
         """
         SELECT timestamp,
             AVG(pcr_oi) as pcr_oi,
@@ -531,11 +518,10 @@ async def get_full_options_history(underlying: str):
         ORDER BY timestamp ASC
         """,
         (underlying, underlying),
-        True # json_serialize
+        json_serialize=True
     )
 
-    snapshots = await asyncio.to_thread(
-        db.query,
+    snapshots = db.query(
         """
         SELECT timestamp, strike, option_type, oi, oi_change, volume, ltp, iv, delta, theta
         FROM options_snapshots
@@ -545,7 +531,7 @@ async def get_full_options_history(underlying: str):
         ORDER BY timestamp ASC, strike ASC
         """,
         (underlying,),
-        True # json_serialize
+        json_serialize=True
     )
 
     return {
@@ -557,8 +543,7 @@ async def get_full_options_history(underlying: str):
 @fastapi_app.get("/api/options/oi-analysis/{underlying}")
 async def get_oi_analysis(underlying: str):
     """Returns OI distribution data for latest snapshot."""
-    latest_ts_res = await asyncio.to_thread(
-        db.query,
+    latest_ts_res = db.query(
         "SELECT MAX(timestamp) as ts FROM options_snapshots WHERE underlying = ?",
         (underlying,)
     )
@@ -567,8 +552,7 @@ async def get_oi_analysis(underlying: str):
         return {"data": []}
     
     latest_ts = latest_ts_res[0]['ts']
-    data = await asyncio.to_thread(
-        db.query,
+    data = db.query(
         """
         SELECT strike,
             SUM(CASE WHEN option_type = 'call' THEN oi ELSE 0 END) as call_oi,
@@ -584,7 +568,7 @@ async def get_oi_analysis(underlying: str):
         ORDER BY strike ASC
         """,
         (underlying, latest_ts),
-        True # json_serialize
+        json_serialize=True
     )
     
     return {"timestamp": latest_ts, "data": data}
@@ -628,7 +612,8 @@ async def build_strategy(request: Request):
         underlying = body.get('underlying')
         spot_price = body.get('spot_price')
         if not spot_price:
-            spot_price = await options_manager.get_spot_price(underlying)
+            res = db.query("SELECT price FROM ticks WHERE instrumentKey = ? ORDER BY ts_ms DESC LIMIT 1", (underlying,))
+            spot_price = res[0]['price'] if res else 0
 
         legs = body.get('legs', [])
         
@@ -656,7 +641,9 @@ async def create_bull_call_spread(request: Request):
         spot_price = body.get('spot_price')
 
         if not spot_price:
-            spot_price = await options_manager.get_spot_price(underlying)
+            # Try to get spot price
+            res = db.query("SELECT price FROM ticks WHERE instrumentKey = ? ORDER BY ts_ms DESC LIMIT 1", (underlying,))
+            spot_price = res[0]['price'] if res else 0
 
         strategy = strategy_builder.create_bull_call_spread(
             underlying=underlying,
@@ -689,7 +676,8 @@ async def create_iron_condor(request: Request):
         spot_price = body.get('spot_price')
 
         if not spot_price:
-            spot_price = await options_manager.get_spot_price(underlying)
+            res = db.query("SELECT price FROM ticks WHERE instrumentKey = ? ORDER BY ts_ms DESC LIMIT 1", (underlying,))
+            spot_price = res[0]['price'] if res else 0
 
         strategy = strategy_builder.create_iron_condor(
             underlying=underlying,
@@ -723,7 +711,8 @@ async def create_long_straddle(request: Request):
         spot_price = body.get('spot_price')
 
         if not spot_price:
-            spot_price = await options_manager.get_spot_price(underlying)
+            res = db.query("SELECT price FROM ticks WHERE instrumentKey = ? ORDER BY ts_ms DESC LIMIT 1", (underlying,))
+            spot_price = res[0]['price'] if res else 0
 
         strategy = strategy_builder.create_long_straddle(
             underlying=underlying,
@@ -879,11 +868,10 @@ async def get_tick_history(instrument_key: str, limit: int = 10000):
         logger.info(f"Fetching tick history for {clean_key} (limit: {limit})")
 
         # Fetch ticks from DuckDB ticks table
-        history = await asyncio.to_thread(
-            db.query,
+        history = db.query(
             "SELECT ts_ms, price, qty FROM ticks WHERE instrumentKey = ? ORDER BY ts_ms DESC LIMIT ?",
             (clean_key, limit),
-            True # json_serialize
+            json_serialize=True
         )
 
         logger.info(f"Retrieved {len(history)} ticks for {clean_key}")
@@ -920,12 +908,6 @@ async def serve_index(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
 
-@fastapi_app.get("/modern")
-async def serve_modern_dashboard(request: Request):
-    """Serves the new modern, single-screen tactical dashboard."""
-    return templates.TemplateResponse("modern_dashboard.html", {"request": request})
-
-
 @fastapi_app.get("/options")
 async def serve_options_dashboard(request: Request):
     return templates.TemplateResponse("options_dashboard.html", {"request": request})
@@ -936,14 +918,65 @@ async def db_viewer(request: Request):
     return templates.TemplateResponse("db_viewer.html", {"request": request})
 
 
+@fastapi_app.get("/modern")
+async def serve_modern_dashboard(request: Request):
+    """Serves the modern cyberpunk dashboard."""
+    return templates.TemplateResponse("modern_dashboard.html", {"request": request})
+
+
+@fastapi_app.get("/api/modern/data/{underlying}")
+async def get_modern_dashboard_data(underlying: str):
+    """
+    Consolidated endpoint for the modern dashboard to get all required data in one hit.
+    Reduces frontend complexity and multiple fetch requests.
+    """
+    try:
+        # 1. Option Chain & Greeks
+        chain_data = options_manager.get_chain_with_greeks(underlying)
+
+        # 2. OI Buildup Analysis
+        oi_buildup = options_manager.get_oi_buildup_analysis(underlying)
+
+        # 3. PCR Trend
+        pcr_trend = db.query(
+            "SELECT timestamp, pcr_oi, spot_price FROM pcr_history WHERE underlying = ? ORDER BY timestamp DESC LIMIT 50",
+            (underlying,),
+            json_serialize=True
+        )
+
+        # 4. Support/Resistance
+        sr_levels = options_manager.get_support_resistance(underlying)
+
+        # 5. Genie Insights
+        genie = await options_manager.get_genie_insights(underlying)
+
+        # 6. Spot Price
+        res = db.query("SELECT price FROM ticks WHERE instrumentKey = ? ORDER BY ts_ms DESC LIMIT 1", (underlying,))
+        spot_price = res[0]['price'] if res else 0
+
+        return {
+            "underlying": underlying,
+            "spot_price": spot_price,
+            "chain": chain_data.get('chain', []),
+            "oi_buildup": oi_buildup,
+            "pcr_trend": pcr_trend[::-1], # Return in chronological order
+            "sr_levels": sr_levels,
+            "genie": genie,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error fetching modern dashboard data: {e}")
+        return {"error": str(e)}
+
+
 @fastapi_app.get("/api/db/tables")
 async def get_db_tables():
     try:
-        tables = await asyncio.to_thread(db.get_tables)
+        tables = db.get_tables()
         result = []
         for table in tables:
-            schema = await asyncio.to_thread(db.get_table_schema, table, True)
-            count_res = await asyncio.to_thread(db.query, f'SELECT COUNT(*) as count FROM "{table}"')
+            schema = db.get_table_schema(table, json_serialize=True)
+            count_res = db.query(f'SELECT COUNT(*) as count FROM "{table}"')
             row_count = count_res[0]['count'] if count_res else 0
             result.append({"name": table, "schema": schema, "row_count": row_count})
         return {"tables": result}
@@ -960,7 +993,7 @@ async def run_db_query(request: Request):
         if not sql:
             raise HTTPException(status_code=400, detail="SQL query is required")
         
-        results = await asyncio.to_thread(db.query, sql, (), True)
+        results = db.query(sql, json_serialize=True)
         return {"results": results}
     except Exception as e:
         logger.error(f"Error running query: {e}")
@@ -975,7 +1008,7 @@ async def export_db_query(request: Request):
         if not sql:
             raise HTTPException(status_code=400, detail="SQL query is required")
         
-        results = await asyncio.to_thread(db.query, sql, (), False)
+        results = db.query(sql, json_serialize=False)
         if not results:
             return {"error": "No data to export"}
         

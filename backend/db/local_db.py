@@ -18,7 +18,7 @@ class LocalDBJSONEncoder(json.JSONEncoder):
         if isinstance(obj, datetime): return obj.isoformat()
         return super().default(obj)
 
-DB_PATH = os.getenv('DUCKDB_PATH', 'pro_trade.duckdb')
+DB_PATH = os.getenv('DUCKDB_PATH', 'pro_trade.db')
 
 class LocalDB:
     _instance = None
