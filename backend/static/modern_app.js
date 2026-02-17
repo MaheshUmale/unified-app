@@ -52,53 +52,6 @@ function setupEventListeners() {
 
         loadAllData();
     });
-
-    document.getElementById('buyCallBtn').addEventListener('click', () => executeTrade('CALL'));
-    document.getElementById('buyPutBtn').addEventListener('click', () => executeTrade('PUT'));
-    document.getElementById('closeAllBtn').addEventListener('click', () => closeAllPositions());
-
-    document.querySelectorAll('.strike-toggle').forEach(btn => {
-        btn.addEventListener('click', () => {
-            document.querySelectorAll('.strike-toggle').forEach(b => b.classList.remove('active', 'bg-gray-700', 'text-cyan-400', 'border-cyan-400/50'));
-            document.querySelectorAll('.strike-toggle').forEach(b => b.classList.add('bg-gray-800', 'text-gray-400'));
-
-            btn.classList.add('active', 'bg-gray-700', 'text-cyan-400', 'border-cyan-400/50');
-            btn.classList.remove('bg-gray-800', 'text-gray-400');
-        });
-    });
-
-    document.querySelectorAll('.qty-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            document.querySelectorAll('.qty-btn').forEach(b => b.classList.remove('active', 'bg-cyan-500/20', 'text-cyan-400', 'border-cyan-400/50'));
-            btn.classList.add('active', 'bg-cyan-500/20', 'text-cyan-400', 'border-cyan-400/50');
-        });
-    });
-}
-
-async function executeTrade(side) {
-    const offset = parseInt(document.querySelector('.strike-toggle.active')?.dataset.offset || 0);
-    const qty = document.querySelector('.qty-btn.active')?.dataset.qty || 100;
-
-    console.log(`Executing ${side} trade: Offset ${offset}, Qty ${qty}`);
-
-    // In a real app, this would call /api/scalper/start or a direct execution endpoint
-    await fetch(`/api/scalper/start?underlying=${currentUnderlying}`, { method: 'POST' });
-    loadAllData(); // Refresh UI
-}
-
-async function closeAllPositions() {
-    if (confirm("Confirm CLOSE ALL positions?")) {
-        console.log("Closing all positions...");
-        await fetch('/api/scalper/stop', { method: 'POST' });
-        loadAllData();
-    }
-}
-
-async function closePosition(symbol) {
-    console.log(`Closing position: ${symbol}`);
-    // Simulated close
-    await fetch('/api/scalper/stop', { method: 'POST' });
-    loadAllData();
 }
 
 function updateTime() {
@@ -115,8 +68,6 @@ async function loadAllData() {
     updateOIStrikeChart(mock.oiRes);
     updateOIDivergenceChart(mock.pcrRes);
     updateGenieData(mock.genieRes);
-    renderLiquidityHeatmap(mock.srRes);
-    updatePositionsTable([]);
 
     try {
         const fetchWithTimeout = async (url, timeout = 5000) => {
@@ -155,17 +106,12 @@ async function loadAllData() {
             }
 
             if (data.genie) updateGenieData(data.genie);
-            if (data.sr_levels) renderLiquidityHeatmap(data.sr_levels);
 
             if (data.spot_price) {
                 spotPrice = data.spot_price;
                 document.getElementById('spotPrice').textContent = spotPrice.toLocaleString(undefined, { minimumFractionDigits: 2 });
             }
         }
-
-        // Still need scalper status separately as it's more dynamic
-        const scalperRes = await fetchWithTimeout('/api/scalper/status');
-        if (scalperRes && scalperRes.active_trades) updatePositionsTable(scalperRes.active_trades);
 
         console.log("Triggering Chart Data load...");
         loadChartData();
@@ -739,92 +685,6 @@ function updateCVDFromCandles(candles) {
     charts.cvdSeries.setData(cvdData);
 }
 
-// ==================== RIGHT PANEL WIDGETS ====================
-
-function renderLiquidityHeatmap(res) {
-    const canvas = document.getElementById('heatmapCanvas');
-    const ctx = canvas.getContext('2d');
-    const scale = document.getElementById('heatmapPriceScale');
-
-    const container = canvas.parentElement;
-    canvas.width = container.clientWidth;
-    canvas.height = container.clientHeight;
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    scale.innerHTML = '';
-
-    const levels = [
-        ...(res.resistance_levels || []).map(l => ({ ...l, type: 'RES' })),
-        ...(res.support_levels || []).map(l => ({ ...l, type: 'SUP' }))
-    ].sort((a, b) => b.strike - a.strike);
-
-    if (levels.length === 0) return;
-
-    const maxStrike = levels[0].strike + 100;
-    const minStrike = levels[levels.length - 1].strike - 100;
-    const range = maxStrike - minStrike;
-
-    // Draw scale
-    for (let i = 0; i <= 5; i++) {
-        const s = maxStrike - (i * range / 5);
-        const div = document.createElement('div');
-        div.textContent = Math.round(s);
-        scale.appendChild(div);
-    }
-
-    levels.forEach(l => {
-        const y = ((maxStrike - l.strike) / range) * canvas.height;
-        const weight = Math.min(l.oi / 2000000, 1.0);
-
-        const gradient = ctx.createLinearGradient(0, y - 10, 0, y + 10);
-        const color = l.type === 'RES' ? '255, 51, 102' : '0, 255, 194';
-        gradient.addColorStop(0, `rgba(${color}, 0)`);
-        gradient.addColorStop(0.5, `rgba(${color}, ${0.1 + weight * 0.4})`);
-        gradient.addColorStop(1, `rgba(${color}, 0)`);
-
-        ctx.fillStyle = gradient;
-        ctx.fillRect(0, y - 15, canvas.width, 30);
-
-        // Bright line in center
-        ctx.strokeStyle = `rgba(${color}, ${0.3 + weight * 0.7})`;
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(canvas.width, y);
-        ctx.stroke();
-    });
-}
-
-function updatePositionsTable(trades) {
-    const body = document.getElementById('positionsBody');
-    body.innerHTML = '';
-
-    if (!trades || trades.length === 0) {
-        body.innerHTML = '<tr><td colspan="4" class="py-10 text-center text-gray-600 uppercase font-black text-[8px]">No active raids</td></tr>';
-        return;
-    }
-
-    trades.forEach(t => {
-        const pnl = (t.last_price - t.entry_price) * t.quantity;
-        const tr = document.createElement('tr');
-        tr.className = 'hover:bg-white/5 transition-colors';
-        tr.innerHTML = `
-            <td class="py-2 px-2 font-bold text-gray-300 uppercase">${t.symbol.split(':').pop()}</td>
-            <td class="py-2 px-2 text-right font-black ${pnl >= 0 ? 'text-bull' : 'text-bear'}">${pnl.toFixed(2)}</td>
-            <td class="py-2 px-2 text-right text-gray-400">0.00</td>
-            <td class="py-2 px-2 text-center">
-                <button class="text-bear hover:bg-bear/20 p-1 rounded close-pos-btn" data-symbol="${t.symbol}">
-                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M6 18L18 6M6 6l12 12"/></svg>
-                </button>
-            </td>
-        `;
-        body.appendChild(tr);
-    });
-
-    body.querySelectorAll('.close-pos-btn').forEach(btn => {
-        btn.addEventListener('click', () => closePosition(btn.dataset.symbol));
-    });
-}
 
 // Socket events
 socket.on('raw_tick', (data) => {
@@ -837,45 +697,50 @@ socket.on('raw_tick', (data) => {
 });
 
 socket.on('chart_update', (data) => {
-    if (data.instrumentKey === currentUnderlying && data.ohlcv && data.ohlcv.length > 0) {
-        const candle = data.ohlcv[0];
-        spotPrice = candle[4]; // Close
-        document.getElementById('spotPrice').textContent = spotPrice.toLocaleString(undefined, { minimumFractionDigits: 2 });
+    // Check if it's the right instrument and has data
+    if (data && (data.instrumentKey === currentUnderlying || data.instrument_key === currentUnderlying)) {
+        const ohlcv = data.ohlcv || data.data?.ohlcv || data.data;
+        if (ohlcv && Array.isArray(ohlcv) && ohlcv.length > 0) {
+            const candle = ohlcv[0];
+            spotPrice = candle[4]; // Close
+            document.getElementById('spotPrice').textContent = spotPrice.toLocaleString(undefined, { minimumFractionDigits: 2 });
 
-        // Update charts live
-        const formatted = {
-            time: candle[0],
-            open: candle[1],
-            high: candle[2],
-            low: candle[3],
-            close: candle[4]
-        };
-        charts.indexCandles.update(formatted);
+            // Update charts live
+            const formatted = {
+                time: candle[0],
+                open: candle[1],
+                high: candle[2],
+                low: candle[3],
+                close: candle[4]
+            };
+            charts.indexCandles.update(formatted);
 
-        // Update CVD
-        const diff = formatted.close - formatted.open;
-        // This is a bit simplified, but adds to live feel
-        // In real app, you'd get real CVD data
+            // Update CVD
+            const diff = formatted.close - formatted.open;
+            // This is a bit simplified, but adds to live feel
+            // In real app, you'd get real CVD data
+        }
     }
 });
 
 socket.on('options_quote_update', (data) => {
-    // Update options chart live
-    if (data && data.ohlcv && data.ohlcv.length > 0) {
-        const candle = data.ohlcv[0];
+    // Update options chart live with tick data
+    if (data && data.lp !== undefined && data.lp !== null) {
+        // We don't have full OHLCV here, but we can update with current price
+        // Lightweight Charts will merge this into the current bar if time matches
         const formatted = {
-            time: candle[0],
-            open: candle[1],
-            high: candle[2],
-            low: candle[3],
-            close: candle[4]
+            time: Math.floor(Date.now() / 1000),
+            value: data.lp
         };
-        charts.optionCandles.update(formatted);
-    }
-});
-
-socket.on('scalper_metrics', (data) => {
-    if (data.active_trades) {
-        updatePositionsTable(data.active_trades);
+        // Option chart is a Candlestick series, it needs OHLC
+        // Approximate it for the live feel
+        const lastBar = {
+            time: Math.floor(Date.now() / 60) * 60, // Minute bucket
+            open: data.lp,
+            high: data.lp,
+            low: data.lp,
+            close: data.lp
+        };
+        charts.optionCandles.update(lastBar);
     }
 });

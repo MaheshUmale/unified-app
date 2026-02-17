@@ -390,7 +390,8 @@ async def get_options_greeks(
 ):
     """Calculate Greeks for a specific option."""
     if not spot_price:
-        res = db.query(
+        res = await asyncio.to_thread(
+            db.query,
             "SELECT price FROM ticks WHERE instrumentKey = ? ORDER BY ts_ms DESC LIMIT 1",
             (underlying,)
         )
@@ -471,7 +472,8 @@ async def get_high_activity_strikes(underlying: str):
 @fastapi_app.get("/api/options/pcr-trend/{underlying}")
 async def get_pcr_trend(underlying: str):
     """Returns historical PCR data for current trading day."""
-    history = db.query(
+    history = await asyncio.to_thread(
+        db.query,
         """
         SELECT timestamp,
             AVG(pcr_oi) as pcr_oi,
@@ -499,7 +501,8 @@ async def get_pcr_trend(underlying: str):
 @fastapi_app.get("/api/options/full-history/{underlying}")
 async def get_full_options_history(underlying: str):
     """Returns all PCR and Option Snapshots for today for REPLAY."""
-    pcr_history = db.query(
+    pcr_history = await asyncio.to_thread(
+        db.query,
         """
         SELECT timestamp,
             AVG(pcr_oi) as pcr_oi,
@@ -521,7 +524,8 @@ async def get_full_options_history(underlying: str):
         json_serialize=True
     )
 
-    snapshots = db.query(
+    snapshots = await asyncio.to_thread(
+        db.query,
         """
         SELECT timestamp, strike, option_type, oi, oi_change, volume, ltp, iv, delta, theta
         FROM options_snapshots
@@ -543,7 +547,8 @@ async def get_full_options_history(underlying: str):
 @fastapi_app.get("/api/options/oi-analysis/{underlying}")
 async def get_oi_analysis(underlying: str):
     """Returns OI distribution data for latest snapshot."""
-    latest_ts_res = db.query(
+    latest_ts_res = await asyncio.to_thread(
+        db.query,
         "SELECT MAX(timestamp) as ts FROM options_snapshots WHERE underlying = ?",
         (underlying,)
     )
@@ -552,7 +557,8 @@ async def get_oi_analysis(underlying: str):
         return {"data": []}
     
     latest_ts = latest_ts_res[0]['ts']
-    data = db.query(
+    data = await asyncio.to_thread(
+        db.query,
         """
         SELECT strike,
             SUM(CASE WHEN option_type = 'call' THEN oi ELSE 0 END) as call_oi,
@@ -612,7 +618,11 @@ async def build_strategy(request: Request):
         underlying = body.get('underlying')
         spot_price = body.get('spot_price')
         if not spot_price:
-            res = db.query("SELECT price FROM ticks WHERE instrumentKey = ? ORDER BY ts_ms DESC LIMIT 1", (underlying,))
+            res = await asyncio.to_thread(
+                db.query,
+                "SELECT price FROM ticks WHERE instrumentKey = ? ORDER BY ts_ms DESC LIMIT 1",
+                (underlying,)
+            )
             spot_price = res[0]['price'] if res else 0
 
         legs = body.get('legs', [])
@@ -642,7 +652,11 @@ async def create_bull_call_spread(request: Request):
 
         if not spot_price:
             # Try to get spot price
-            res = db.query("SELECT price FROM ticks WHERE instrumentKey = ? ORDER BY ts_ms DESC LIMIT 1", (underlying,))
+            res = await asyncio.to_thread(
+                db.query,
+                "SELECT price FROM ticks WHERE instrumentKey = ? ORDER BY ts_ms DESC LIMIT 1",
+                (underlying,)
+            )
             spot_price = res[0]['price'] if res else 0
 
         strategy = strategy_builder.create_bull_call_spread(
@@ -676,7 +690,11 @@ async def create_iron_condor(request: Request):
         spot_price = body.get('spot_price')
 
         if not spot_price:
-            res = db.query("SELECT price FROM ticks WHERE instrumentKey = ? ORDER BY ts_ms DESC LIMIT 1", (underlying,))
+            res = await asyncio.to_thread(
+                db.query,
+                "SELECT price FROM ticks WHERE instrumentKey = ? ORDER BY ts_ms DESC LIMIT 1",
+                (underlying,)
+            )
             spot_price = res[0]['price'] if res else 0
 
         strategy = strategy_builder.create_iron_condor(
@@ -711,7 +729,11 @@ async def create_long_straddle(request: Request):
         spot_price = body.get('spot_price')
 
         if not spot_price:
-            res = db.query("SELECT price FROM ticks WHERE instrumentKey = ? ORDER BY ts_ms DESC LIMIT 1", (underlying,))
+            res = await asyncio.to_thread(
+                db.query,
+                "SELECT price FROM ticks WHERE instrumentKey = ? ORDER BY ts_ms DESC LIMIT 1",
+                (underlying,)
+            )
             spot_price = res[0]['price'] if res else 0
 
         strategy = strategy_builder.create_long_straddle(
@@ -868,7 +890,8 @@ async def get_tick_history(instrument_key: str, limit: int = 10000):
         logger.info(f"Fetching tick history for {clean_key} (limit: {limit})")
 
         # Fetch ticks from DuckDB ticks table
-        history = db.query(
+        history = await asyncio.to_thread(
+            db.query,
             "SELECT ts_ms, price, qty FROM ticks WHERE instrumentKey = ? ORDER BY ts_ms DESC LIMIT ?",
             (clean_key, limit),
             json_serialize=True
@@ -913,9 +936,6 @@ async def serve_options_dashboard(request: Request):
     return templates.TemplateResponse("options_dashboard.html", {"request": request})
 
 
-@fastapi_app.get("/db-viewer")
-async def db_viewer(request: Request):
-    return templates.TemplateResponse("db_viewer.html", {"request": request})
 
 
 @fastapi_app.get("/modern")
@@ -938,7 +958,8 @@ async def get_modern_dashboard_data(underlying: str):
         oi_buildup = options_manager.get_oi_buildup_analysis(underlying)
 
         # 3. PCR Trend
-        pcr_trend = db.query(
+        pcr_trend = await asyncio.to_thread(
+            db.query,
             "SELECT timestamp, pcr_oi, spot_price FROM pcr_history WHERE underlying = ? ORDER BY timestamp DESC LIMIT 50",
             (underlying,),
             json_serialize=True
@@ -951,7 +972,11 @@ async def get_modern_dashboard_data(underlying: str):
         genie = await options_manager.get_genie_insights(underlying)
 
         # 6. Spot Price
-        res = db.query("SELECT price FROM ticks WHERE instrumentKey = ? ORDER BY ts_ms DESC LIMIT 1", (underlying,))
+        res = await asyncio.to_thread(
+            db.query,
+            "SELECT price FROM ticks WHERE instrumentKey = ? ORDER BY ts_ms DESC LIMIT 1",
+            (underlying,)
+        )
         spot_price = res[0]['price'] if res else 0
 
         return {
@@ -972,11 +997,11 @@ async def get_modern_dashboard_data(underlying: str):
 @fastapi_app.get("/api/db/tables")
 async def get_db_tables():
     try:
-        tables = db.get_tables()
+        tables = await asyncio.to_thread(db.get_tables)
         result = []
         for table in tables:
-            schema = db.get_table_schema(table, json_serialize=True)
-            count_res = db.query(f'SELECT COUNT(*) as count FROM "{table}"')
+            schema = await asyncio.to_thread(db.get_table_schema, table, json_serialize=True)
+            count_res = await asyncio.to_thread(db.query, f'SELECT COUNT(*) as count FROM "{table}"')
             row_count = count_res[0]['count'] if count_res else 0
             result.append({"name": table, "schema": schema, "row_count": row_count})
         return {"tables": result}
@@ -985,50 +1010,6 @@ async def get_db_tables():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@fastapi_app.post("/api/db/query")
-async def run_db_query(request: Request):
-    try:
-        body = await request.json()
-        sql = body.get("sql")
-        if not sql:
-            raise HTTPException(status_code=400, detail="SQL query is required")
-        
-        results = db.query(sql, json_serialize=True)
-        return {"results": results}
-    except Exception as e:
-        logger.error(f"Error running query: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@fastapi_app.post("/api/db/export")
-async def export_db_query(request: Request):
-    try:
-        body = await request.json()
-        sql = body.get("sql")
-        if not sql:
-            raise HTTPException(status_code=400, detail="SQL query is required")
-        
-        results = db.query(sql, json_serialize=False)
-        if not results:
-            return {"error": "No data to export"}
-        
-        import pandas as pd
-        import io
-        from fastapi.responses import StreamingResponse
-        
-        df = pd.DataFrame(results)
-        stream = io.StringIO()
-        df.to_csv(stream, index=False)
-        
-        response = StreamingResponse(
-            iter([stream.getvalue()]),
-            media_type="text/csv"
-        )
-        response.headers["Content-Disposition"] = "attachment; filename=export.csv"
-        return response
-    except Exception as e:
-        logger.error(f"Error exporting query: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 # Create ASGI app

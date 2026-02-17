@@ -51,8 +51,7 @@
 
         /* Layout specific adjustments */
         .col-left { width: 30%; }
-        .col-center { width: 45%; }
-        .col-right { width: 25%; }
+        .col-center { width: 70%; }
 
         /* Typography & Coloring */
         .text-bull { color: var(--accent-bull); }
@@ -189,72 +188,6 @@
             </div>
         </div>
 
-        <!-- Right Column: Execution & Liquidity -->
-        <aside class="col-right flex flex-col gap-1 overflow-y-auto custom-scrollbar">
-            <!-- Widget 8: Liquidity Heatmap -->
-            <section class="glass-panel p-3 flex flex-col gap-2 min-h-[250px]">
-                <h3 class="text-[9px] font-black uppercase tracking-widest text-gray-500">Liquidity Heatmap</h3>
-                <div class="flex-1 flex overflow-hidden">
-                    <div id="heatmapPriceScale" class="w-10 border-r border-white/5 flex flex-col justify-between text-[8px] mono text-gray-500 py-1"></div>
-                    <div id="heatmapCanvasContainer" class="flex-1 relative">
-                         <canvas id="heatmapCanvas"></canvas>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Widget 9: Fast Order Entry -->
-            <section class="glass-panel p-3 flex flex-col gap-3">
-                <h3 class="text-[9px] font-black uppercase tracking-widest text-gray-500">Fast Order Execution</h3>
-                <div class="flex gap-2">
-                    <button id="buyCallBtn" class="flex-1 bg-bull hover:opacity-80 text-black font-black py-3 rounded text-sm transition-all active:scale-95 shadow-[0_4px_10px_rgba(0,255,194,0.3)]">BUY CALL</button>
-                    <button id="buyPutBtn" class="flex-1 bg-bear hover:opacity-80 text-black font-black py-3 rounded text-sm transition-all active:scale-95 shadow-[0_4px_10px_rgba(255,51,102,0.3)]">BUY PUT</button>
-                </div>
-                <div class="grid grid-cols-3 gap-1">
-                    <button class="bg-gray-800 hover:bg-gray-700 text-[10px] font-bold py-1 rounded border border-white/5 text-gray-400 strike-toggle" data-offset="-1">ATM-1</button>
-                    <button class="bg-gray-700 hover:bg-gray-600 text-[10px] font-black py-1 rounded border border-cyan-400/50 text-cyan-400 strike-toggle active" data-offset="0">ATM</button>
-                    <button class="bg-gray-800 hover:bg-gray-700 text-[10px] font-bold py-1 rounded border border-white/5 text-gray-400 strike-toggle" data-offset="1">ATM+1</button>
-                </div>
-                <div class="flex items-center justify-between px-1">
-                    <label class="flex items-center gap-2 cursor-pointer">
-                        <input type="checkbox" id="autoSlCheck" checked class="w-3 h-3 rounded bg-gray-800 border-white/10 text-cyan-400 focus:ring-0">
-                        <span class="text-[9px] font-bold text-gray-400 uppercase">Auto SL (15pt)</span>
-                    </label>
-                    <label class="flex items-center gap-2 cursor-pointer">
-                        <input type="checkbox" id="autoTpCheck" checked class="w-3 h-3 rounded bg-gray-800 border-white/10 text-cyan-400 focus:ring-0">
-                        <span class="text-[9px] font-bold text-gray-400 uppercase">Auto TP (30pt)</span>
-                    </label>
-                </div>
-                <div class="flex gap-1">
-                    <button class="flex-1 bg-gray-800 hover:bg-gray-700 text-[9px] font-bold py-1.5 rounded text-gray-300 qty-btn" data-qty="50">50</button>
-                    <button class="flex-1 bg-gray-800 hover:bg-gray-700 text-[9px] font-bold py-1.5 rounded text-gray-300 qty-btn active" data-qty="100">100</button>
-                    <button class="flex-1 bg-gray-800 hover:bg-gray-700 text-[9px] font-bold py-1.5 rounded text-gray-300 qty-btn" data-qty="250">250</button>
-                    <button class="flex-1 bg-gray-800 hover:bg-gray-700 text-[9px] font-bold py-1.5 rounded text-gray-300 qty-btn" data-qty="MAX">MAX</button>
-                </div>
-            </section>
-
-            <!-- Widget 10: Positions Table -->
-            <section class="glass-panel flex-1 flex flex-col min-h-[200px] overflow-hidden">
-                <div class="p-3 flex justify-between items-center border-b border-white/5">
-                    <h3 class="text-[9px] font-black uppercase tracking-widest text-gray-500">Active Raid Scoreboard</h3>
-                    <button id="closeAllBtn" class="text-[8px] font-black bg-bear/20 text-bear px-2 py-1 rounded hover:bg-bear hover:text-white transition-all">CLOSE ALL</button>
-                </div>
-                <div class="flex-1 overflow-y-auto custom-scrollbar">
-                    <table class="w-full text-[10px] mono">
-                        <thead class="sticky top-0 bg-[#1a1a1a] text-gray-500">
-                            <tr>
-                                <th class="py-2 px-2 text-left">SYMBOL</th>
-                                <th class="py-2 px-2 text-right">P&L</th>
-                                <th class="py-2 px-2 text-right">Δ</th>
-                                <th class="py-2 px-2 text-center"></th>
-                            </tr>
-                        </thead>
-                        <tbody id="positionsBody" class="divide-y divide-white/5">
-                            <!-- Dynamic -->
-                        </tbody>
-                    </table>
-                </div>
-            </section>
-        </aside>
     </main>
 
     <script src="/static/modern_app.js"></script>
