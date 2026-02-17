@@ -868,7 +868,8 @@ async def get_tick_history(instrument_key: str, limit: int = 10000):
         logger.info(f"Fetching tick history for {clean_key} (limit: {limit})")
 
         # Fetch ticks from DuckDB ticks table
-        history = db.query(
+        history = await asyncio.to_thread(
+            db.query,
             "SELECT ts_ms, price, qty FROM ticks WHERE instrumentKey = ? ORDER BY ts_ms DESC LIMIT ?",
             (clean_key, limit),
             json_serialize=True
