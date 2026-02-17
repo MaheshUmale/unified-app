@@ -799,22 +799,28 @@ class OptionsManager:
         pcr_vol = total_put_vol / total_call_vol if total_call_vol > 0 else 0
         pcr_oi_change = total_put_oi_chg / total_call_oi_chg if total_call_oi_chg != 0 else 0
         
-        # Calculate max pain
+        # Calculate max pain using vectorized pandas approach
         strikes = sorted(list(set(r['strike'] for r in rows)))
-        min_pain = float('inf')
-        max_pain = strikes[0] if strikes else 0
+        max_pain = 0
+        if strikes:
+            try:
+                df_calls = pd.DataFrame(calls)
+                df_puts = pd.DataFrame(puts)
 
-        for s in strikes:
-            pain = 0
-            for r in calls:
-                if s > r['strike']:
-                    pain += (s - r['strike']) * r['oi']
-            for r in puts:
-                if r['strike'] > s:
-                    pain += (r['strike'] - s) * r['oi']
-            if pain < min_pain:
-                min_pain = pain
-                max_pain = s
+                if not df_calls.empty and not df_puts.empty:
+                    pain_points = []
+                    for s in strikes:
+                        # Call pain: (Spot - Strike) * OI for all strikes < Spot
+                        c_pain = ((s - df_calls[df_calls['strike'] < s]['strike']) * df_calls[df_calls['strike'] < s]['oi']).sum()
+                        # Put pain: (Strike - Spot) * OI for all strikes > Spot
+                        p_pain = ((df_puts[df_puts['strike'] > s]['strike'] - s) * df_puts[df_puts['strike'] > s]['oi']).sum()
+                        pain_points.append(c_pain + p_pain)
+
+                    max_pain = strikes[pain_points.index(min(pain_points))]
+            except Exception as e:
+                logger.error(f"Vectorized Max Pain Error: {e}")
+                # Fallback to simple strike if pandas fails
+                max_pain = strikes[len(strikes)//2]
         
         # Get underlying price
         # We now rely on the robust spot_price discovery performed by the caller (take_snapshot)
@@ -994,18 +1000,39 @@ class OptionsManager:
 
         # Fetch history for sideways prediction
         history_res = db.query(
-            "SELECT spot_price, underlying_price FROM pcr_history WHERE underlying = ? ORDER BY timestamp DESC LIMIT 10",
+            "SELECT spot_price, underlying_price, max_pain FROM pcr_history WHERE underlying = ? ORDER BY timestamp DESC LIMIT 10",
             (underlying,)
         )
         sideways = oi_buildup_analyzer.predict_sideways_session(history_res)
 
+        # Latest max pain from history
+        latest_max_pain = 0
+        if history_res:
+            latest_max_pain = history_res[0].get('max_pain', 0)
+
         boundaries = await self.get_price_boundaries(underlying)
+
+        # Calculate ATM Straddle
+        atm_straddle = 0
+        if spot > 0 and chain:
+            # Find strike closest to spot
+            closest_strike = min(chain, key=lambda x: abs(x['strike'] - spot))['strike']
+            # Sum LTP of CE and PE at that strike
+            ce_ltp = next((x['ltp'] for x in chain if x['strike'] == closest_strike and x['option_type'] == 'call'), 0)
+            pe_ltp = next((x['ltp'] for x in chain if x['strike'] == closest_strike and x['option_type'] == 'put'), 0)
+            atm_straddle = ce_ltp + pe_ltp
+
+        # Get IV Rank
+        iv_analysis = self.get_iv_analysis(underlying)
 
         return {
             "distribution": distribution,
             "control": control,
             "sideways_expected": sideways,
             "boundaries": boundaries,
+            "max_pain": latest_max_pain,
+            "atm_straddle": atm_straddle,
+            "iv_rank": iv_analysis.get('iv_rank', 0),
             "sentiment": "BULLISH" if control == "BUYERS_IN_CONTROL" else "BEARISH" if control == "SELLERS_IN_CONTROL" else "NEUTRAL"
         }
 
