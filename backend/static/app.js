@@ -261,9 +261,19 @@ class ChartInstance {
     applyIndicators(indicators) {
         indicators.forEach(ind => {
             if (ind.type === 'markers') {
-                this.markers = ind.data.map(m => ({
+                const newMarkers = ind.data.map(m => ({
                     time: m.time, position: m.position, color: m.color, shape: m.shape, text: m.text
                 }));
+
+                // Merge markers, avoiding exact duplicates
+                const existingTimes = new Set(this.markers.map(m => `${m.time}_${m.text}`));
+                newMarkers.forEach(m => {
+                    if (!existingTimes.has(`${m.time}_${m.text}`)) {
+                        this.markers.push(m);
+                    }
+                });
+
+                this.markers.sort((a, b) => a.time - b.time);
                 this.applyMarkers();
                 return;
             }

@@ -57,7 +57,6 @@ class APICache:
 # Specialized caches
 hist_cache = APICache(ttl_seconds=30)
 pcr_cache = APICache(ttl_seconds=60)
-modern_cache = APICache(ttl_seconds=5)
 
 def format_error(e: Exception, message: str = "Internal Server Error"):
     logging.error(f"{message}: {str(e)}")
@@ -369,27 +368,6 @@ async def get_tick_history(instrument_key: str, limit: int = 10000):
     history = await asyncio.to_thread(db.query, "SELECT ts_ms, price, qty FROM ticks WHERE instrumentKey = ? ORDER BY ts_ms DESC LIMIT ?", (unquote(instrument_key), limit), json_serialize=True)
     return {"history": history[::-1]}
 
-@fastapi_app.get("/api/modern/data/{underlying}")
-async def get_modern_data(underlying: str):
-    cache_key = f"modern_data_{underlying}"
-    cached = modern_cache.get(cache_key)
-    if cached: return cached
-
-    try:
-        res = {
-            "underlying": underlying,
-            "spot_price": await options_manager.get_spot_price(underlying),
-            "chain": options_manager.get_chain_with_greeks(underlying).get('chain', []),
-            "oi_buildup": options_manager.get_oi_buildup_analysis(underlying),
-            "pcr_trend": (await asyncio.to_thread(db.query, "SELECT timestamp, pcr_oi, spot_price, total_oi, total_oi_change FROM pcr_history WHERE underlying = ? ORDER BY timestamp DESC LIMIT 50", (underlying,), json_serialize=True))[::-1],
-            "sr_levels": options_manager.get_support_resistance(underlying),
-            "genie": await options_manager.get_genie_insights(underlying),
-            "expiries": await options_manager.get_expiry_dates(underlying),
-            "timestamp": datetime.now().isoformat()
-        }
-        modern_cache.set(cache_key, res)
-        return res
-    except Exception as e: return format_error(e)
 
 # ==================== DATABASE API ====================
 
@@ -424,8 +402,6 @@ async def serve_index(request: Request): return templates.TemplateResponse("inde
 @fastapi_app.get("/options")
 async def serve_options(request: Request): return templates.TemplateResponse("options_dashboard.html", {"request": request})
 
-@fastapi_app.get("/modern")
-async def serve_modern(request: Request): return templates.TemplateResponse("modern_dashboard.html", {"request": request})
 
 @fastapi_app.get("/orderflow")
 async def serve_orderflow(request: Request): return templates.TemplateResponse("orderflow_chart.html", {"request": request})
