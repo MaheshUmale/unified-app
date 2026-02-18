@@ -12,6 +12,7 @@ import io
 import time
 from datetime import datetime
 import re
+import inspect
 from config import TV_COOKIE
 
 logger = logging.getLogger(__name__)
@@ -21,8 +22,18 @@ class TradingViewAPI:
         username = os.getenv('TV_USERNAME')
         password = os.getenv('TV_PASSWORD')
         if TvDatafeed:
-            self.tv = TvDatafeed(username, password) if username and password else TvDatafeed(cookies=TV_COOKIE)
-            logger.info("TradingViewAPI initialized with tvDatafeed")
+            # Safely initialize TvDatafeed based on supported arguments
+            try:
+                sig = inspect.signature(TvDatafeed.__init__)
+                if 'cookies' in sig.parameters and TV_COOKIE:
+                    self.tv = TvDatafeed(username, password) if username and password else TvDatafeed(cookies=TV_COOKIE)
+                    logger.info("TradingViewAPI initialized with tvDatafeed (using cookies)")
+                else:
+                    self.tv = TvDatafeed(username, password)
+                    logger.info("TradingViewAPI initialized with tvDatafeed")
+            except Exception as e:
+                logger.warning(f"TvDatafeed init failed, falling back to basic: {e}")
+                self.tv = TvDatafeed(username, password)
         else:
             self.tv = None
             logger.warning("tvDatafeed not installed, falling back to Streamer only")
