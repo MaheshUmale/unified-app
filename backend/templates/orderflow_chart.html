@@ -55,28 +55,28 @@
     </style>
 </head>
 <body class="flex flex-col p-1 gap-1">
-    <header class="h-12 flex-none flex items-center justify-between px-4 glass-panel rounded-lg">
+    <header class="h-12 flex-none flex items-center justify-between px-4 glass-panel rounded-lg" role="banner">
         <div class="flex items-center gap-4">
-            <span class="text-xs font-black italic text-[#3b82f6] uppercase">PRO<span class="text-white">DESK</span> <span class="text-gray-500 text-[10px] ml-1">ORDERFLOW</span></span>
+            <a href="/" class="text-xs font-black italic text-[#3b82f6] uppercase">PRO<span class="text-white">DESK</span> <span class="text-gray-500 text-[10px] ml-1">ORDERFLOW</span></a>
             <div class="h-4 w-px bg-white/10"></div>
-            <div id="display-symbol" class="text-[11px] font-black text-white uppercase tracking-widest">-</div>
+            <div id="display-symbol" class="text-[11px] font-black text-white uppercase tracking-widest" aria-label="Current Symbol">-</div>
         </div>
 
-        <div class="flex items-center gap-3">
-            <div id="status-indicator" class="flex items-center gap-2 bg-black/30 rounded-full px-3 py-1 border border-white/5">
+        <nav class="flex items-center gap-3">
+            <div id="status-indicator" class="flex items-center gap-2 bg-black/30 rounded-full px-3 py-1 border border-white/5" aria-live="polite">
                 <div id="status-dot" class="w-1.5 h-1.5 rounded-full bg-gray-500 shadow-[0_0_8px_rgba(125,133,144,0.5)]"></div>
                 <span id="status-text" class="text-[9px] font-black text-gray-500 uppercase tracking-widest">Disconnected</span>
             </div>
 
             <div class="h-4 w-px bg-white/10 mx-1"></div>
 
-            <div class="flex items-center gap-2 bg-black/40 rounded-md px-2 py-1 border border-white/5">
-                <span class="text-[9px] font-bold text-gray-500 uppercase">TPC</span>
+            <div class="flex items-center gap-2 bg-black/40 rounded-md px-2 py-1 border border-white/5" title="Ticks Per Candle">
+                <label for="ticks-input" class="text-[9px] font-bold text-gray-500 uppercase">TPC</label>
                 <input type="number" id="ticks-input" value="100" class="bg-transparent text-[10px] font-black w-12 outline-none text-[#3b82f6] text-center" min="1">
             </div>
 
-            <div class="flex items-center gap-2 bg-black/40 rounded-md px-2 py-1 border border-white/5">
-                <span class="text-[9px] font-bold text-gray-500 uppercase">STEP</span>
+            <div class="flex items-center gap-2 bg-black/40 rounded-md px-2 py-1 border border-white/5" title="Price Step">
+                <label for="step-input" class="text-[9px] font-bold text-gray-500 uppercase">STEP</label>
                 <select id="step-input" class="bg-transparent text-[10px] font-black outline-none text-[#3b82f6]">
                     <option value="0.05">0.05</option>
                     <option value="0.10">0.10</option>
@@ -92,8 +92,8 @@
                 </select>
             </div>
 
-            <button id="replay-btn" class="text-[10px] font-black px-4 py-1.5 bg-[#3b82f6]/10 text-[#3b82f6] hover:bg-[#3b82f6]/20 rounded border border-[#3b82f6]/30 transition-all uppercase tracking-widest">Replay</button>
-        </div>
+            <button id="replay-btn" class="text-[10px] font-black px-4 py-1.5 bg-[#3b82f6]/10 text-[#3b82f6] hover:bg-[#3b82f6]/20 rounded border border-[#3b82f6]/30 transition-all uppercase tracking-widest" aria-label="Replay History">Replay</button>
+        </nav>
     </header>
 
     <main class="flex-1 flex gap-1 overflow-hidden">
