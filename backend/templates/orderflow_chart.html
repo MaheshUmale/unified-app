@@ -55,45 +55,55 @@
     </style>
 </head>
 <body class="flex flex-col p-1 gap-1">
-    <header class="h-12 flex-none flex items-center justify-between px-4 glass-panel rounded-lg" role="banner">
-        <div class="flex items-center gap-4">
-            <a href="/" class="text-xs font-black italic text-[#3b82f6] uppercase">PRO<span class="text-white">DESK</span> <span class="text-gray-500 text-[10px] ml-1">ORDERFLOW</span></a>
-            <div class="h-4 w-px bg-white/10"></div>
-            <div id="display-symbol" class="text-[11px] font-black text-white uppercase tracking-widest" aria-label="Current Symbol">-</div>
+    <header class="h-14 py-2 glass-panel border-b border-white/5 px-4 md:px-6 flex items-center justify-between shrink-0" role="banner">
+        <div class="flex items-center gap-6">
+            <a href="/" class="text-sm font-black text-white italic tracking-tighter uppercase shrink-0">PRO<span class="text-blue-500">DESK</span> <span class="text-xs not-italic font-bold text-gray-500 ml-1">ORDERFLOW</span></a>
+            <div class="flex items-center gap-3">
+                <div id="display-symbol" class="text-[10px] font-black text-blue-500 uppercase tracking-widest bg-blue-500/10 px-2 py-1 rounded">-</div>
+                <nav class="hidden lg:flex items-center gap-3">
+                    <a href="/options" class="text-[9px] font-bold text-gray-500 hover:text-blue-500 transition-colors uppercase tracking-widest">Options</a>
+                    <a href="/modern" class="text-[9px] font-bold text-gray-500 hover:text-blue-500 transition-colors uppercase tracking-widest">Modern</a>
+                </nav>
+            </div>
         </div>
 
-        <nav class="flex items-center gap-3">
-            <div id="status-indicator" class="flex items-center gap-2 bg-black/30 rounded-full px-3 py-1 border border-white/5" aria-live="polite">
-                <div id="status-dot" class="w-1.5 h-1.5 rounded-full bg-gray-500 shadow-[0_0_8px_rgba(125,133,144,0.5)]"></div>
-                <span id="status-text" class="text-[9px] font-black text-gray-500 uppercase tracking-widest">Disconnected</span>
+        <div class="flex items-center gap-3">
+            <div class="flex items-center gap-2 p-1 rounded-full border border-white/10 bg-black/40 shadow-lg">
+                <div class="flex items-center gap-1 px-2 border-r border-white/10">
+                    <div id="status-dot" class="w-1.5 h-1.5 rounded-full bg-gray-500 shadow-[0_0_8px_rgba(125,133,144,0.5)]"></div>
+                    <span id="status-text" class="text-[9px] font-black text-gray-500 uppercase tracking-widest">Disconnected</span>
+                </div>
+
+                <div class="flex items-center gap-3 px-2">
+                    <div class="flex items-center gap-2" title="Ticks Per Candle">
+                        <label for="ticks-input" class="text-[9px] font-bold text-gray-500 uppercase">TPC</label>
+                        <input type="number" id="ticks-input" value="100" class="bg-transparent text-[10px] font-black w-10 outline-none text-blue-400 text-center" min="1">
+                    </div>
+                    <div class="flex items-center gap-2" title="Price Step">
+                        <label for="step-input" class="text-[9px] font-bold text-gray-500 uppercase">STEP</label>
+                        <select id="step-input" class="bg-transparent text-[10px] font-black outline-none text-blue-400 cursor-pointer">
+                            <option value="0.05">0.05</option>
+                            <option value="0.10">0.10</option>
+                            <option value="0.50">0.50</option>
+                            <option value="1.00" selected>1.00</option>
+                            <option value="5.00">5.00</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-1 px-2 border-l border-white/10">
+                    <button id="zoomOutBtn" class="p-1 hover:bg-white/5 rounded-full text-gray-400 transition-colors" title="Zoom Out">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/></svg>
+                    </button>
+                    <button id="zoomInBtn" class="p-1 hover:bg-white/5 rounded-full text-gray-400 transition-colors" title="Zoom In">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                    </button>
+                    <button id="resetZoomBtn" class="text-[9px] font-black px-1.5 text-gray-500 hover:text-white transition-colors uppercase">Fit</button>
+                </div>
             </div>
 
-            <div class="h-4 w-px bg-white/10 mx-1"></div>
-
-            <div class="flex items-center gap-2 bg-black/40 rounded-md px-2 py-1 border border-white/5" title="Ticks Per Candle">
-                <label for="ticks-input" class="text-[9px] font-bold text-gray-500 uppercase">TPC</label>
-                <input type="number" id="ticks-input" value="100" class="bg-transparent text-[10px] font-black w-12 outline-none text-[#3b82f6] text-center" min="1">
-            </div>
-
-            <div class="flex items-center gap-2 bg-black/40 rounded-md px-2 py-1 border border-white/5" title="Price Step">
-                <label for="step-input" class="text-[9px] font-bold text-gray-500 uppercase">STEP</label>
-                <select id="step-input" class="bg-transparent text-[10px] font-black outline-none text-[#3b82f6]">
-                    <option value="0.05">0.05</option>
-                    <option value="0.10">0.10</option>
-                    <option value="0.20">0.20</option>
-                    <option value="0.30">0.30</option>
-                    <option value="0.50">0.50</option>
-                    <option value="1.00" selected>1.00</option>
-                    <option value="2.00">2.00</option>
-                    <option value="3.00">3.00</option>
-                    <option value="5.00">5.00</option>
-                    <option value="10.00">10.00</option>
-                    <option value="15.00">15.00</option>
-                </select>
-            </div>
-
-            <button id="replay-btn" class="text-[10px] font-black px-4 py-1.5 bg-[#3b82f6]/10 text-[#3b82f6] hover:bg-[#3b82f6]/20 rounded border border-[#3b82f6]/30 transition-all uppercase tracking-widest" aria-label="Replay History">Replay</button>
-        </nav>
+            <button id="replay-btn" class="text-[10px] font-black px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-full transition-all uppercase tracking-tighter shadow-lg shadow-blue-500/20 active:scale-95">REPLAY</button>
+        </div>
     </header>
 
     <main class="flex-1 flex gap-1 overflow-hidden">
