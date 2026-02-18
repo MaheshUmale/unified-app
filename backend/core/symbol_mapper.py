@@ -13,6 +13,8 @@ logger = logging.getLogger(__name__)
 
 class SymbolMapper:
     _instance = None
+    _upstox_to_internal: Dict[str, str] = {}
+    _internal_to_upstox: Dict[str, str] = {}
     _mapping_cache: Dict[str, str] = {
         "NSE_INDEX|NIFTY 50": "NIFTY",
         "NSE_INDEX|NIFTY BANK": "BANKNIFTY",
@@ -157,9 +159,22 @@ class SymbolMapper:
         # 3. Handle HRN formats (e.g., RELIANCE 26 FEB 2026 CALL 2500)
         return target.split(" ")[0]
 
+    def register_mapping(self, internal_symbol: str, upstox_key: str):
+        """Registers a bidirectional mapping between internal symbol and Upstox key."""
+        int_key = internal_symbol.upper()
+        u_key = upstox_key.upper()
+        self._internal_to_upstox[int_key] = upstox_key
+        self._upstox_to_internal[u_key] = internal_symbol
+        logger.debug(f"Registered mapping: {internal_symbol} <-> {upstox_key}")
+
     def to_upstox_key(self, internal_key: str) -> str:
         """Translates internal key (NSE:NIFTY) to Upstox key (NSE_INDEX|Nifty 50)."""
         key = internal_key.upper()
+
+        # Check dynamic mapping first
+        if key in self._internal_to_upstox:
+            return self._internal_to_upstox[key]
+
         if key in UPSTOX_INDEX_MAP:
             return UPSTOX_INDEX_MAP[key]
 
@@ -170,9 +185,15 @@ class SymbolMapper:
 
     def from_upstox_key(self, upstox_key: str) -> str:
         """Translates Upstox key to internal canonical symbol."""
+        u_key = upstox_key.upper()
+
+        # Check dynamic mapping first
+        if u_key in self._upstox_to_internal:
+            return self._upstox_to_internal[u_key]
+
         # Reverse lookup in UPSTOX_INDEX_MAP
-        for int_key, u_key in UPSTOX_INDEX_MAP.items():
-            if u_key.upper() == upstox_key.upper():
+        for int_key, val in UPSTOX_INDEX_MAP.items():
+            if val.upper() == u_key:
                 return int_key
 
         return upstox_key.replace('|', ':').upper()

@@ -56,6 +56,16 @@ class DataManager {
         this.socket.emit('unsubscribe', { instrumentKeys: [symbol], interval });
     }
 
+    async fetchOIProfile(symbol) {
+        try {
+            const res = await fetch(`/api/options/chain/${encodeURIComponent(symbol)}/with-greeks`);
+            return await res.json();
+        } catch (e) {
+            console.error("[DataManager] OI fetch failed:", e);
+            return null;
+        }
+    }
+
     async fetchHistory(symbol, interval) {
         try {
             const res = await fetch(`/api/tv/intraday/${encodeURIComponent(symbol)}?interval=${interval}`);
@@ -91,13 +101,15 @@ class ChartInstance {
         this.symbol = 'NSE:NIFTY';
         this.interval = '1';
         this.chartType = 'candles';
-        this.showIndicators = true;
+        this.showIndicators = false;
         this.hiddenPlots = new Set();
         this.colorOverrides = {};
         this.fullHistory = { candles: new Map(), volume: new Map(), indicators: {} };
         this.markers = [];
         this.drawings = [];
         this.lastCandle = null;
+        this.showOIProfile = false;
+        this.oiLines = [];
 
         this.initChart();
     }
@@ -205,7 +217,11 @@ class ChartInstance {
             this.chart.timeScale().fitContent();
         }
 
-        if (data.indicators) this.applyIndicators(data.indicators);
+        if (data.indicators) {
+            this.fullHistory.indicators_raw = data.indicators;
+            this.applyIndicators(data.indicators);
+        }
+        if (this.showOIProfile) this.toggleOIProfile(true);
 
         this.engine.dataManager.subscribe(this.symbol, this.interval);
         this.engine.updateUI();
@@ -255,7 +271,10 @@ class ChartInstance {
                 this.mainSeries.update(c);
             });
         }
-        if (data.indicators) this.applyIndicators(data.indicators);
+        if (data.indicators) {
+            this.fullHistory.indicators_raw = data.indicators;
+            this.applyIndicators(data.indicators);
+        }
     }
 
     applyIndicators(indicators) {
@@ -306,6 +325,45 @@ class ChartInstance {
     getIntervalSeconds() {
         const m = { '1': 60, '5': 300, '15': 900, '60': 3600, 'D': 86400 };
         return m[this.interval] || 60;
+    }
+
+    async toggleOIProfile(visible) {
+        this.showOIProfile = visible;
+        this.oiLines.forEach(l => this.mainSeries.removePriceLine(l));
+        this.oiLines = [];
+
+        if (visible) {
+            const data = await this.engine.dataManager.fetchOIProfile(this.symbol);
+            if (data && data.chain) {
+                // Get top 5 call and top 5 put OI strikes
+                const calls = data.chain.filter(c => c.option_type === 'call').sort((a,b) => b.oi - a.oi).slice(0, 5);
+                const puts = data.chain.filter(c => c.option_type === 'put').sort((a,b) => b.oi - a.oi).slice(0, 5);
+
+                calls.forEach(c => {
+                    const line = this.mainSeries.createPriceLine({
+                        price: c.strike,
+                        color: 'rgba(239, 68, 68, 0.4)',
+                        lineWidth: 2,
+                        lineStyle: 0,
+                        axisLabelVisible: true,
+                        title: `C-OI: ${(c.oi/1000000).toFixed(1)}M`
+                    });
+                    this.oiLines.push(line);
+                });
+
+                puts.forEach(p => {
+                    const line = this.mainSeries.createPriceLine({
+                        price: p.strike,
+                        color: 'rgba(34, 197, 94, 0.4)',
+                        lineWidth: 2,
+                        lineStyle: 0,
+                        axisLabelVisible: true,
+                        title: `P-OI: ${(p.oi/1000000).toFixed(1)}M`
+                    });
+                    this.oiLines.push(line);
+                });
+            }
+        }
     }
 
     destroy() {
@@ -424,6 +482,18 @@ class MultiChartEngine {
 
         document.getElementById('chartTypeSelector').addEventListener('change', (e) => {
             this.charts[this.activeIdx].setChartType(e.target.value);
+        });
+
+        document.getElementById('oiProfileToggle').addEventListener('change', (e) => {
+            this.charts.forEach(c => c.toggleOIProfile(e.target.checked));
+        });
+
+        document.getElementById('analysisToggle').addEventListener('change', (e) => {
+            this.charts.forEach(c => {
+                c.showIndicators = e.target.checked;
+                if (c.fullHistory.indicators_raw) c.applyIndicators(c.fullHistory.indicators_raw);
+                c.applyMarkers();
+            });
         });
 
         document.getElementById('clearDrawingsBtn').addEventListener('click', () => {

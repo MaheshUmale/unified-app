@@ -15,8 +15,16 @@ logger = logging.getLogger(__name__)
 class TradingViewLiveStreamProvider(ILiveStreamProvider):
     """TradingView WebSocket Implementation."""
     def __init__(self, callback: Callable = None):
-        self.wss = TradingViewWSS(callback)
-        self.callback = callback
+        self.callbacks = []
+        if callback: self.callbacks.append(callback)
+        self.wss = TradingViewWSS(self._distribute_callback)
+
+    def _distribute_callback(self, data):
+        for cb in self.callbacks:
+            try:
+                cb(data)
+            except Exception as e:
+                logger.error(f"Error in TradingViewLiveStreamProvider callback: {e}")
 
     def subscribe(self, symbols: List[str], interval: str = "1"):
         self.wss.subscribe(symbols, interval)
@@ -25,8 +33,8 @@ class TradingViewLiveStreamProvider(ILiveStreamProvider):
         self.wss.unsubscribe(symbol, interval)
 
     def set_callback(self, callback: Callable):
-        self.callback = callback
-        self.wss.callback = callback
+        if callback not in self.callbacks:
+            self.callbacks.append(callback)
 
     def start(self):
         self.wss.start()
@@ -131,8 +139,16 @@ class TradingViewHistoricalProvider(IHistoricalDataProvider):
 class UpstoxLiveStreamProvider(ILiveStreamProvider):
     """Upstox WebSocket Implementation."""
     def __init__(self, callback: Callable = None):
-        self.wss = UpstoxWSS(callback)
-        self.callback = callback
+        self.callbacks = []
+        if callback: self.callbacks.append(callback)
+        self.wss = UpstoxWSS(self._distribute_callback)
+
+    def _distribute_callback(self, data):
+        for cb in self.callbacks:
+            try:
+                cb(data)
+            except Exception as e:
+                logger.error(f"Error in UpstoxLiveStreamProvider callback: {e}")
 
     def subscribe(self, symbols: List[str], interval: str = "1"):
         self.wss.subscribe(symbols, interval)
@@ -140,9 +156,13 @@ class UpstoxLiveStreamProvider(ILiveStreamProvider):
     def unsubscribe(self, symbol: str, interval: str = "1"):
         self.wss.unsubscribe(symbol, interval)
 
+    def add_symbols(self, symbols: List[str]):
+        """Alias for subscribe to match OptionsWSS interface."""
+        self.subscribe(symbols)
+
     def set_callback(self, callback: Callable):
-        self.callback = callback
-        self.wss.callback = callback
+        if callback not in self.callbacks:
+            self.callbacks.append(callback)
 
     def start(self):
         self.wss.start()
@@ -163,7 +183,7 @@ class UpstoxOptionsProvider(IOptionsDataProvider):
         return await upstox_api_client.get_expiry_dates(underlying)
 
     async def get_oi_data(self, underlying: str, expiry: str, time_str: str) -> Dict[str, Any]:
-        return {}
+        return await upstox_api_client.get_oi_data(underlying, expiry)
 
 
 class UpstoxHistoricalProvider(IHistoricalDataProvider):
