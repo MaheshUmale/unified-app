@@ -337,6 +337,16 @@ class OrderFlowUI {
             this.engine.priceStep = parseFloat(e.target.value) || 0.50;
             this.reaggregate();
         });
+
+        document.getElementById('zoomInBtn')?.addEventListener('click', () => {
+            this.charts.main.timeScale().zoomIn();
+        });
+        document.getElementById('zoomOutBtn')?.addEventListener('click', () => {
+            this.charts.main.timeScale().zoomOut();
+        });
+        document.getElementById('resetZoomBtn')?.addEventListener('click', () => {
+            this.charts.main.timeScale().fitContent();
+        });
     }
 
     reaggregate() {

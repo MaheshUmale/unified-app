@@ -932,7 +932,8 @@ class OptionsManager:
         """Get support and resistance levels based on OI with historical trend."""
         chain_res = self.get_chain_with_greeks(underlying)
         chain = chain_res.get('chain', [])
-        sr_data = oi_buildup_analyzer.get_support_resistance_from_oi(chain)
+        spot_price = chain_res.get('spot_price', 0)
+        sr_data = oi_buildup_analyzer.get_support_resistance_from_oi(chain, spot_price=spot_price)
 
         # Add historical trend for these strikes
         latest_ts_res = db.query(

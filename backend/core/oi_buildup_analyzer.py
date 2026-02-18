@@ -357,6 +357,7 @@ class OIBuildupAnalyzer:
     def get_support_resistance_from_oi(
         self,
         chain_data: List[Dict[str, Any]],
+        spot_price: float = 0,
         top_n: int = 3
     ) -> Dict[str, List[Dict[str, Any]]]:
         """
@@ -364,6 +365,7 @@ class OIBuildupAnalyzer:
         
         Args:
             chain_data: Option chain with OI data
+            spot_price: Current spot price to filter relevant levels
             top_n: Number of top levels to return
             
         Returns:
@@ -373,6 +375,11 @@ class OIBuildupAnalyzer:
         calls = [c for c in chain_data if c.get('option_type') == 'call']
         puts = [p for p in chain_data if p.get('option_type') == 'put']
         
+        # Filter: Resistance should be above spot, Support should be below spot
+        if spot_price > 0:
+            calls = [c for c in calls if c.get('strike') >= spot_price]
+            puts = [p for p in puts if p.get('strike') <= spot_price]
+
         # Sort by OI
         calls_by_oi = sorted(calls, key=lambda x: x.get('oi', 0), reverse=True)
         puts_by_oi = sorted(puts, key=lambda x: x.get('oi', 0), reverse=True)

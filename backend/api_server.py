@@ -381,7 +381,7 @@ async def get_modern_data(underlying: str):
             "spot_price": await options_manager.get_spot_price(underlying),
             "chain": options_manager.get_chain_with_greeks(underlying).get('chain', []),
             "oi_buildup": options_manager.get_oi_buildup_analysis(underlying),
-            "pcr_trend": (await asyncio.to_thread(db.query, "SELECT timestamp, pcr_oi, spot_price FROM pcr_history WHERE underlying = ? ORDER BY timestamp DESC LIMIT 50", (underlying,), json_serialize=True))[::-1],
+            "pcr_trend": (await asyncio.to_thread(db.query, "SELECT timestamp, pcr_oi, spot_price, total_oi, total_oi_change FROM pcr_history WHERE underlying = ? ORDER BY timestamp DESC LIMIT 50", (underlying,), json_serialize=True))[::-1],
             "sr_levels": options_manager.get_support_resistance(underlying),
             "genie": await options_manager.get_genie_insights(underlying),
             "expiries": await options_manager.get_expiry_dates(underlying),
@@ -432,9 +432,6 @@ async def serve_orderflow(request: Request): return templates.TemplateResponse("
 
 @fastapi_app.get("/db-viewer")
 async def serve_db(request: Request): return templates.TemplateResponse("db_viewer.html", {"request": request})
-
-@fastapi_app.get("/tick")
-async def serve_tick(request: Request): return templates.TemplateResponse("tick_chart.html", {"request": request})
 
 fastapi_app.mount("/static", StaticFiles(directory="backend/static"), name="static")
 app = socketio.ASGIApp(sio, fastapi_app)

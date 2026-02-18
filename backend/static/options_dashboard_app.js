@@ -120,6 +120,7 @@ class OptionsDashboardManager {
         ]);
         this.renderPCRChart(pcr);
         this.renderOIChart(oi);
+        this.renderOITrendMergedChart(pcr);
         this.renderSupportResistance(sr);
         this.updateSummaryFromOverview(pcr);
     }
@@ -202,7 +203,7 @@ class OptionsDashboardManager {
         if (!ctx) return;
         if (this.charts.pcr) this.charts.pcr.destroy();
 
-        const history = (data.history || []).filter(h => (h.spot_price || h.underlying_price) > 0);
+        const history = (data.history || data || []).filter(h => (h.spot_price || h.underlying_price) > 0);
         const labels = history.map(h => new Date(h.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false }));
 
         this.charts.pcr = new Chart(ctx, {
@@ -217,9 +218,38 @@ class OptionsDashboardManager {
             options: {
                 responsive: true, maintainAspectRatio: false,
                 scales: {
-                    y: { type: 'linear', position: 'left', title: { display: true, text: 'PCR' } },
-                    y1: { type: 'linear', position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'SPOT' } }
-                }
+                    y: { type: 'linear', position: 'left', title: { display: true, text: 'PCR', color: '#94a3b8' }, ticks: { color: '#94a3b8' } },
+                    y1: { type: 'linear', position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'SPOT', color: '#94a3b8' }, ticks: { color: '#94a3b8' } }
+                },
+                plugins: { legend: { labels: { color: '#94a3b8' } } }
+            }
+        });
+    }
+
+    renderOITrendMergedChart(data) {
+        const ctx = document.getElementById('oiTrendMergedChart')?.getContext('2d');
+        if (!ctx) return;
+        if (this.charts.oiTrendMerged) this.charts.oiTrendMerged.destroy();
+
+        const history = (data.history || data || []).filter(h => h.total_oi > 0);
+        const labels = history.map(h => new Date(h.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false }));
+
+        this.charts.oiTrendMerged = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels,
+                datasets: [
+                    { label: 'Total OI', data: history.map(h => h.total_oi), borderColor: '#a855f7', backgroundColor: 'rgba(168, 85, 247, 0.1)', fill: true, tension: 0.4, pointRadius: 0, yAxisID: 'y' },
+                    { label: 'OI Change', data: history.map(h => h.total_oi_change), borderColor: '#fbbf24', borderDash: [2,2], tension: 0.4, pointRadius: 0, yAxisID: 'y1' }
+                ]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                scales: {
+                    y: { type: 'linear', position: 'left', title: { display: true, text: 'Total OI', color: '#94a3b8' }, ticks: { color: '#94a3b8' } },
+                    y1: { type: 'linear', position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'OI Change', color: '#94a3b8' }, ticks: { color: '#94a3b8' } }
+                },
+                plugins: { legend: { labels: { color: '#94a3b8' } } }
             }
         });
     }
