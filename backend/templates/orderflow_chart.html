@@ -26,6 +26,7 @@
             background-color: var(--bg-deep);
             color: var(--text-primary);
             overflow: hidden;
+            height: 100vh;
         }
 
         .mono { font-family: 'IBM Plex Mono', monospace; }
@@ -51,38 +52,31 @@
             z-index: 20;
             pointer-events: none;
         }
-
-        .signal-badge {
-            font-size: 10px;
-            font-weight: 800;
-            padding: 2px 6px;
-            border-radius: 4px;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
     </style>
 </head>
-<body class="h-full flex flex-col p-1 gap-1">
-    <header class="h-12 flex items-center justify-between px-4 glass-panel rounded-lg">
+<body class="flex flex-col p-1 gap-1">
+    <header class="h-12 flex-none flex items-center justify-between px-4 glass-panel rounded-lg">
         <div class="flex items-center gap-4">
-            <span class="text-xs font-black italic text-[#3b82f6] uppercase">PRO<span class="text-white">DESK</span> <span class="text-gray-500">ORDERFLOW</span></span>
+            <span class="text-xs font-black italic text-[#3b82f6] uppercase">PRO<span class="text-white">DESK</span> <span class="text-gray-500 text-[10px] ml-1">ORDERFLOW</span></span>
             <div class="h-4 w-px bg-white/10"></div>
-            <div id="display-symbol" class="text-xs font-bold text-white uppercase tracking-widest">-</div>
+            <div id="display-symbol" class="text-[11px] font-black text-white uppercase tracking-widest">-</div>
         </div>
 
-        <div class="flex items-center gap-4">
-            <div id="status-indicator" class="flex items-center gap-1.5">
-                <div id="status-dot" class="w-2 h-2 rounded-full bg-gray-500"></div>
-                <span id="status-text" class="text-[10px] font-bold text-gray-500 uppercase tracking-tighter">Connecting...</span>
+        <div class="flex items-center gap-3">
+            <div id="status-indicator" class="flex items-center gap-2 bg-black/30 rounded-full px-3 py-1 border border-white/5">
+                <div id="status-dot" class="w-1.5 h-1.5 rounded-full bg-gray-500 shadow-[0_0_8px_rgba(125,133,144,0.5)]"></div>
+                <span id="status-text" class="text-[9px] font-black text-gray-500 uppercase tracking-widest">Disconnected</span>
             </div>
-            <div class="h-4 w-px bg-white/10"></div>
-            <div class="flex items-center gap-2 bg-black/20 rounded-md px-2 py-1">
-                <span class="text-[9px] font-bold text-gray-500 uppercase">TPC:</span>
-                <input type="number" id="ticks-input" value="100" class="bg-transparent text-[10px] font-black w-24 outline-none text-[#3b82f6]" min="1">
+
+            <div class="h-4 w-px bg-white/10 mx-1"></div>
+
+            <div class="flex items-center gap-2 bg-black/40 rounded-md px-2 py-1 border border-white/5">
+                <span class="text-[9px] font-bold text-gray-500 uppercase">TPC</span>
+                <input type="number" id="ticks-input" value="100" class="bg-transparent text-[10px] font-black w-12 outline-none text-[#3b82f6] text-center" min="1">
             </div>
-            <div class="h-4 w-px bg-white/10"></div>
-            <div class="flex items-center gap-2 bg-black/20 rounded-md px-2 py-1">
-                <span class="text-[9px] font-bold text-gray-500 uppercase">Step:</span>
+
+            <div class="flex items-center gap-2 bg-black/40 rounded-md px-2 py-1 border border-white/5">
+                <span class="text-[9px] font-bold text-gray-500 uppercase">STEP</span>
                 <select id="step-input" class="bg-transparent text-[10px] font-black outline-none text-[#3b82f6]">
                     <option value="0.05">0.05</option>
                     <option value="0.10">0.10</option>
@@ -91,68 +85,66 @@
                     <option value="5.00">5.00</option>
                 </select>
             </div>
-            <button id="replay-btn" class="text-[10px] font-black px-3 py-1 bg-[#3b82f6]/10 text-[#3b82f6] hover:bg-[#3b82f6]/20 rounded border border-[#3b82f6]/30 transition-all uppercase tracking-tighter">Replay</button>
+
+            <button id="replay-btn" class="text-[10px] font-black px-4 py-1.5 bg-[#3b82f6]/10 text-[#3b82f6] hover:bg-[#3b82f6]/20 rounded border border-[#3b82f6]/30 transition-all uppercase tracking-widest">Replay</button>
         </div>
     </header>
 
     <main class="flex-1 flex gap-1 overflow-hidden">
-        <!-- Sidebar: Sentiment & Analytics -->
-        <aside class="w-72 flex flex-col gap-1 overflow-y-auto custom-scrollbar">
-            <!-- Sentiment Gauge -->
-            <section class="glass-panel p-3 rounded-lg flex flex-col gap-3 min-h-[180px]">
-                <h3 class="text-[9px] font-black uppercase tracking-widest text-gray-500">Actionable Sentiment</h3>
-                <div class="flex flex-col items-center justify-center flex-1">
-                    <div id="sentiment-value" class="text-3xl font-black italic text-[#00ffc2]">BULLISH</div>
-                    <div id="pcr-value" class="text-[10px] font-bold text-gray-500 mono mt-1">PCR: 1.24 | OI: +2.4M</div>
-                </div>
-            </section>
+        <!-- Sidebar -->
+        <aside class="w-72 flex-none flex flex-col gap-1 overflow-hidden">
+            <div class="glass-panel p-4 rounded-lg flex flex-col items-center justify-center gap-1 min-h-[120px]">
+                <h3 class="text-[9px] font-black uppercase tracking-[0.2em] text-gray-600 mb-2 w-full text-left">Real-time Sentiment</h3>
+                <div id="sentiment-value" class="text-3xl font-black italic text-gray-500 tracking-tighter">NEUTRAL</div>
+                <div id="pcr-value" class="text-[9px] font-bold text-gray-600 mono mt-1">PCR: -- | OI: --</div>
+            </div>
 
-            <!-- Signals Feed -->
-            <section class="glass-panel p-3 rounded-lg flex-1 flex flex-col gap-3 overflow-hidden">
-                <h3 class="text-[9px] font-black uppercase tracking-widest text-gray-500">Live Strategy Signals</h3>
-                <div id="signals-list" class="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-2">
-                    <!-- Signals go here -->
+            <div class="glass-panel p-4 rounded-lg flex-1 flex flex-col gap-3 overflow-hidden">
+                <h3 class="text-[9px] font-black uppercase tracking-[0.2em] text-gray-600">Signal Intelligence</h3>
+                <div id="signals-list" class="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-2 pr-1">
+                    <div class="text-[10px] text-gray-700 italic text-center mt-10">Monitoring Order Flow...</div>
                 </div>
-            </section>
+            </div>
         </aside>
 
-        <!-- Main Chart Section -->
+        <!-- Charts Area -->
         <div class="flex-1 flex flex-col gap-1 overflow-hidden">
-            <div class="flex-[3] relative glass-panel rounded-lg overflow-hidden group">
+            <!-- Main Chart -->
+            <div class="flex-[3] relative glass-panel rounded-lg overflow-hidden">
                 <div id="price-overlay">
-                    <div id="last-price" class="text-3xl font-black mono tracking-tighter text-white">0.00</div>
-                    <div id="delta-summary" class="text-[11px] font-bold mt-1 text-[#00ffc2]">DELTA: 0 | CVD: 0</div>
+                    <div id="last-price" class="text-4xl font-black mono tracking-tighter text-white drop-shadow-2xl">0.00</div>
+                    <div id="delta-summary" class="text-[11px] font-black mt-1 text-gray-500 tracking-wider">DELTA: 0 | CVD: 0</div>
                 </div>
-                <div id="chart-wrapper" class="w-full h-full">
-                    <div id="main-chart" class="chart-container"></div>
-                    <canvas id="footprint-canvas" class="absolute top-0 left-0 pointer-events-none"></canvas>
+                <div id="chart-wrapper" class="w-full h-full relative">
+                    <div id="main-chart" class="w-full h-full"></div>
+                    <canvas id="footprint-canvas" class="absolute top-0 left-0 pointer-events-none z-10 w-full h-full"></canvas>
                 </div>
             </div>
 
-            <!-- CVD Area Chart -->
+            <!-- CVD Chart -->
             <div class="flex-1 glass-panel rounded-lg overflow-hidden relative">
-                <div class="absolute top-2 left-4 z-10">
-                    <span class="text-[9px] font-black text-gray-500 uppercase tracking-widest">Cumulative Volume Delta</span>
+                <div class="absolute top-3 left-4 z-10">
+                    <span class="text-[10px] font-black text-gray-600 uppercase tracking-[0.3em]">Cumulative Delta Profile</span>
                 </div>
-                <div id="cvd-chart" class="chart-container"></div>
+                <div id="cvd-chart" class="w-full h-full"></div>
             </div>
         </div>
     </main>
 
-    <script src="/static/orderflow_app.js"></script>
-
-    <!-- Re-aggregation Overlay -->
-    <div id="reaggregate-overlay" class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center hidden backdrop-blur-sm">
-        <div class="bg-[#0d1117] border border-white/10 p-8 rounded-2xl flex flex-col items-center gap-6 shadow-2xl">
-            <div class="relative">
-                <div class="w-12 h-12 rounded-full border-2 border-[#3b82f6]/20"></div>
-                <div class="absolute top-0 left-0 w-12 h-12 rounded-full border-t-2 border-[#3b82f6] animate-spin"></div>
+    <!-- Overlay -->
+    <div id="reaggregate-overlay" class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center hidden backdrop-blur-md">
+        <div class="bg-[#0d1117] border border-white/10 p-10 rounded-3xl flex flex-col items-center gap-6 shadow-[0_0_50px_rgba(0,0,0,0.5)]">
+            <div class="relative w-16 h-16">
+                <div class="absolute inset-0 rounded-full border-4 border-[#3b82f6]/10"></div>
+                <div class="absolute inset-0 rounded-full border-t-4 border-[#3b82f6] animate-spin"></div>
             </div>
             <div class="text-center">
-                <p class="text-xs font-black text-[#3b82f6] uppercase tracking-[0.2em] mb-1">Processing</p>
-                <p id="reaggregate-status" class="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Re-aggregating Order Flow...</p>
+                <p class="text-[11px] font-black text-[#3b82f6] uppercase tracking-[0.4em] mb-2">Aggregating</p>
+                <p class="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em]">Processing Tape Data...</p>
             </div>
         </div>
     </div>
+
+    <script src="/static/orderflow_app.js"></script>
 </body>
 </html>
