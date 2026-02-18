@@ -293,7 +293,7 @@ class ChartUI {
         document.getElementById('display-symbol').textContent = this.currentSymbol;
 
         const tpc = parseInt(urlParams.get('ticks')) || 100;
-        const step = parseFloat(urlParams.get('step')) || 0.05;
+        const step = parseFloat(urlParams.get('step')) || 0.50;
         this.engine.setParams(tpc, step);
         document.getElementById('ticks-input').value = tpc;
         document.getElementById('step-input').value = step.toFixed(2);
@@ -342,8 +342,8 @@ class ChartUI {
 
         this.charts.main = LightweightCharts.createChart(document.getElementById('main-chart'), chartOptions);
         this.charts.candles = this.charts.main.addCandlestickSeries({
-            upColor: 'rgba(0, 255, 194, 0.3)', downColor: 'rgba(255, 51, 102, 0.3)',
-            borderVisible: false, wickUpColor: '#00ffc2', wickDownColor: '#ff3366'
+            upColor: 'rgba(0, 255, 195, 0.16)', downColor: 'rgba(255, 51, 102, 0.16)',
+            borderVisible: false, wickUpColor: 'rgba(0, 255, 195, 0.24)', wickDownColor: 'rgba(255, 51, 102, 0.23)'
         });
 
         this.charts.cvd = LightweightCharts.createChart(document.getElementById('cvd-chart'), {
@@ -459,7 +459,7 @@ class ChartUI {
         });
 
         document.getElementById('step-input').addEventListener('change', (e) => {
-            this.engine.priceStep = parseFloat(e.target.value) || 0.05;
+            this.engine.priceStep = parseFloat(e.target.value) || 0.50;
             this.reaggregate();
         });
 
@@ -494,13 +494,13 @@ class ChartUI {
 
         let marker = null;
         if (buyImbs.length >= 3) {
-            marker = { time: c.time, position: 'belowBar', color: '#00ffc2', shape: 'arrowUp', text: 'STACKED BUY' };
+            marker = { time: c.time, position: 'belowBar', color: '#00ffc2', shape: 'arrowUp', text: 'StackBUY' };
         } else if (sellImbs.length >= 3) {
-            marker = { time: c.time, position: 'aboveBar', color: '#ff3366', shape: 'arrowDown', text: 'STACKED SELL' };
+            marker = { time: c.time, position: 'aboveBar', color: '#ff3366', shape: 'arrowDown', text: 'StackSELL' };
         } else if (c.low < p.low && c.cvd > p.cvd) {
-            marker = { time: c.time, position: 'belowBar', color: '#3b82f6', shape: 'circle', text: 'BULL DIV' };
+            marker = { time: c.time, position: 'belowBar', color: '#3b82f6', shape: 'circle', text: 'BullDIV' };
         } else if (c.high > p.high && c.cvd < p.cvd) {
-            marker = { time: c.time, position: 'aboveBar', color: '#3b82f6', shape: 'circle', text: 'BEAR DIV' };
+            marker = { time: c.time, position: 'aboveBar', color: '#3b82f6', shape: 'circle', text: 'BearDIV' };
         }
 
         if (marker) {
