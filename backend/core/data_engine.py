@@ -25,6 +25,8 @@ main_event_loop = None
 latest_total_volumes = {}
 # Track subscribers per (instrumentKey, interval)
 room_subscribers = {} # (instrumentKey, interval) -> set of sids
+# Track last processed state to avoid redundant ticks
+last_processed_tick = {} # instrumentKey -> {ts_ms, price, volume}
 
 TICK_BATCH_SIZE = 100
 tick_buffer = []
@@ -55,12 +57,24 @@ def flush_tick_buffer():
         if tick_buffer:
             to_insert = tick_buffer
             tick_buffer = []
+
     if to_insert:
-        try:
-            db.insert_ticks(to_insert)
-            logger.debug(f"Flushed {len(to_insert)} ticks to DB")
-        except Exception as e:
-            logger.error(f"DB Insert Error: {e}")
+        # Retry logic for DB insertion
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                db.insert_ticks(to_insert)
+                logger.debug(f"Flushed {len(to_insert)} ticks to DB")
+                return
+            except Exception as e:
+                logger.error(f"DB Insert Attempt {attempt+1} failed: {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(1) # Wait before retry
+                else:
+                    # Final failure - put data back into buffer so it's not lost
+                    logger.error("Final DB insert failure. Returning ticks to buffer.")
+                    with buffer_lock:
+                        tick_buffer = to_insert + tick_buffer
 
 def periodic_flush():
     """Background task to flush ticks every 10 seconds."""
@@ -81,8 +95,9 @@ def on_message(message: Union[Dict, str]):
     global tick_buffer
     try:
         data = json.loads(message) if isinstance(message, str) else message
+        feeds_map = {}
 
-        # Handle Chart/OHLCV Updates
+        # Handle Chart/OHLCV Updates - Indices often update primarily here
         if data.get('type') == 'chart_update':
             instrument_key = data.get('instrumentKey')
             interval = data.get('interval')
@@ -91,11 +106,32 @@ def on_message(message: Union[Dict, str]):
                 if isinstance(payload, dict):
                     payload['instrumentKey'] = instrument_key
                     payload['interval'] = interval
+
                 # Use full technical symbol as room name
                 emit_event('chart_update', payload, room=instrument_key.upper())
-            return
 
-        feeds_map = data.get('feeds', {})
+                # Synthetic Tick Generation for indices from chart updates
+                if payload.get('ohlcv'):
+                    last_ohlcv = payload['ohlcv'][-1]
+                    ts_ms = int(last_ohlcv[0] * 1000)
+                    price = float(last_ohlcv[4])
+                    volume = float(last_ohlcv[5])
+
+                    # Deduplicate: only process if price or volume or timestamp changed
+                    prev = last_processed_tick.get(instrument_key, {})
+                    if ts_ms != prev.get('ts_ms') or price != prev.get('price') or volume != prev.get('volume'):
+                        # last_ohlcv format: [ts, o, h, l, c, v]
+                        feeds_map[instrument_key] = {
+                            'last_price': price,
+                            'tv_volume': volume,
+                            'ts_ms': ts_ms,
+                            'source': 'tv_chart_fallback'
+                        }
+                        last_processed_tick[instrument_key] = {'ts_ms': ts_ms, 'price': price, 'volume': volume}
+
+        # Handle Standard Live Feeds (Quote session)
+        if not feeds_map:
+            feeds_map = data.get('feeds', {})
         if not feeds_map: return
 
         current_time = datetime.now()
@@ -103,6 +139,17 @@ def on_message(message: Union[Dict, str]):
         today_str = current_time.strftime("%Y-%m-%d")
 
         for inst_key, feed_datum in feeds_map.items():
+            # Standard Quote Feed Deduplication (in addition to Chart)
+            if feed_datum.get('source') != 'tv_chart_fallback':
+                ts_ms = int(feed_datum.get('ts_ms', 0))
+                price = float(feed_datum.get('last_price', 0))
+                volume = float(feed_datum.get('tv_volume', 0))
+
+                prev = last_processed_tick.get(inst_key, {})
+                if ts_ms == prev.get('ts_ms') and price == prev.get('price') and volume == prev.get('volume'):
+                    continue # Skip redundant quote
+                last_processed_tick[inst_key] = {'ts_ms': ts_ms, 'price': price, 'volume': volume}
+
             # Use technical symbol as is
             feed_datum.update({
                 'instrumentKey': inst_key,
@@ -120,10 +167,20 @@ def on_message(message: Union[Dict, str]):
             if curr_vol is not None:
                 curr_vol = float(curr_vol)
                 if inst_key in latest_total_volumes:
+                    # If it's an index and volume hasn't changed, but price has,
+                    # we might still want to record it.
                     delta_vol = max(0, curr_vol - latest_total_volumes[inst_key])
+                else:
+                    # For indices, first volume is usually huge, don't record it as LTQ
+                    delta_vol = 0
                 latest_total_volumes[inst_key] = curr_vol
-            feed_datum['ltq'] = int(delta_vol)
 
+            # If volume is 0 but price changed, and it's an index, we might want a small synthetic qty
+            # to make sure the footprint chart renders something.
+            if delta_vol == 0 and feed_datum.get('source') == 'tv_chart_fallback':
+                delta_vol = 1 # Minimal volume for chart-derived ticks
+
+            feed_datum['ltq'] = int(delta_vol)
             sym_feeds[inst_key] = feed_datum
 
         # Throttled UI Emission
