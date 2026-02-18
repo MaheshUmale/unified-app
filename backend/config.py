@@ -108,6 +108,14 @@ STRATEGY_CONFIG = {
     ]
 }
 
+# Upstox Configuration
+UPSTOX_ACCESS_TOKEN = os.getenv("UPSTOX_ACCESS_TOKEN", "")
+UPSTOX_INDEX_MAP = {
+    "NSE:NIFTY": "NSE_INDEX|Nifty 50",
+    "NSE:BANKNIFTY": "NSE_INDEX|Nifty Bank",
+    "NSE:FINNIFTY": "NSE_INDEX|Nifty Fin Service",
+}
+
 # TradingView Cookie (Optional)
 TV_COOKIE = os.getenv("TV_COOKIE", "")
 try:

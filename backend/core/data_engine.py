@@ -11,14 +11,16 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional, Union
 from db.local_db import db, LocalDBJSONEncoder
 from core.symbol_mapper import symbol_mapper
+from core.provider_registry import live_stream_registry
 
 logger = logging.getLogger(__name__)
 
 # Configuration
 try:
-    from config import INITIAL_INSTRUMENTS
+    from config import INITIAL_INSTRUMENTS, UPSTOX_INDEX_MAP
 except ImportError:
     INITIAL_INSTRUMENTS = ["NSE:NIFTY"]
+    UPSTOX_INDEX_MAP = {}
 
 socketio_instance = None
 main_event_loop = None
@@ -163,15 +165,15 @@ def on_message(message: Union[Dict, str]):
             feed_datum['ts_ms'] = ts_val
 
             delta_vol = 0
+            is_index = inst_key in UPSTOX_INDEX_MAP or "INDEX" in inst_key
             curr_vol = feed_datum.get('tv_volume')
+            if curr_vol is None and not is_index:
+                curr_vol = feed_datum.get('upstox_volume')
             if curr_vol is not None:
                 curr_vol = float(curr_vol)
                 if inst_key in latest_total_volumes:
-                    # If it's an index and volume hasn't changed, but price has,
-                    # we might still want to record it.
                     delta_vol = max(0, curr_vol - latest_total_volumes[inst_key])
                 else:
-                    # For indices, first volume is usually huge, don't record it as LTQ
                     delta_vol = 0
                 latest_total_volumes[inst_key] = curr_vol
 
@@ -203,14 +205,16 @@ def subscribe_instrument(instrument_key: str, sid: str, interval: str = "1"):
     key = (instrument_key, str(interval))
     if key not in room_subscribers:
         room_subscribers[key] = set()
-
     if sid not in room_subscribers[key]:
         room_subscribers[key].add(sid)
         logger.info(f"Room {instrument_key} ({interval}m) now has {len(room_subscribers[key])} subscribers")
-
-    from external.tv_live_wss import start_tv_wss
-    wss = start_tv_wss(on_message)
-    wss.subscribe([instrument_key], interval=interval)
+    for provider in live_stream_registry.get_all():
+        try:
+            provider.set_callback(on_message)
+            provider.start()
+            provider.subscribe([instrument_key], interval=interval)
+        except Exception as e:
+            logger.error(f"Error subscribing via provider: {e}")
 
 def is_sid_using_instrument(sid: str, instrument_key: str) -> bool:
     """Check if a specific client is still using this instrument in any interval."""
@@ -223,17 +227,16 @@ def is_sid_using_instrument(sid: str, instrument_key: str) -> bool:
 def unsubscribe_instrument(instrument_key: str, sid: str, interval: str = "1"):
     instrument_key = instrument_key.upper()
     key = (instrument_key, str(interval))
-
     if key in room_subscribers and sid in room_subscribers[key]:
         room_subscribers[key].remove(sid)
         logger.info(f"Room {instrument_key} ({interval}m) now has {len(room_subscribers[key])} subscribers")
-
         if len(room_subscribers[key]) == 0:
             logger.info(f"Unsubscribing from {instrument_key} ({interval}m) as no more subscribers")
-            from external.tv_live_wss import get_tv_wss
-            wss = get_tv_wss()
-            if wss:
-                wss.unsubscribe(instrument_key, interval=interval)
+            for provider in live_stream_registry.get_all():
+                try:
+                    provider.unsubscribe(instrument_key, interval=interval)
+                except Exception as e:
+                    logger.error(f"Error unsubscribing via provider: {e}")
             del room_subscribers[key]
 
 def handle_disconnect(sid: str):
@@ -247,5 +250,12 @@ def handle_disconnect(sid: str):
         unsubscribe_instrument(key, sid, interval)
 
 def start_websocket_thread(token: str, keys: List[str]):
-    from external.tv_live_wss import start_tv_wss
-    start_tv_wss(on_message, INITIAL_INSTRUMENTS)
+    from core.provider_registry import initialize_default_providers
+    initialize_default_providers()
+    for provider in live_stream_registry.get_all():
+        try:
+            provider.set_callback(on_message)
+            provider.start()
+            provider.subscribe(INITIAL_INSTRUMENTS)
+        except Exception as e:
+            logger.error(f"Error starting provider during init: {e}")

@@ -51,19 +51,29 @@ historical_data_registry = ProviderRegistry(IHistoricalDataProvider)
 
 def initialize_default_providers():
     """Seed the registries with existing implementations."""
+    from config import UPSTOX_ACCESS_TOKEN
     from external.providers import (
         TradingViewLiveStreamProvider,
         TrendlyneOptionsProvider,
         NSEOptionsProvider,
-        TradingViewHistoricalProvider
+        TradingViewHistoricalProvider,
+        UpstoxLiveStreamProvider,
+        UpstoxOptionsProvider,
+        UpstoxHistoricalProvider
     )
 
     # Live Stream
     live_stream_registry.register("tradingview", TradingViewLiveStreamProvider(), priority=10)
+    if UPSTOX_ACCESS_TOKEN:
+        live_stream_registry.register("upstox", UpstoxLiveStreamProvider(), priority=20)
 
     # Options Data
     options_data_registry.register("trendlyne", TrendlyneOptionsProvider(), priority=10)
     options_data_registry.register("nse", NSEOptionsProvider(), priority=5)
+    if UPSTOX_ACCESS_TOKEN:
+        options_data_registry.register("upstox", UpstoxOptionsProvider(), priority=20)
 
     # Historical Data
     historical_data_registry.register("tradingview", TradingViewHistoricalProvider(), priority=10)
+    if UPSTOX_ACCESS_TOKEN:
+        historical_data_registry.register("upstox", UpstoxHistoricalProvider(), priority=20)
