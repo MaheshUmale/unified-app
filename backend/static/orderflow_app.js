@@ -63,6 +63,8 @@ class OrderFlowEngine {
                 time: ts,
                 open: price, high: price, low: price, close: price,
                 volume: qty, delta: delta, cvd: this.cvd,
+                cvdOpen: this.cvd - delta, cvdHigh: Math.max(this.cvd - delta, this.cvd),
+                cvdLow: Math.min(this.cvd - delta, this.cvd), cvdClose: this.cvd,
                 footprint: {},
                 imbalances: [],
                 poc: price, vah: price, val: price
@@ -81,6 +83,9 @@ class OrderFlowEngine {
             c.volume += qty;
             c.delta += delta;
             c.cvd = this.cvd;
+            c.cvdClose = this.cvd;
+            c.cvdHigh = Math.max(c.cvdHigh, this.cvd);
+            c.cvdLow = Math.min(c.cvdLow, this.cvd);
             this.updateFootprint(c, price, side, qty);
             this.tickCount++;
             return { type: 'update', candle: this.currentCandle };
@@ -245,20 +250,22 @@ class CanvasRenderer {
             }
 
             if (p === candle.poc) {
+                this.ctx.fillStyle = 'rgba(251, 191, 36, 0.2)';
+                this.ctx.fillRect(x - halfWidth, y - 6, halfWidth * 2, 12);
                 this.ctx.strokeStyle = this.colors.poc;
-                this.ctx.lineWidth = 1.5;
+                this.ctx.lineWidth = 2;
                 this.ctx.strokeRect(x - halfWidth, y - 6, halfWidth * 2, 12);
                 this.ctx.lineWidth = 1;
             }
 
-            this.ctx.font = 'bold 8px "IBM Plex Mono"';
+            this.ctx.font = 'bold 9px "IBM Plex Mono"';
             this.ctx.textAlign = 'right';
-            this.ctx.fillStyle = isSellImb ? this.colors.bear : (delta < 0 ? '#ff99aa' : this.colors.muted);
-            this.ctx.fillText(sell, x - 3, y + 3);
+            this.ctx.fillStyle = isSellImb ? '#ff3366' : (delta < 0 ? '#ffccd5' : '#9ea7b3');
+            this.ctx.fillText(sell, x - 4, y + 3);
 
             this.ctx.textAlign = 'left';
-            this.ctx.fillStyle = isBuyImb ? this.colors.bull : (delta > 0 ? '#99ffdd' : this.colors.muted);
-            this.ctx.fillText(buy, x + 3, y + 3);
+            this.ctx.fillStyle = isBuyImb ? '#00ffc2' : (delta > 0 ? '#ccfff2' : '#9ea7b3');
+            this.ctx.fillText(buy, x + 4, y + 3);
 
             this.ctx.strokeStyle = 'rgba(255,255,255,0.1)';
             this.ctx.beginPath();
@@ -299,25 +306,52 @@ class ChartUI {
     }
 
     initCharts() {
+        const istFormatter = (timestamp) => {
+            return new Intl.DateTimeFormat('en-IN', {
+                timeZone: 'Asia/Kolkata',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false
+            }).format(new Date(timestamp * 1000));
+        };
+
         const chartOptions = {
             layout: { background: { type: 'solid', color: 'transparent' }, textColor: '#7d8590' },
             grid: { vertLines: { color: 'rgba(255,255,255,0.03)' }, horzLines: { color: 'rgba(255,255,255,0.03)' } },
             crosshair: { mode: 0 },
-            timeScale: { borderColor: 'rgba(255,255,255,0.1)', timeVisible: true, secondsVisible: true },
-            rightPriceScale: { borderColor: 'rgba(255,255,255,0.1)' }
+            timeScale: {
+                borderColor: 'rgba(255,255,255,0.1)',
+                timeVisible: true,
+                secondsVisible: true,
+                tickMarkFormatter: (time, tickMarkType, locale) => {
+                    const date = new Date(time * 1000);
+                    return new Intl.DateTimeFormat('en-IN', {
+                        timeZone: 'Asia/Kolkata',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        hour12: false
+                    }).format(date);
+                }
+            },
+            rightPriceScale: { borderColor: 'rgba(255,255,255,0.1)' },
+            localization: {
+                timeFormatter: istFormatter
+            }
         };
 
         this.charts.main = LightweightCharts.createChart(document.getElementById('main-chart'), chartOptions);
         this.charts.candles = this.charts.main.addCandlestickSeries({
-            upColor: '#00ffc2', downColor: '#ff3366', borderVisible: false, wickUpColor: '#00ffc2', wickDownColor: '#ff3366'
+            upColor: 'rgba(0, 255, 194, 0.3)', downColor: 'rgba(255, 51, 102, 0.3)',
+            borderVisible: false, wickUpColor: '#00ffc2', wickDownColor: '#ff3366'
         });
 
         this.charts.cvd = LightweightCharts.createChart(document.getElementById('cvd-chart'), {
             ...chartOptions,
             timeScale: { visible: false }
         });
-        this.charts.cvdSeries = this.charts.cvd.addAreaSeries({
-            lineColor: '#3b82f6', topColor: 'rgba(59, 130, 246, 0.3)', bottomColor: 'transparent', lineWidth: 2
+        this.charts.cvdSeries = this.charts.cvd.addCandlestickSeries({
+            upColor: '#00ffc2', downColor: '#ff3366', borderVisible: false, wickUpColor: '#00ffc2', wickDownColor: '#ff3366'
         });
 
         this.charts.main.timeScale().subscribeVisibleLogicalRangeChange(range => {
@@ -367,7 +401,13 @@ class ChartUI {
 
                     if (res && res.candle) {
                         this.charts.candles.update(res.candle);
-                        this.charts.cvdSeries.update({ time: res.candle.time, value: res.candle.cvd });
+                    this.charts.cvdSeries.update({
+                        time: res.candle.time,
+                        open: res.candle.cvdOpen,
+                        high: res.candle.cvdHigh,
+                        low: res.candle.cvdLow,
+                        close: res.candle.cvdClose
+                    });
 
                         if (res.type === 'new') {
                             this.calculateMarkersForCandle(this.engine.candles.length - 2);
@@ -491,7 +531,13 @@ class ChartUI {
             }
 
             this.charts.candles.setData(this.engine.candles);
-            this.charts.cvdSeries.setData(this.engine.candles.map(c => ({ time: c.time, value: c.cvd })));
+            this.charts.cvdSeries.setData(this.engine.candles.map(c => ({
+                time: c.time,
+                open: c.cvdOpen,
+                high: c.cvdHigh,
+                low: c.cvdLow,
+                close: c.cvdClose
+            })));
 
             this.markers = [];
             for (let i = 1; i < this.engine.candles.length; i++) {
@@ -524,7 +570,13 @@ class ChartUI {
             this.engine.ticks = cachedTicks;
 
             this.charts.candles.setData(this.engine.candles);
-            this.charts.cvdSeries.setData(this.engine.candles.map(c => ({ time: c.time, value: c.cvd })));
+            this.charts.cvdSeries.setData(this.engine.candles.map(c => ({
+                time: c.time,
+                open: c.cvdOpen,
+                high: c.cvdHigh,
+                low: c.cvdLow,
+                close: c.cvdClose
+            })));
 
             this.markers = [];
             for (let i = 1; i < this.engine.candles.length; i++) {
@@ -578,7 +630,7 @@ class ChartUI {
         div.innerHTML = `
             <div class="flex justify-between items-center mb-1">
                 <span class="text-[9px] font-black uppercase px-2 py-0.5 rounded" style="background: ${color}22; color: ${color}">${type}</span>
-                <span class="text-[8px] text-gray-600 mono">${new Date().toLocaleTimeString()}</span>
+                <span class="text-[8px] text-gray-600 mono">${new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false })}</span>
             </div>
             <p class="text-[10px] text-gray-400 font-medium">${message}</p>
         `;
