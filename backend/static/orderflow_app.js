@@ -26,9 +26,13 @@ class OrderFlowEngine {
 
     processTick(tick, isReaggregating = false) {
         const rawPrice = Number(tick.price);
+        if (isNaN(rawPrice) || rawPrice <= 0) return null;
+
         const price = Number((Math.round(rawPrice / this.priceStep) * this.priceStep).toFixed(2));
         const qty = Number(tick.qty || 0);
         let ts = Math.floor(tick.ts_ms / 1000);
+
+        if (isNaN(ts) || ts <= 0) ts = Math.floor(Date.now() / 1000);
 
         // Tick Rule for Aggressor Side
         let side = this.lastSide;
@@ -350,26 +354,60 @@ class ChartUI {
         });
 
         this.socket.on('raw_tick', (data) => {
-            if (data[this.currentSymbol]) {
-                const tick = data[this.currentSymbol];
-                const res = this.engine.processTick({
-                    price: tick.last_price,
-                    qty: tick.ltq,
-                    ts_ms: tick.ts_ms
-                });
+            try {
+                if (data[this.currentSymbol]) {
+                    const tick = data[this.currentSymbol];
+                    if (!tick.last_price || tick.last_price <= 0) return;
 
-                this.charts.candles.update(res.candle);
-                this.charts.cvdSeries.update({ time: res.candle.time, value: res.candle.cvd });
+                    const res = this.engine.processTick({
+                        price: tick.last_price,
+                        qty: tick.ltq || 1,
+                        ts_ms: tick.ts_ms || Date.now()
+                    });
 
-                if (res.type === 'new') {
-                    this.calculateMarkersForCandle(this.engine.candles.length - 2);
-                    this.calculateMarkersForCandle(this.engine.candles.length - 1);
-                } else {
-                    this.calculateMarkersForCandle(this.engine.candles.length - 1);
+                    if (res && res.candle) {
+                        this.charts.candles.update(res.candle);
+                        this.charts.cvdSeries.update({ time: res.candle.time, value: res.candle.cvd });
+
+                        if (res.type === 'new') {
+                            this.calculateMarkersForCandle(this.engine.candles.length - 2);
+                            this.calculateMarkersForCandle(this.engine.candles.length - 1);
+                        } else {
+                            this.calculateMarkersForCandle(this.engine.candles.length - 1);
+                        }
+
+                        requestAnimationFrame(() => this.renderer.render(this.engine.candles));
+                        this.updateUI(res.candle);
+                    }
                 }
+            } catch (e) {
+                console.error("Error processing raw_tick:", e);
+            }
+        });
 
-                requestAnimationFrame(() => this.renderer.render(this.engine.candles));
-                this.updateUI(res.candle);
+        // Fallback: Listen to chart_update for price movements if raw_tick is missing
+        this.socket.on('chart_update', (data) => {
+            try {
+                if (data.ohlcv && data.ohlcv.length > 0) {
+                    const lastCandle = data.ohlcv[data.ohlcv.length - 1];
+                    const [ts, o, h, l, c, v] = lastCandle;
+
+                    // If the price is different from our engine's last price, treat it as a tick
+                    if (Math.abs(c - this.engine.lastPrice) > 0.01) {
+                        const res = this.engine.processTick({
+                            price: c,
+                            qty: 0, // No footprint data from OHLCV, but updates price
+                            ts_ms: ts * 1000
+                        });
+                        if (res && res.candle) {
+                            this.charts.candles.update(res.candle);
+                            this.updateUI(res.candle);
+                            requestAnimationFrame(() => this.renderer.render(this.engine.candles));
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn("Error processing chart_update fallback:", e);
             }
         });
     }
@@ -565,5 +603,6 @@ class ChartUI {
 window.addEventListener('DOMContentLoaded', () => {
     const engine = new OrderFlowEngine();
     const ui = new ChartUI(engine);
+    window.uiInstance = ui; // Expose for debugging
     ui.init();
 });
