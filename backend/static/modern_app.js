@@ -67,7 +67,7 @@ class DataManager {
         });
 
         this.socket.on('options_quote_update', (data) => {
-            if (data && data.lp !== undefined && data.lp !== null) {
+            if (data && data.symbol === this.currentOptionSymbol && data.lp !== undefined && data.lp !== null) {
                 this.dashboard.charts.updateOptionChart(data.lp);
             }
         });
@@ -110,9 +110,45 @@ class DataManager {
      */
     updateSpotPrice(price) {
         if (!price || price === this.spotPrice) return;
+        const oldPrice = this.spotPrice;
         this.spotPrice = price;
         if (this.dashboard.ui) {
             this.dashboard.ui.updateSpotPrice(this.spotPrice);
+        }
+
+        // Auto ATM Logic
+        if (this.dashboard.ui.elements.autoAtmToggle?.checked && this.fullChain) {
+            const closest = this.fullChain.reduce((prev, curr) =>
+                Math.abs(curr.strike - this.spotPrice) < Math.abs(prev.strike - this.spotPrice) ? curr : prev
+            );
+            if (closest.strike !== this.currentATMStrike) {
+                this.currentATMStrike = closest.strike;
+                this.setOption(this.currentATMStrike, this.dashboard.ui.elements.optionTypeSelector.value);
+            }
+        }
+    }
+
+    /**
+     * Sets the active option to display on the chart.
+     * @param {number} strike
+     * @param {string} type
+     */
+    async setOption(strike, type) {
+        if (!this.fullChain) return;
+        const option = this.fullChain.find(o => o.strike === strike && o.option_type === type);
+        if (option && option.symbol !== this.currentOptionSymbol) {
+            this.currentOptionSymbol = option.symbol;
+            this.dashboard.ui.updateOptionSelection(strike, type);
+            this.dashboard.ui.updateOptionLabel(`${strike} ${type === 'call' ? 'CE' : 'PE'}`);
+
+            // Load historical data for new option
+            const optRes = await this.fetchWithTimeout(`/api/tv/intraday/${encodeURIComponent(this.currentOptionSymbol)}?interval=1`);
+            if (optRes && optRes.candles && optRes.candles.length > 0) {
+                const formattedOpt = optRes.candles
+                    .sort((a, b) => a[0] - b[0])
+                    .map(c => ({ time: c[0], open: c[1], high: c[2], low: c[3], close: c[4] }));
+                this.dashboard.charts.setOptionData(formattedOpt);
+            }
         }
     }
 
@@ -147,14 +183,19 @@ class DataManager {
      */
     identifyATM(data) {
         if (data.spot_price && data.chain && data.chain.length > 0) {
+            this.fullChain = data.chain;
             const closest = data.chain.reduce((prev, curr) =>
                 Math.abs(curr.strike - data.spot_price) < Math.abs(prev.strike - data.spot_price) ? curr : prev
             );
             this.currentATMStrike = closest.strike;
-            const atmCall = data.chain.find(c => c.strike === this.currentATMStrike && c.option_type === 'call');
-            if (atmCall) {
-                this.currentOptionSymbol = atmCall.symbol;
-                this.dashboard.ui.updateOptionLabel(`${this.currentATMStrike} CE`);
+
+            this.dashboard.ui.populateStrikes(data.chain);
+
+            if (this.dashboard.ui.elements.autoAtmToggle.checked) {
+                this.setOption(this.currentATMStrike, this.dashboard.ui.elements.optionTypeSelector.value);
+            } else {
+                // Keep current selection if manually set
+                this.setOption(parseFloat(this.dashboard.ui.elements.strikeSelector.value), this.dashboard.ui.elements.optionTypeSelector.value);
             }
         }
     }
@@ -226,7 +267,10 @@ class UIManager {
             statusDot: document.getElementById('statusDot'),
             pcrValue: document.getElementById('pcrValue'),
             pcrLabel: document.getElementById('pcrLabel'),
-            loadingOverlay: document.getElementById('loadingOverlay')
+            loadingOverlay: document.getElementById('loadingOverlay'),
+            strikeSelector: document.getElementById('strikeSelector'),
+            optionTypeSelector: document.getElementById('optionTypeSelector'),
+            autoAtmToggle: document.getElementById('autoAtmToggle')
         };
         this.setupListeners();
         this.startTimeUpdate();
@@ -237,6 +281,21 @@ class UIManager {
      */
     setupListeners() {
         this.elements.assetSelector?.addEventListener('change', (e) => this.dashboard.data.switchUnderlying(e.target.value));
+
+        this.elements.strikeSelector?.addEventListener('change', (e) => {
+            this.elements.autoAtmToggle.checked = false;
+            this.dashboard.data.setOption(parseFloat(e.target.value), this.elements.optionTypeSelector.value);
+        });
+
+        this.elements.optionTypeSelector?.addEventListener('change', (e) => {
+            this.dashboard.data.setOption(parseFloat(this.elements.strikeSelector.value), e.target.value);
+        });
+
+        this.elements.autoAtmToggle?.addEventListener('change', (e) => {
+            if (e.target.checked) {
+                this.dashboard.data.setOption(this.dashboard.data.currentATMStrike, this.elements.optionTypeSelector.value);
+            }
+        });
     }
 
     /**
@@ -272,6 +331,36 @@ class UIManager {
         if (this.elements.maxPainValue) this.elements.maxPainValue.textContent = res.max_pain || '-';
         if (this.elements.straddleValue && res.atm_straddle) this.elements.straddleValue.textContent = res.atm_straddle.toFixed(2);
         if (this.elements.ivRankValue && res.iv_rank !== undefined) this.elements.ivRankValue.textContent = res.iv_rank + '%';
+    }
+
+    /**
+     * Populates the strike selector with available strikes from the chain.
+     * @param {Array} chain
+     */
+    populateStrikes(chain) {
+        const selector = this.elements.strikeSelector;
+        if (!selector) return;
+        const currentVal = selector.value;
+        const strikes = [...new Set(chain.map(o => o.strike))].sort((a, b) => a - b);
+
+        selector.innerHTML = '';
+        strikes.forEach(s => {
+            const opt = document.createElement('option');
+            opt.value = s; opt.textContent = s;
+            selector.appendChild(opt);
+        });
+
+        if (currentVal && strikes.includes(parseFloat(currentVal))) {
+            selector.value = currentVal;
+        }
+    }
+
+    /**
+     * Updates the selected values in strike and type selectors.
+     */
+    updateOptionSelection(strike, type) {
+        if (this.elements.strikeSelector) this.elements.strikeSelector.value = strike;
+        if (this.elements.optionTypeSelector) this.elements.optionTypeSelector.value = type;
     }
 
     /**
@@ -436,7 +525,32 @@ class ChartManager {
             layout: { background: { type: 'solid', color: '#1e1e1e' }, textColor: COLORS.muted },
             grid: { vertLines: { color: 'rgba(255,255,255,0.05)' }, horzLines: { color: 'rgba(255,255,255,0.05)' } },
             crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-            timeScale: { borderColor: 'rgba(255,255,255,0.1)', timeVisible: true, secondsVisible: false }
+            timeScale: {
+                borderColor: 'rgba(255,255,255,0.1)',
+                timeVisible: true,
+                secondsVisible: false,
+                tickMarkFormatter: (time, tickMarkType, locale) => {
+                    const date = new Date(time * 1000);
+                    return date.toLocaleTimeString('en-IN', {
+                        timeZone: 'Asia/Kolkata',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        hour12: false
+                    });
+                }
+            },
+            localization: {
+                timeFormatter: (time) => {
+                    const date = new Date(time * 1000);
+                    return date.toLocaleTimeString('en-IN', {
+                        timeZone: 'Asia/Kolkata',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit',
+                        hour12: false
+                    });
+                }
+            }
         };
 
         const createS = (id, type = 'candle') => {
@@ -728,14 +842,20 @@ class FootprintRenderer {
                     this.ctx.lineWidth = 1;
                 }
 
-                // Numbers
+                // Numbers (formatted to K/M)
+                const formatV = (v) => {
+                    if (v >= 1000000) return (v / 1000000).toFixed(1) + 'M';
+                    if (v >= 1000) return (v / 1000).toFixed(1) + 'K';
+                    return v;
+                };
+
                 this.ctx.font = (isBuyImbalance || isSellImbalance) ? 'bold 7px "IBM Plex Mono"' : '6px "IBM Plex Mono"';
                 this.ctx.textAlign = 'right';
                 this.ctx.fillStyle = isSellImbalance ? COLORS.bear : COLORS.muted;
-                this.ctx.fillText(sell, x - 4, y + 3);
+                this.ctx.fillText(formatV(sell), x - 4, y + 3);
                 this.ctx.textAlign = 'left';
                 this.ctx.fillStyle = isBuyImbalance ? COLORS.bull : COLORS.muted;
-                this.ctx.fillText(buy, x + 4, y + 3);
+                this.ctx.fillText(formatV(buy), x + 4, y + 3);
 
                 // Center Split
                 this.ctx.strokeStyle = 'rgba(255,255,255,0.1)';

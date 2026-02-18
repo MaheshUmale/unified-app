@@ -306,26 +306,41 @@ async def trigger_backfill():
 
 # ==================== STRATEGY & ALERTS ====================
 
-@fastapi_app.post("/api/strategy/build")
+@fastapi_app.post("/api/options/strategy/build")
 async def build_strategy(req: Request):
     body = await req.json()
     st_input = body.get('strategy_type', 'CUSTOM').upper()
     s_type = StrategyType[st_input] if st_input in StrategyType.__members__ else StrategyType.CUSTOM
 
-    strat = strategy_builder.create_strategy(body.get('name', 'Custom'), s_type, body.get('underlying'), body.get('spot_price', 0), body.get('legs', []))
-    return {"status": "success", "analysis": strategy_builder.analyze_strategy(strat.name)}
+    # Use current spot if not provided
+    spot = body.get('spot_price')
+    if not spot: spot = await options_manager.get_spot_price(body.get('underlying'))
 
-@fastapi_app.get("/api/alerts")
-async def get_alerts(underlying: Optional[str] = None):
-    return {"alerts": alert_system.get_alerts(underlying)}
+    strat = strategy_builder.create_strategy(body.get('name', 'Custom'), s_type, body.get('underlying'), spot, body.get('legs', []))
+    return strategy_builder.analyze_strategy(strat.name)
+
+@fastapi_app.get("/api/alerts/list/{underlying}")
+async def get_alerts_for_underlying(underlying: str):
+    return alert_system.get_alerts(underlying)
 
 @fastapi_app.post("/api/alerts/create")
 async def create_alert(req: Request):
     b = await req.json()
-    a = alert_system.create_alert(b.get('name'), AlertType(b.get('alert_type')), b.get('underlying'), b.get('condition'))
+    # threshold based alert helper
+    condition = {"type": "threshold", "threshold": b.get('threshold')}
+    a = alert_system.create_alert(b.get('name'), AlertType(b.get('alert_type')), b.get('underlying'), condition)
     return {"status": "success", "alert": a.to_dict()}
 
-@fastapi_app.delete("/api/alerts/{alert_id}")
+@fastapi_app.post("/api/alerts/toggle/{alert_id}")
+async def toggle_alert(alert_id: str):
+    alerts = alert_system.get_alerts()
+    a = next((x for x in alerts if x.id == alert_id), None)
+    if a:
+        a.is_active = not a.is_active
+        return {"status": "success", "is_active": a.is_active}
+    raise HTTPException(404, "Alert not found")
+
+@fastapi_app.delete("/api/alerts/delete/{alert_id}")
 async def delete_alert(alert_id: str):
     if alert_system.delete_alert(alert_id): return {"status": "success"}
     raise HTTPException(404, "Alert not found")

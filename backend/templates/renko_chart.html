@@ -56,22 +56,22 @@
     </style>
 </head>
 <body class="h-full flex flex-col light-theme">
-    <header class="h-14 py-2 glass-panel border-b border-white/5 sticky top-0 z-50 px-4 flex items-center justify-between">
+    <header class="h-14 py-2 glass-panel border-b border-white/5 sticky top-0 z-50 px-4 flex items-center justify-between" role="banner">
         <div class="flex items-center gap-4">
-            <span class="text-sm font-black text-blue-500 italic tracking-tighter uppercase">PRO<span class="text-gray-500">DESK</span> RENKO</span>
+            <a href="/" class="text-sm font-black text-blue-500 italic tracking-tighter uppercase">PRO<span class="text-gray-500">DESK</span> RENKO</a>
             <div class="h-6 w-px bg-white/10 mx-2"></div>
-            <div id="display-symbol" class="text-xs font-black uppercase tracking-widest text-blue-500">-</div>
-            <div id="status-indicator" class="flex items-center gap-1.5 ml-4">
+            <div id="display-symbol" class="text-xs font-black uppercase tracking-widest text-blue-500" aria-label="Symbol">-</div>
+            <div id="status-indicator" class="flex items-center gap-1.5 ml-4" aria-live="polite">
                 <div id="status-dot" class="w-2 h-2 rounded-full bg-gray-400"></div>
                 <span id="status-text" class="text-[10px] font-bold text-gray-400 uppercase">Connecting...</span>
             </div>
         </div>
 
-        <div class="flex items-center gap-3">
+        <nav class="flex items-center gap-3">
             <!-- Normal Controls -->
             <div id="normal-controls" class="flex items-center gap-3">
                 <div class="flex items-center gap-2 bg-black/10 rounded-full px-3 py-1">
-                    <span class="text-[10px] font-bold text-gray-400 uppercase">Box Size:</span>
+                    <label for="box-size-input" class="text-[10px] font-bold text-gray-400 uppercase">Box Size:</label>
                     <input type="number" id="box-size-input" value="10" class="bg-transparent text-[10px] font-black w-12 outline-none text-blue-500" min="1" step="0.5">
                 </div>
                 <button id="replay-mode-btn" class="text-[10px] font-black px-4 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-full text-white transition-all uppercase tracking-tight shadow-md shadow-blue-500/20 active:scale-95">Replay</button>
@@ -97,7 +97,7 @@
                 <svg id="sun-icon" class="hidden w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z"/></svg>
                 <svg id="moon-icon" class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/></svg>
             </button>
-        </div>
+        </nav>
     </header>
 
     <main class="flex-1 relative bg-[var(--bg-main)]">
@@ -108,329 +108,6 @@
         <div id="chart" class="chart-container"></div>
     </main>
 
-    <script>
-        const socket = io();
-        let chart, candleSeries, volumeSeries;
-
-        // Parse symbol from URL
-        let symbol = 'NSE:NIFTY';
-        const urlParams = new URLSearchParams(window.location.search);
-        const pathParts = window.location.pathname.split('/');
-
-        if (urlParams.get('symbol')) {
-            symbol = urlParams.get('symbol');
-        } else {
-            const symbolPart = pathParts.find(p => p.startsWith('symbol='));
-            if (symbolPart) {
-                symbol = symbolPart.split('=')[1];
-            }
-        }
-        symbol = symbol.toUpperCase();
-
-        let boxSize = parseFloat(urlParams.get('boxSize')) || 10;
-        let historicalTicks = [];
-        let isReplayMode = false;
-        let replayIndex = -1;
-        let isPlaying = false;
-        let replayInterval = null;
-
-        document.getElementById('box-size-input').value = boxSize;
-        document.getElementById('display-symbol').textContent = symbol;
-
-        function setStatus(text, color) {
-            const dot = document.getElementById('status-dot');
-            const el = document.getElementById('status-text');
-            el.textContent = text;
-            dot.className = `w-2 h-2 rounded-full ${color}`;
-        }
-
-        class RenkoAggregator {
-            constructor(boxSize) {
-                this.boxSize = boxSize;
-                this.lastRenkoClose = 0;
-                this.lastTime = 0;
-            }
-
-            setBoxSize(bs) {
-                this.boxSize = bs;
-                this.lastRenkoClose = 0;
-                this.lastTime = 0;
-            }
-
-            processTick(tick) {
-                const price = Number(tick.price);
-                let ts = Math.floor(tick.ts_ms / 1000);
-
-                if (this.lastRenkoClose === 0) {
-                    this.lastRenkoClose = price;
-                    this.lastTime = ts;
-                    return []; // No bar yet
-                }
-
-                const bars = [];
-                let diff = price - this.lastRenkoClose;
-
-                while (Math.abs(diff) >= this.boxSize) {
-                    if (ts <= this.lastTime) ts = this.lastTime + 1;
-                    this.lastTime = ts;
-
-                    const isUp = diff > 0;
-                    const open = this.lastRenkoClose;
-                    const close = isUp ? open + this.boxSize : open - this.boxSize;
-
-                    bars.push({
-                        time: ts,
-                        open: open,
-                        high: Math.max(open, close),
-                        low: Math.min(open, close),
-                        close: close
-                    });
-
-                    this.lastRenkoClose = close;
-                    diff = price - this.lastRenkoClose;
-                }
-
-                return bars;
-            }
-        }
-
-        const aggregator = new RenkoAggregator(boxSize);
-
-        function initChart() {
-            const container = document.getElementById('chart');
-            chart = LightweightCharts.createChart(container, {
-                layout: { background: { type: 'solid', color: 'transparent' }, textColor: '#191919' },
-                grid: { vertLines: { color: 'rgba(0,0,0,0.05)' }, horzLines: { color: 'rgba(0,0,0,0.05)' } },
-                crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-                localization: {
-                    locale: 'en-IN',
-                    timeFormatter: (ts) => {
-                        return new Intl.DateTimeFormat('en-IN', {
-                            timeZone: 'Asia/Kolkata',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            second: '2-digit',
-                            hour12: false
-                        }).format(new Date(ts * 1000));
-                    }
-                },
-                timeScale: {
-                    borderColor: 'rgba(0,0,0,0.1)',
-                    timeVisible: true,
-                    secondsVisible: true,
-                    rightOffset: 12,
-                    tickMarkFormatter: (time, tickMarkType, locale) => {
-                        const date = new Date(time * 1000);
-                        const options = { timeZone: 'Asia/Kolkata', hour12: false };
-                        if (tickMarkType >= 3) {
-                            options.hour = '2-digit';
-                            options.minute = '2-digit';
-                        } else {
-                            options.day = '2-digit';
-                            options.month = 'short';
-                        }
-                        return new Intl.DateTimeFormat('en-IN', options).format(date);
-                    }
-                },
-                rightPriceScale: { borderColor: 'rgba(0,0,0,0.1)' }
-            });
-
-            candleSeries = chart.addCandlestickSeries({
-                upColor: '#22c55e', downColor: '#ef4444', borderVisible: true, wickUpColor: '#22c55e', wickDownColor: '#ef4444'
-            });
-
-            window.addEventListener('resize', () => {
-                chart.resize(container.clientWidth, container.clientHeight);
-            });
-        }
-
-        async function loadHistory() {
-            setStatus('Loading History...', 'bg-yellow-500');
-            try {
-                const res = await fetch(`/api/ticks/history/${encodeURIComponent(symbol)}?limit=10000`);
-                if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
-                const data = await res.json();
-                historicalTicks = data.history || [];
-
-                if (!isReplayMode) {
-                    renderTicks(historicalTicks);
-                }
-
-                if (historicalTicks.length > 0) {
-                    setStatus(isReplayMode ? 'Replay Mode' : 'Live Feed Active', isReplayMode ? 'bg-blue-500' : 'bg-green-500');
-                } else {
-                    setStatus('No History Found', 'bg-red-500');
-                }
-            } catch (e) {
-                console.error("Load history failed", e);
-                setStatus('History Load Failed', 'bg-red-500');
-            }
-        }
-
-        function renderTicks(ticks) {
-            const candles = [];
-            aggregator.lastRenkoClose = 0;
-            aggregator.lastTime = 0;
-
-            ticks.forEach(t => {
-                const bars = aggregator.processTick(t);
-                bars.forEach(b => candles.push(b));
-            });
-
-            candleSeries.setData(candles);
-
-            if (candles.length > 0) {
-                updatePriceUI(candles[candles.length - 1].close);
-            }
-        }
-
-        function updatePriceUI(price) {
-            document.getElementById('last-price').textContent = price.toLocaleString(undefined, { minimumFractionDigits: 2 });
-        }
-
-        function initSocket() {
-            socket.on('connect', () => {
-                socket.emit('subscribe', { instrumentKeys: [symbol] });
-            });
-
-            socket.on('raw_tick', (data) => {
-                if (isReplayMode) return;
-                if (data[symbol]) {
-                    const tick = data[symbol];
-                    const bars = aggregator.processTick({
-                        price: tick.last_price,
-                        ts_ms: tick.ts_ms
-                    });
-
-                    bars.forEach(b => candleSeries.update(b));
-                    if (bars.length > 0) {
-                        updatePriceUI(bars[bars.length - 1].close);
-                    }
-                }
-            });
-        }
-
-        function initReplay() {
-            document.getElementById('replay-mode-btn').addEventListener('click', () => {
-                isReplayMode = true;
-                replayIndex = -1;
-                document.getElementById('normal-controls').classList.add('hidden');
-                document.getElementById('replay-controls').classList.remove('hidden');
-                document.getElementById('replay-status').innerText = 'SELECT START POINT';
-                ['replay-play-btn', 'replay-next-btn', 'replay-prev-btn'].forEach(id => document.getElementById(id).disabled = true);
-                setStatus('Replay Mode', 'bg-blue-500');
-            });
-
-            document.getElementById('exit-replay-btn').addEventListener('click', () => {
-                isReplayMode = false;
-                isPlaying = false;
-                if (replayInterval) clearInterval(replayInterval);
-                document.getElementById('replay-controls').classList.add('hidden');
-                document.getElementById('normal-controls').classList.remove('hidden');
-                renderTicks(historicalTicks);
-                setStatus('Live Feed Active', 'bg-green-500');
-            });
-
-            chart.subscribeClick((param) => {
-                if (isReplayMode && param.time && replayIndex === -1) {
-                    const idx = historicalTicks.findIndex(t => Math.floor(t.ts_ms / 1000) >= param.time);
-                    if (idx !== -1) {
-                        replayIndex = idx;
-                        stepReplay(0);
-                    }
-                }
-            });
-
-            document.getElementById('replay-next-btn').addEventListener('click', () => stepReplay(1));
-            document.getElementById('replay-prev-btn').addEventListener('click', () => stepReplay(-1));
-            document.getElementById('replay-play-btn').addEventListener('click', () => {
-                if (isPlaying) {
-                    isPlaying = false;
-                    if (replayInterval) clearInterval(replayInterval);
-                } else {
-                    isPlaying = true;
-                    replayInterval = setInterval(() => {
-                        if (replayIndex < historicalTicks.length - 1) {
-                            stepReplay(1);
-                        } else {
-                            isPlaying = false;
-                            clearInterval(replayInterval);
-                            updateReplayUI();
-                        }
-                    }, 50);
-                }
-                updateReplayUI();
-            });
-        }
-
-        function stepReplay(delta) {
-            const newIdx = replayIndex + delta;
-            if (newIdx >= 0 && newIdx < historicalTicks.length) {
-                replayIndex = newIdx;
-                const subset = historicalTicks.slice(0, replayIndex + 1);
-                renderTicks(subset);
-                updateReplayUI();
-            }
-        }
-
-        function updateReplayUI() {
-            document.getElementById('replay-play-btn').disabled = replayIndex === -1;
-            document.getElementById('replay-next-btn').disabled = replayIndex === -1;
-            document.getElementById('replay-prev-btn').disabled = replayIndex === -1;
-            document.getElementById('play-icon').classList.toggle('hidden', isPlaying);
-            document.getElementById('pause-icon').classList.toggle('hidden', !isPlaying);
-            if (replayIndex !== -1) {
-                document.getElementById('replay-status').innerText = `TICK ${replayIndex + 1} / ${historicalTicks.length}`;
-            }
-        }
-
-        function initTheme() {
-            const btn = document.getElementById('theme-toggle');
-            btn.addEventListener('click', () => {
-                const isLight = document.body.classList.contains('light-theme');
-                applyTheme(isLight ? 'dark' : 'light');
-            });
-            applyTheme(localStorage.getItem('theme') || 'light');
-        }
-
-        function applyTheme(theme) {
-            localStorage.setItem('theme', theme);
-            const isLight = theme === 'light';
-            if (isLight) {
-                document.body.classList.add('light-theme');
-                document.getElementById('sun-icon').classList.add('hidden');
-                document.getElementById('moon-icon').classList.remove('hidden');
-            } else {
-                document.body.classList.remove('light-theme');
-                document.getElementById('sun-icon').classList.remove('hidden');
-                document.getElementById('moon-icon').classList.add('hidden');
-            }
-
-            const chartBg = isLight ? '#f1f5f9' : '#0f172a';
-            const chartText = isLight ? '#1e293b' : '#f8fafc';
-            const gridColor = isLight ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.05)';
-
-            if (chart) {
-                chart.applyOptions({
-                    layout: { textColor: chartText },
-                    grid: { vertLines: { color: gridColor }, horzLines: { color: gridColor } },
-                    timeScale: { borderColor: gridColor },
-                    rightPriceScale: { borderColor: gridColor }
-                });
-            }
-        }
-
-        document.getElementById('box-size-input').addEventListener('change', (e) => {
-            boxSize = parseFloat(e.target.value) || 10;
-            aggregator.setBoxSize(boxSize);
-            renderTicks(historicalTicks);
-        });
-
-        initChart();
-        initTheme();
-        loadHistory();
-        initSocket();
-        initReplay();
-    </script>
+    <script src="/static/renko_chart_app.js"></script>
 </body>
 </html>

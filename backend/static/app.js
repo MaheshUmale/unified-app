@@ -113,7 +113,32 @@ class ChartInstance {
                 vertLines: { color: isLight ? '#f1f5f9' : 'rgba(255,255,255,0.05)' },
                 horzLines: { color: isLight ? '#f1f5f9' : 'rgba(255,255,255,0.05)' }
             },
-            timeScale: { timeVisible: true, secondsVisible: false, borderColor: isLight ? '#e2e8f0' : 'rgba(255,255,255,0.1)' },
+            timeScale: {
+                timeVisible: true,
+                secondsVisible: false,
+                borderColor: isLight ? '#e2e8f0' : 'rgba(255,255,255,0.1)',
+                tickMarkFormatter: (time, tickMarkType, locale) => {
+                    const date = new Date(time * 1000);
+                    return date.toLocaleTimeString('en-IN', {
+                        timeZone: 'Asia/Kolkata',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        hour12: false
+                    });
+                }
+            },
+            localization: {
+                timeFormatter: (time) => {
+                    const date = new Date(time * 1000);
+                    return date.toLocaleTimeString('en-IN', {
+                        timeZone: 'Asia/Kolkata',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit',
+                        hour12: false
+                    });
+                }
+            },
             rightPriceScale: { borderColor: isLight ? '#e2e8f0' : 'rgba(255,255,255,0.1)' },
             crosshair: { mode: 0 }
         });
@@ -278,12 +303,85 @@ class ChartInstance {
     }
 }
 
+class ReplayController {
+    constructor(engine) {
+        this.engine = engine;
+        this.isActive = false;
+        this.isPlaying = false;
+        this.currentIndex = 0;
+        this.fullData = [];
+        this.intervalId = null;
+    }
+
+    start(data) {
+        this.isActive = true;
+        this.fullData = data;
+        this.currentIndex = Math.floor(data.length / 2);
+        this.engine.charts[this.engine.activeIdx].mainSeries.setData(this.fullData.slice(0, this.currentIndex));
+        this.updateUI();
+    }
+
+    togglePlay() {
+        this.isPlaying = !this.isPlaying;
+        if (this.isPlaying) {
+            this.intervalId = setInterval(() => this.next(), 1000);
+        } else {
+            clearInterval(this.intervalId);
+        }
+        this.updateUI();
+    }
+
+    next() {
+        if (this.currentIndex < this.fullData.length) {
+            const candle = this.fullData[this.currentIndex++];
+            this.engine.charts[this.engine.activeIdx].mainSeries.update(candle);
+        } else {
+            this.isPlaying = false;
+            clearInterval(this.intervalId);
+        }
+        this.updateUI();
+    }
+
+    prev() {
+        if (this.currentIndex > 1) {
+            this.currentIndex--;
+            this.engine.charts[this.engine.activeIdx].mainSeries.setData(this.fullData.slice(0, this.currentIndex));
+        }
+        this.updateUI();
+    }
+
+    exit() {
+        this.isActive = false;
+        this.isPlaying = false;
+        clearInterval(this.intervalId);
+        this.engine.charts[this.engine.activeIdx].renderData();
+        this.updateUI();
+    }
+
+    updateUI() {
+        const controls = document.getElementById('replayControls');
+        const normal = document.getElementById('normalControls');
+        controls.classList.toggle('hidden', !this.isActive);
+        normal.classList.toggle('hidden', this.isActive);
+
+        document.getElementById('playIcon').classList.toggle('hidden', this.isPlaying);
+        document.getElementById('pauseIcon').classList.toggle('hidden', !this.isPlaying);
+        document.getElementById('replayStatus').innerText = `REPLAY: ${this.currentIndex}/${this.fullData.length}`;
+
+        ['replayPrevBtn', 'replayPlayBtn', 'replayNextBtn'].forEach(id => {
+            const btn = document.getElementById(id);
+            if (btn) btn.disabled = !this.isActive;
+        });
+    }
+}
+
 class MultiChartEngine {
     constructor() {
         this.charts = [];
         this.activeIdx = 0;
         this.layout = 1;
         this.dataManager = new DataManager(this);
+        this.replay = new ReplayController(this);
         this.init();
     }
 
@@ -330,6 +428,18 @@ class MultiChartEngine {
             localStorage.setItem('theme', isLight ? 'light' : 'dark');
             this.applyTheme();
         });
+
+        // Replay Controls
+        document.getElementById('replayModeBtn').addEventListener('click', async () => {
+            const c = this.charts[this.activeIdx];
+            const data = Array.from(c.fullHistory.candles.values()).sort((a,b) => a.time - b.time);
+            this.replay.start(data);
+        });
+
+        document.getElementById('replayPlayBtn').addEventListener('click', () => this.replay.togglePlay());
+        document.getElementById('replayNextBtn').addEventListener('click', () => this.replay.next());
+        document.getElementById('replayPrevBtn').addEventListener('click', () => this.replay.prev());
+        document.getElementById('exitReplayBtn').addEventListener('click', () => this.replay.exit());
     }
 
     setLayout(n) {

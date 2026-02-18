@@ -72,6 +72,10 @@ class OptionsDashboardManager {
         document.getElementById('strategyBtn').addEventListener('click', () => this.switchTab('strategies'));
         document.getElementById('alertsBtn').addEventListener('click', () => this.switchTab('alerts'));
         document.getElementById('buildStrategyBtn')?.addEventListener('click', () => this.buildStrategy());
+        document.getElementById('addLegBtn')?.addEventListener('click', () => this.addLeg());
+        document.getElementById('strategyType')?.addEventListener('change', (e) => {
+            document.getElementById('customLegsContainer').classList.toggle('hidden', e.target.value !== 'custom');
+        });
         document.getElementById('createAlertBtn')?.addEventListener('click', () => this.createAlert());
         document.getElementById('startScalperBtn')?.addEventListener('click', () => this.startScalper());
         document.getElementById('stopScalperBtn')?.addEventListener('click', () => this.stopScalper());
@@ -266,6 +270,7 @@ class OptionsDashboardManager {
         document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.toggle('tab-active', btn.dataset.tab === tabId));
         document.querySelectorAll('.tab-pane').forEach(pane => pane.classList.toggle('hidden', pane.id !== `${tabId}Tab`));
         if (tabId === 'scalper') this.updateScalperStatusUI();
+        if (tabId === 'alerts') this.loadAlerts();
     }
 
     async triggerBackfill() {
@@ -335,6 +340,177 @@ class OptionsDashboardManager {
     async stopScalper() {
         await fetch('/api/scalper/stop', { method: 'POST' });
         this.updateScalperStatusUI();
+    }
+
+    // Strategy Builder
+    addLeg() {
+        const list = document.getElementById('legsList');
+        const div = document.createElement('div');
+        div.className = 'flex gap-2 items-center bg-black/20 p-2 rounded leg-item';
+        div.innerHTML = `
+            <input type="number" placeholder="Strike" class="leg-strike bg-slate-800 border-none text-[10px] w-20 rounded p-1">
+            <select class="leg-type bg-slate-800 border-none text-[10px] rounded p-1">
+                <option value="call">CE</option><option value="put">PE</option>
+            </select>
+            <select class="leg-pos bg-slate-800 border-none text-[10px] rounded p-1">
+                <option value="long">Buy</option><option value="short">Sell</option>
+            </select>
+            <input type="number" placeholder="Prem" class="leg-prem bg-slate-800 border-none text-[10px] w-16 rounded p-1">
+            <button class="text-red-500 hover:text-red-400 p-1" onclick="this.parentElement.remove()">×</button>
+        `;
+        list.appendChild(div);
+    }
+
+    async buildStrategy() {
+        const type = document.getElementById('strategyType').value;
+        const payload = {
+            underlying: this.currentUnderlying,
+            strategy_type: type,
+            legs: []
+        };
+
+        if (type === 'custom') {
+            document.querySelectorAll('.leg-item').forEach(leg => {
+                payload.legs.push({
+                    strike: parseFloat(leg.querySelector('.leg-strike').value),
+                    option_type: leg.querySelector('.leg-type').value,
+                    position: leg.querySelector('.leg-pos').value,
+                    premium: parseFloat(leg.querySelector('.leg-prem').value),
+                    expiry: '2026-12-31' // Simplified for refactor
+                });
+            });
+        }
+
+        try {
+            const res = await fetch('/api/options/strategy/build', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            }).then(r => r.json());
+
+            this.renderStrategyAnalysis(res);
+        } catch (e) { alert("Failed to build strategy"); }
+    }
+
+    renderStrategyAnalysis(data) {
+        const container = document.getElementById('strategyAnalysis');
+        if (!container) return;
+
+        container.innerHTML = `
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <div class="p-3 bg-black/10 rounded">
+                    <div class="text-[8px] text-gray-500 uppercase">Max Profit</div>
+                    <div class="text-sm font-black text-green-500">${data.max_profit}</div>
+                </div>
+                <div class="p-3 bg-black/10 rounded">
+                    <div class="text-[8px] text-gray-500 uppercase">Max Loss</div>
+                    <div class="text-sm font-black text-red-500">${data.max_loss}</div>
+                </div>
+            </div>
+            <div class="text-[10px] text-gray-400 mb-2 uppercase font-bold">Breakeven Points: ${data.breakeven_points.join(', ') || 'N/A'}</div>
+            <div class="grid grid-cols-4 gap-2 text-center">
+                <div class="p-1 bg-blue-500/5 rounded"><div class="text-[7px] text-gray-500">Delta</div><div class="text-xs font-bold">${data.net_delta}</div></div>
+                <div class="p-1 bg-orange-500/5 rounded"><div class="text-[7px] text-gray-500">Theta</div><div class="text-xs font-bold">${data.net_theta}</div></div>
+                <div class="p-1 bg-purple-500/5 rounded"><div class="text-[7px] text-gray-500">Vega</div><div class="text-xs font-bold">${data.net_vega}</div></div>
+                <div class="p-1 bg-green-500/5 rounded"><div class="text-[7px] text-gray-500">Gamma</div><div class="text-xs font-bold">${data.net_gamma}</div></div>
+            </div>
+        `;
+
+        if (data.payoff_chart_data) this.renderPayoffChart(data.payoff_chart_data);
+    }
+
+    renderPayoffChart(data) {
+        const ctx = document.getElementById('payoffChart')?.getContext('2d');
+        if (!ctx) return;
+        document.getElementById('payoffChartContainer').classList.remove('hidden');
+        if (this.charts.payoff) this.charts.payoff.destroy();
+
+        this.charts.payoff = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: data.prices,
+                datasets: [{
+                    label: 'P&L at Expiry',
+                    data: data.pnl,
+                    borderColor: '#3b82f6',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    fill: true,
+                    tension: 0.2,
+                    pointRadius: 0
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                scales: {
+                    x: { grid: { color: 'rgba(255,255,255,0.05)' } },
+                    y: { grid: { color: 'rgba(255,255,255,0.1)' } }
+                }
+            }
+        });
+    }
+
+    // Alerts Management
+    async createAlert() {
+        const payload = {
+            name: document.getElementById('alertName').value,
+            underlying: this.currentUnderlying,
+            alert_type: document.getElementById('alertType').value,
+            threshold: parseFloat(document.getElementById('alertThreshold').value)
+        };
+
+        await fetch('/api/alerts/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        this.loadAlerts();
+    }
+
+    async loadAlerts() {
+        const alerts = await fetch(`/api/alerts/list/${this.currentUnderlying}`).then(r => r.json());
+        this.renderAlerts(alerts);
+    }
+
+    renderAlerts(alerts) {
+        const container = document.getElementById('alertsList');
+        if (!container) return;
+        container.innerHTML = '';
+
+        if (alerts.length === 0) {
+            container.innerHTML = '<p class="text-gray-500 text-xs italic">No active alerts for this underlying.</p>';
+            return;
+        }
+
+        alerts.forEach(alert => {
+            const div = document.createElement('div');
+            div.className = 'flex justify-between items-center p-3 glass-panel rounded border-l-4 border-purple-500 mb-2';
+            div.innerHTML = `
+                <div>
+                    <div class="text-xs font-bold">${alert.name}</div>
+                    <div class="text-[9px] text-gray-500 uppercase">${alert.alert_type.replace('_', ' ')} @ ${alert.threshold}</div>
+                </div>
+                <div class="flex gap-2">
+                    <button class="p-1 hover:text-blue-500" onclick="window.optionsDashboard.toggleAlert('${alert.id}')">
+                        ${alert.is_active ? '⏸' : '▶'}
+                    </button>
+                    <button class="p-1 hover:text-red-500" onclick="window.optionsDashboard.deleteAlert('${alert.id}')">🗑</button>
+                </div>
+            `;
+            container.appendChild(div);
+        });
+    }
+
+    async toggleAlert(id) {
+        await fetch(`/api/alerts/toggle/${id}`, { method: 'POST' });
+        this.loadAlerts();
+    }
+
+    async deleteAlert(id) {
+        if (confirm("Delete this alert?")) {
+            await fetch(`/api/alerts/delete/${id}`, { method: 'DELETE' });
+            this.loadAlerts();
+        }
     }
 }
 
