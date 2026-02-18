@@ -19,6 +19,7 @@ class UpstoxAPIClient:
 
     async def get_hist_candles(self, symbol: str, interval: str, count: int) -> List[List]:
         """Fetch historical candles from Upstox."""
+        logger.info(f"Upstox fetching historical candles for {symbol} (interval={interval}, count={count})")
         try:
             instrument_key = symbol_mapper.to_upstox_key(symbol)
             history_api = upstox_client.HistoryApi(self.api_client)
@@ -59,29 +60,38 @@ class UpstoxAPIClient:
         """Fetch option chain for an underlying."""
         try:
             instrument_key = symbol_mapper.to_upstox_key(underlying)
+            logger.info(f"Upstox fetching option chain for {underlying} ({instrument_key})")
             options_api = upstox_client.OptionsApi(self.api_client)
             expiries = await self.get_expiry_dates(underlying)
-            if not expiries: return {}
+            if not expiries:
+                logger.warning(f"No expiries found for {underlying}")
+                return {}
             expiry = expiries[0]
+            logger.info(f"Using expiry {expiry} for {underlying}")
+
+            # Handle if expiry is already a date/datetime object
+            expiry_str = expiry.strftime("%Y-%m-%d") if hasattr(expiry, 'strftime') else str(expiry)
+            expiry_ts = int(datetime.strptime(expiry_str, "%Y-%m-%d").timestamp())
 
             def fetch():
                 try:
-                    return options_api.get_put_call_option_chain(instrument_key, expiry)
+                    return options_api.get_put_call_option_chain(instrument_key, expiry_str)
                 except ApiException as e:
                     logger.error(f"Upstox API Error fetching option chain for {underlying}: {e}")
                     return None
 
             response = await asyncio.to_thread(fetch)
             if response and response.status == "success":
+                logger.info(f"Successfully fetched Upstox option chain for {underlying} with {len(response.data)} strikes")
                 standard_data = {"timestamp": datetime.now().isoformat(), "underlying_price": 0, "symbols": []}
                 for item in response.data:
                     strike = float(item.strike_price)
                     if item.call_options:
                         co = item.call_options
-                        standard_data["symbols"].append({"f": [co.instrument_key, str(strike), "call", 0.0, float(co.market_data.ltp if co.market_data else 0), int(co.market_data.volume if co.market_data else 0), int(co.market_data.oi if co.market_data else 0), 0, int(datetime.strptime(expiry, "%Y-%m-%d").timestamp()), 0.0, 0.0, 0.0, 0.0, 0.0]})
+                        standard_data["symbols"].append({"f": [co.instrument_key, str(strike), "call", 0.0, float(co.market_data.ltp if co.market_data else 0), int(co.market_data.volume if co.market_data else 0), int(co.market_data.oi if co.market_data else 0), 0, expiry_ts, 0.0, 0.0, 0.0, 0.0, 0.0]})
                     if item.put_options:
                         po = item.put_options
-                        standard_data["symbols"].append({"f": [po.instrument_key, str(strike), "put", 0.0, float(po.market_data.ltp if po.market_data else 0), int(po.market_data.volume if po.market_data else 0), int(po.market_data.oi if po.market_data else 0), 0, int(datetime.strptime(expiry, "%Y-%m-%d").timestamp()), 0.0, 0.0, 0.0, 0.0, 0.0]})
+                        standard_data["symbols"].append({"f": [po.instrument_key, str(strike), "put", 0.0, float(po.market_data.ltp if po.market_data else 0), int(po.market_data.volume if po.market_data else 0), int(po.market_data.oi if po.market_data else 0), 0, expiry_ts, 0.0, 0.0, 0.0, 0.0, 0.0]})
                 return standard_data
             return {}
         except Exception as e:
@@ -101,8 +111,13 @@ class UpstoxAPIClient:
                     return None
             response = await asyncio.to_thread(fetch)
             if response and response.status == "success":
-                dates = sorted(list(set(c.expiry for c in response.data if c.expiry)))
-                return dates
+                # Convert date objects to string if necessary
+                dates = []
+                for c in response.data:
+                    if c.expiry:
+                        d = c.expiry.strftime("%Y-%m-%d") if hasattr(c.expiry, 'strftime') else str(c.expiry)
+                        dates.append(d)
+                return sorted(list(set(dates)))
             return []
         except Exception as e:
             logger.error(f"Error in Upstox get_expiry_dates: {e}")
