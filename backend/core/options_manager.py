@@ -7,6 +7,7 @@ import asyncio
 import logging
 import json
 import pytz
+import time
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 import pandas as pd
@@ -60,6 +61,10 @@ class OptionsManager:
         # New feature: IV tracking per underlying
         self.iv_history: Dict[str, List[float]] = {}
         
+        # New feature: Dynamic ATM Tracking
+        self.monitored_symbols: Dict[str, set] = {} # {underlying: set(symbols)}
+        self._tracking_task = None
+
     def set_socketio(self, sio, loop=None):
         self.sio = sio
         self.loop = loop
@@ -95,7 +100,8 @@ class OptionsManager:
         asyncio.create_task(backfill_and_repair())
         
         self._task = asyncio.create_task(self._snapshot_loop())
-        
+        self._tracking_task = asyncio.create_task(self._dynamic_tracking_loop())
+
         # Start WSS for active underlyings
         for underlying in self.active_underlyings:
             self.start_wss(underlying)
@@ -323,10 +329,12 @@ class OptionsManager:
         self.running = False
         if self._task:
             self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
+        if self._tracking_task:
+            self._tracking_task.cancel()
+
+        try:
+            await asyncio.gather(self._task, self._tracking_task, return_exceptions=True)
+        except: pass
         
         for wss in self.wss_clients.values():
             wss.stop()
@@ -347,9 +355,20 @@ class OptionsManager:
 
     def handle_wss_data(self, underlying: str, data: Any):
         symbol = data.get('symbol')
-        if not symbol:
-            return
+        if not symbol: return
         
+        lp = data.get('lp')
+        if lp and underlying in self.monitored_symbols and symbol in self.monitored_symbols[underlying]:
+            # Record tick for monitored symbol to ensure chart trace
+            tick = {
+                'instrumentKey': symbol,
+                'ts_ms': int(time.time() * 1000),
+                'last_price': lp,
+                'ltq': data.get('volume', 0),
+                'source': 'options_wss'
+            }
+            db.insert_ticks([tick])
+
         if underlying not in self.latest_chains:
             self.latest_chains[underlying] = {}
         
@@ -396,6 +415,51 @@ class OptionsManager:
                     except Exception as e:
                         logger.error(f"Error taking snapshot for {underlying}: {e}")
             await asyncio.sleep(180)
+
+    async def _dynamic_tracking_loop(self):
+        """Continuously updates WSS subscriptions for strikes near ATM."""
+        while self.running:
+            if self.is_market_open():
+                for underlying in self.active_underlyings:
+                    try:
+                        spot = await self.get_spot_price(underlying)
+                        if spot > 0:
+                            await self._update_monitored_range(underlying, spot)
+                    except Exception as e:
+                        logger.error(f"Error in dynamic tracking for {underlying}: {e}")
+            await asyncio.sleep(60)
+
+    async def _update_monitored_range(self, underlying: str, spot: float):
+        """Identify ATM +/- 5 strikes and ensure they are subscribed and monitored."""
+        chain_res = self.get_chain_with_greeks(underlying)
+        chain = chain_res.get('chain', [])
+        if not chain: return
+
+        # Unique strikes sorted
+        strikes = sorted(list(set(c['strike'] for c in chain)))
+        if not strikes: return
+
+        # Find closest strike index
+        atm_idx = min(range(len(strikes)), key=lambda i: abs(strikes[i] - spot))
+
+        # Take 5 up and 5 down (total 11 strikes)
+        start = max(0, atm_idx - 5)
+        end = min(len(strikes), atm_idx + 6)
+        monitored_strikes = strikes[start:end]
+
+        new_monitored_symbols = set()
+        for s in monitored_strikes:
+            c_sym = self.symbol_map_cache.get(underlying, {}).get(f"{s}_call")
+            p_sym = self.symbol_map_cache.get(underlying, {}).get(f"{s}_put")
+            if c_sym: new_monitored_symbols.add(c_sym)
+            if p_sym: new_monitored_symbols.add(p_sym)
+
+        self.monitored_symbols[underlying] = new_monitored_symbols
+
+        # Ensure WSS is subscribed to these
+        if underlying in self.wss_clients and new_monitored_symbols:
+            self.wss_clients[underlying].add_symbols(list(new_monitored_symbols))
+            logger.debug(f"Dynamic ATM tracking updated for {underlying}: {len(new_monitored_symbols)} symbols")
     
     async def take_snapshot(self, underlying: str):
         """Take enhanced snapshot with all metrics."""
