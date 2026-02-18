@@ -14,7 +14,6 @@ from datetime import datetime
 import re
 from config import TV_COOKIE
 
-
 logger = logging.getLogger(__name__)
 
 class TradingViewAPI:
