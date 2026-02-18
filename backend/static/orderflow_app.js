@@ -201,13 +201,19 @@ class CanvasRenderer {
                 this.ctx.fillRect(x - halfWidth, y - 5, spacing, 10);
             }
 
+            const formatV = (v) => {
+                if (v >= 1000000) return (v / 1000000).toFixed(1) + 'M';
+                if (v >= 1000) return (v / 1000).toFixed(1) + 'K';
+                return v;
+            };
+
             this.ctx.textAlign = 'right';
             this.ctx.fillStyle = sell > buy ? '#ff3366' : '#9ea7b3';
-            this.ctx.fillText(sell, x - 4, y + 3);
+            this.ctx.fillText(formatV(sell), x - 4, y + 3);
 
             this.ctx.textAlign = 'left';
             this.ctx.fillStyle = buy > sell ? '#00ffc2' : '#9ea7b3';
-            this.ctx.fillText(buy, x + 4, y + 3);
+            this.ctx.fillText(formatV(buy), x + 4, y + 3);
         });
     }
 }
@@ -236,7 +242,32 @@ class OrderFlowUI {
         const options = {
             layout: { background: { type: 'solid', color: 'transparent' }, textColor: '#7d8590' },
             grid: { vertLines: { color: 'rgba(255,255,255,0.02)' }, horzLines: { color: 'rgba(255,255,255,0.02)' } },
-            timeScale: { timeVisible: true, secondsVisible: true, borderColor: 'rgba(255,255,255,0.1)' },
+            timeScale: {
+                timeVisible: true,
+                secondsVisible: true,
+                borderColor: 'rgba(255,255,255,0.1)',
+                tickMarkFormatter: (time, tickMarkType, locale) => {
+                    const date = new Date(time * 1000);
+                    return date.toLocaleTimeString('en-IN', {
+                        timeZone: 'Asia/Kolkata',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        hour12: false
+                    });
+                }
+            },
+            localization: {
+                timeFormatter: (time) => {
+                    const date = new Date(time * 1000);
+                    return date.toLocaleTimeString('en-IN', {
+                        timeZone: 'Asia/Kolkata',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit',
+                        hour12: false
+                    });
+                }
+            },
             rightPriceScale: { borderColor: 'rgba(255,255,255,0.1)' }
         };
 
