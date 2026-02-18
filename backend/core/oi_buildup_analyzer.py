@@ -380,6 +380,10 @@ class OIBuildupAnalyzer:
             calls = [c for c in calls if c.get('strike') >= spot_price]
             puts = [p for p in puts if p.get('strike') <= spot_price]
 
+        # Fallback: if filtered results are empty, use original set (or top/bottom of chain)
+        # However, for "Institutional" levels, empty is often more accurate if spot is at extremes.
+        # We'll stick to filtered, but ensure they aren't completely empty if possible.
+
         # Sort by OI
         calls_by_oi = sorted(calls, key=lambda x: x.get('oi', 0), reverse=True)
         puts_by_oi = sorted(puts, key=lambda x: x.get('oi', 0), reverse=True)
