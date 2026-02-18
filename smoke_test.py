@@ -3,17 +3,20 @@ import time
 
 def run_smoke_test(page, url, name):
     print(f"Testing {name} at {url}...")
-    page.goto(url)
+    response = page.goto(url)
+    if response.status != 200:
+        print(f"{name} failed with status {response.status}")
+        return False
     time.sleep(5)
     page.screenshot(path=f"/home/jules/verification/smoke_{name.lower()}.png")
     print(f"{name} loaded successfully.")
+    return True
 
 if __name__ == "__main__":
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
         try:
-            run_smoke_test(page, "http://localhost:3000/modern", "Modern")
             run_smoke_test(page, "http://localhost:3000/options", "Options")
             run_smoke_test(page, "http://localhost:3000/orderflow", "Orderflow")
         except Exception as e:

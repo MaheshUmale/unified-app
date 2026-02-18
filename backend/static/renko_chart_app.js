@@ -120,10 +120,26 @@ class RenkoChartManager {
             this.aggregator.setBoxSize(parseFloat(e.target.value) || 10);
             this.renderTicks(this.historicalTicks);
         });
+        document.getElementById('replay-mode-btn')?.addEventListener('click', () => {
+            this.startReplay();
+        });
         document.getElementById('theme-toggle').addEventListener('click', () => {
             const isL = document.body.classList.toggle('light-theme');
             this.chart.applyOptions({ layout: { textColor: isL ? '#1e293b' : '#f8fafc' } });
         });
+    }
+
+    startReplay() {
+        if (this.historicalTicks.length < 10) return;
+        this.aggregator.reset();
+        this.series.setData([]);
+        let i = 0;
+        const interval = setInterval(() => {
+            if (i >= this.historicalTicks.length) { clearInterval(interval); return; }
+            const bars = this.aggregator.processTick(this.historicalTicks[i]);
+            bars.forEach(b => this.series.update(b));
+            i++;
+        }, 10);
     }
 }
 

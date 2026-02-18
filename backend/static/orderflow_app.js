@@ -348,6 +348,32 @@ class OrderFlowUI {
         document.getElementById('resetZoomBtn')?.addEventListener('click', () => {
             this.charts.main.timeScale().fitContent();
         });
+
+        document.getElementById('replay-btn')?.addEventListener('click', () => {
+            this.startReplay();
+        });
+    }
+
+    startReplay() {
+        const ticks = [...this.engine.ticks];
+        if (ticks.length < 10) { alert("Insufficient data for replay"); return; }
+
+        this.engine.reset();
+        this.charts.candles.setData([]);
+        this.charts.cvdSeries.setData([]);
+
+        let i = 0;
+        const interval = setInterval(() => {
+            if (i >= ticks.length) {
+                clearInterval(interval);
+                this.updateStatus('Live', 'bg-[#00ffc2]');
+                return;
+            }
+            const res = this.engine.processTick(ticks[i], true);
+            if (res) this.updateChartData(res.candle);
+            i++;
+            this.updateStatus(`Replay ${Math.floor(i/ticks.length*100)}%`, 'bg-blue-500');
+        }, 10);
     }
 
     reaggregate() {

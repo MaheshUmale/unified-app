@@ -121,7 +121,8 @@ class OptionsDashboardManager {
         this.renderPCRChart(pcr);
         this.renderOIChart(oi);
         this.renderOITrendMergedChart(pcr);
-        this.renderSupportResistance(sr);
+        this.renderPCRGauge(pcr);
+        this.renderOIDivergenceChart(pcr);
         this.updateSummaryFromOverview(pcr);
     }
 
@@ -211,7 +212,7 @@ class OptionsDashboardManager {
             data: {
                 labels,
                 datasets: [
-                    { label: 'Spot', data: history.map(h => h.spot_price || h.underlying_price), borderColor: this.theme === 'light' ? '#000' : '#fff', borderDash: [3,3], pointRadius: 0, yAxisID: 'y1' },
+                    { label: 'Spot', data: history.map(h => h.spot_price || h.underlying_price), borderColor: this.theme === 'light' ? '#0f172a' : '#fff', borderDash: [3,3], pointRadius: 0, yAxisID: 'y1' },
                     { label: 'PCR', data: history.map(h => h.pcr_oi), borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.1)', fill: true, tension: 0.4, pointRadius: 0, yAxisID: 'y' }
                 ]
             },
@@ -222,6 +223,103 @@ class OptionsDashboardManager {
                     y1: { type: 'linear', position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'SPOT', color: '#94a3b8' }, ticks: { color: '#94a3b8' } }
                 },
                 plugins: { legend: { labels: { color: '#94a3b8' } } }
+            }
+        });
+    }
+
+    renderPCRGauge(data) {
+        const gaugeCtx = document.getElementById('pcrGauge')?.getContext('2d');
+        const trendCtx = document.getElementById('pcrTrendSparkline')?.getContext('2d');
+        if (!gaugeCtx) return;
+
+        if (this.charts.pcrGauge) this.charts.pcrGauge.destroy();
+        if (this.charts.pcrSparkline) this.charts.pcrSparkline.destroy();
+
+        const history = (data.history || data || []);
+        const pcr = history.length > 0 ? history[history.length - 1].pcr_oi : 0;
+
+        // Sparkline
+        if (trendCtx) {
+            this.charts.pcrSparkline = new Chart(trendCtx, {
+                type: 'line',
+                data: {
+                    labels: history.map((_, i) => i),
+                    datasets: [{
+                        data: history.map(h => h.pcr_oi),
+                        borderColor: '#3b82f6',
+                        borderWidth: 1,
+                        pointRadius: 0,
+                        fill: true,
+                        backgroundColor: 'rgba(59, 130, 246, 0.05)'
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    scales: { x: { display: false }, y: { display: false } },
+                    plugins: { legend: { display: false } }
+                }
+            });
+        }
+
+        this.charts.pcrGauge = new Chart(gaugeCtx, {
+            type: 'doughnut',
+            data: {
+                datasets: [{
+                    data: [0.7, 0.4, 0.9],
+                    backgroundColor: ['rgba(255, 51, 102, 0.2)', 'rgba(71, 85, 105, 0.2)', 'rgba(0, 255, 194, 0.2)'],
+                    borderWidth: 0,
+                    needleValue: pcr
+                }]
+            },
+            options: {
+                circumference: 180, rotation: 270, cutout: '80%', aspectRatio: 2,
+                plugins: { legend: { display: false }, tooltip: { enabled: false } }
+            },
+            plugins: [{
+                id: 'needle',
+                afterDraw: (chart) => {
+                    const { ctx, chartArea } = chart;
+                    if (!chartArea || !chart._metasets[0]) return;
+                    ctx.save();
+                    const needleValue = chart.config.data.datasets[0].needleValue;
+                    const angle = Math.PI + (Math.min(Math.max(needleValue, 0), 2) / 2) * Math.PI;
+                    const cx = chartArea.width / 2, cy = chart._metasets[0].data[0].y;
+                    ctx.translate(cx, cy); ctx.rotate(angle);
+                    ctx.beginPath(); ctx.moveTo(0, -1); ctx.lineTo(chartArea.height * 0.8, 0); ctx.lineTo(0, 1);
+                    ctx.fillStyle = this.theme === 'light' ? '#0f172a' : '#fff'; ctx.fill();
+                    ctx.restore();
+                }
+            }]
+        });
+
+        const sig = document.getElementById('pcrSignal');
+        if (sig) {
+            sig.textContent = pcr > 1.1 ? 'BULLISH' : pcr < 0.7 ? 'BEARISH' : 'NEUTRAL';
+            sig.className = `text-[8px] font-black px-1.5 py-0.5 rounded uppercase ${pcr > 1.1 ? 'bg-green-500/20 text-green-500' : pcr < 0.7 ? 'bg-red-500/20 text-red-500' : 'bg-gray-500/20 text-gray-400'}`;
+        }
+    }
+
+    renderOIDivergenceChart(data) {
+        const ctx = document.getElementById('oiPriceDivergenceChart')?.getContext('2d');
+        if (!ctx) return;
+        if (this.charts.oiDiv) this.charts.oiDiv.destroy();
+
+        const history = (data.history || data || []);
+        const labels = history.map(h => '');
+
+        this.charts.oiDiv = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels,
+                datasets: [
+                    { label: 'Spot', data: history.map(h => h.spot_price || h.underlying_price), borderColor: '#fbbf24', borderWidth: 1, pointRadius: 0, yAxisID: 'y' },
+                    { label: 'Total OI', data: history.map(h => h.total_oi), borderColor: '#a855f7', borderWidth: 1, pointRadius: 0, yAxisID: 'y1' }
+                ]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                scales: { x: { display: false }, y: { display: false }, y1: { display: false } },
+                plugins: { legend: { display: false } }
             }
         });
     }
@@ -289,10 +387,12 @@ class OptionsDashboardManager {
     }
 
     updateSummaryFromOverview(data) {
-        const history = data.history || [];
+        const history = (data.history || data || []);
         if (history.length === 0) return;
         const last = history[history.length - 1];
         document.getElementById('pcrValue').textContent = last.pcr_oi?.toFixed(2) || '0.00';
+        document.getElementById('pcrVol').textContent = last.pcr_vol?.toFixed(2) || '-';
+        document.getElementById('pcrOiChg').textContent = last.pcr_oi_change?.toFixed(2) || '-';
         document.getElementById('maxPain').textContent = (last.max_pain || 0).toLocaleString();
     }
 

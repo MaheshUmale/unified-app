@@ -114,7 +114,7 @@
         <!-- Summary Cards Section -->
         <div class="space-y-4">
             <!-- Row 1: Core Metrics -->
-            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="grid grid-cols-1 lg:grid-cols-4 gap-4">
                 <!-- Spot Price -->
                 <div class="glass-panel rounded-xl p-3 flex flex-col justify-between shadow-sm">
                     <div class="text-[10px] text-gray-500 font-black uppercase tracking-widest flex justify-between items-center">
@@ -127,15 +127,26 @@
                     </div>
                 </div>
 
-                <!-- PCR -->
-                <div class="glass-panel rounded-xl p-3 flex flex-col justify-between shadow-sm">
+                <!-- PCR Sentiment (Merged from Modern) -->
+                <div class="lg:col-span-2 glass-panel rounded-xl p-3 flex flex-col justify-between shadow-sm">
                     <div class="text-[10px] text-gray-500 font-black uppercase tracking-widest flex justify-between items-center">
-                        PCR (OI)
+                        Sentiment (PCR)
                         <div id="pcrSignal" class="text-[8px] font-black bg-gray-500/20 text-gray-400 px-1.5 py-0.5 rounded uppercase">NEUTRAL</div>
                     </div>
-                    <div class="flex items-baseline gap-2 mt-1">
-                        <div id="pcrValue" class="text-xl font-black text-white tracking-tighter">0.00</div>
-                        <div class="text-[9px] text-gray-500 font-bold">Vol: <span id="pcrVol" class="text-blue-500">-</span></div>
+                    <div class="flex items-center gap-4 mt-1">
+                        <div class="w-24 h-16 relative">
+                            <canvas id="pcrGauge"></canvas>
+                            <div class="absolute bottom-1 w-full flex flex-col items-center">
+                                <span id="pcrValue" class="text-xs font-black mono text-white leading-none">0.00</span>
+                            </div>
+                        </div>
+                        <div class="flex-1 h-12">
+                            <canvas id="pcrTrendSparkline"></canvas>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-[9px] text-gray-500 font-bold">Vol PCR: <span id="pcrVol" class="text-blue-500">-</span></div>
+                            <div class="text-[9px] text-gray-500 font-bold">OI Chg PCR: <span id="pcrOiChg" class="text-purple-500">-</span></div>
+                        </div>
                     </div>
                 </div>
 
@@ -150,24 +161,12 @@
                         <div class="text-[8px] text-gray-500 font-bold">EXP: <span id="expiryDate" class="text-blue-500">-</span></div>
                     </div>
                 </div>
-
-                <!-- IV Rank -->
-                <div class="glass-panel rounded-xl p-3 flex flex-col justify-between shadow-sm">
-                    <div class="text-[10px] text-gray-500 font-black uppercase tracking-widest flex justify-between items-center">
-                        IV Rank
-                        <div id="ivSignal" class="text-[8px] font-black bg-gray-500/20 text-gray-400 px-1.5 py-0.5 rounded uppercase">-</div>
-                    </div>
-                    <div class="flex items-baseline gap-2 mt-1">
-                        <div id="ivRank" class="text-xl font-black text-white tracking-tighter">-</div>
-                        <div class="text-[9px] text-gray-500 font-bold">IV: <span id="ivValue" class="text-blue-500">-</span>%</div>
-                    </div>
-                </div>
             </div>
 
             <!-- Row 2: Insights & Secondary -->
             <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
                 <!-- Genie Insights Card -->
-                <div class="lg:col-span-6 glass-panel rounded-xl p-3 border-l-4 border-blue-500 flex items-center justify-between shadow-md">
+                <div class="lg:col-span-5 glass-panel rounded-xl p-3 border-l-4 border-blue-500 flex items-center justify-between shadow-md">
                     <div class="flex-1">
                         <div class="text-[10px] text-blue-500 font-black uppercase tracking-widest flex items-center gap-3">
                             OiGenie Market Control
@@ -193,15 +192,11 @@
                     </div>
                 </div>
 
-                <!-- Net Greeks -->
-                <div class="lg:col-span-3 glass-panel rounded-xl p-3 flex items-center justify-between shadow-sm">
-                    <div class="flex flex-col">
-                        <div class="text-[10px] text-gray-500 font-black uppercase tracking-widest">Net Delta</div>
-                        <div id="netDelta" class="text-xl font-black text-white mt-1">-</div>
-                    </div>
-                    <div class="text-right">
-                        <div id="deltaSignal" class="text-[8px] font-black bg-gray-500/20 text-gray-400 px-1.5 py-0.5 rounded uppercase mb-1">-</div>
-                        <div class="text-[9px] text-gray-500 font-bold italic">Theta: <span id="netTheta" class="text-red-400">-</span></div>
+                <!-- OI Divergence Spotter (Moved from Modern) -->
+                <div class="lg:col-span-4 glass-panel rounded-xl p-3 shadow-md">
+                    <div class="text-[10px] text-gray-500 font-black uppercase tracking-widest mb-1">OI Divergence Spotter</div>
+                    <div class="h-16">
+                        <canvas id="oiPriceDivergenceChart"></canvas>
                     </div>
                 </div>
             </div>
@@ -256,36 +251,24 @@
 
             <!-- Overview Tab -->
             <div id="overviewTab" class="tab-pane">
-                <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
-                    <!-- Left: Charts -->
-                    <div class="lg:col-span-8 space-y-4">
-                        <div class="glass-panel rounded-xl p-4">
-                            <h3 class="text-xs font-bold uppercase tracking-wider mb-4">Spot vs PCR Confluence</h3>
-                            <div class="h-[350px] relative">
-                                <canvas id="confluenceChart"></canvas>
-                            </div>
-                        </div>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div class="glass-panel rounded-xl p-4">
-                                <h3 class="text-xs font-bold uppercase tracking-wider mb-4">OI Distribution</h3>
-                                <div class="h-[250px] relative">
-                                    <canvas id="oiChart"></canvas>
-                                </div>
-                            </div>
-                            <div class="glass-panel rounded-xl p-4">
-                                <h3 class="text-xs font-bold uppercase tracking-wider mb-4">OI Trends (Total & Chg)</h3>
-                                <div class="h-[250px] relative">
-                                    <canvas id="oiTrendMergedChart"></canvas>
-                                </div>
-                            </div>
+                <div class="space-y-4">
+                    <div class="glass-panel rounded-xl p-4">
+                        <h3 class="text-xs font-bold uppercase tracking-wider mb-4">Spot vs PCR Confluence</h3>
+                        <div class="h-[350px] relative">
+                            <canvas id="confluenceChart"></canvas>
                         </div>
                     </div>
-                    <!-- Right: Lists -->
-                    <div class="lg:col-span-4 space-y-4">
-                        <div class="glass-panel rounded-xl p-4 h-full">
-                            <h3 class="text-xs font-bold uppercase tracking-wider mb-4">Institutional Support & Resistance</h3>
-                            <div id="supportResistance" class="space-y-2">
-                                <!-- Dynamic content -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="glass-panel rounded-xl p-4">
+                            <h3 class="text-xs font-bold uppercase tracking-wider mb-4">OI Distribution</h3>
+                            <div class="h-[250px] relative">
+                                <canvas id="oiChart"></canvas>
+                            </div>
+                        </div>
+                        <div class="glass-panel rounded-xl p-4">
+                            <h3 class="text-xs font-bold uppercase tracking-wider mb-4">OI Trends (Total & Chg)</h3>
+                            <div class="h-[250px] relative">
+                                <canvas id="oiTrendMergedChart"></canvas>
                             </div>
                         </div>
                     </div>
