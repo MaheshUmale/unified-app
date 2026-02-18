@@ -24,7 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config import LOGGING_CONFIG, INITIAL_INSTRUMENTS, SERVER_PORT
 from core import data_engine
-from core.provider_registry import initialize_default_providers
+from core.provider_registry import initialize_default_providers, historical_data_registry, options_data_registry
 from core.options_manager import options_manager
 from core.symbol_mapper import symbol_mapper
 from core.greeks_calculator import greeks_calculator
@@ -202,11 +202,16 @@ async def get_intraday(instrument_key: str, interval: str = '1'):
 
     try:
         clean_key = unquote(instrument_key)
-        tv_candles = await asyncio.to_thread(tv_api.get_hist_candles, clean_key, interval, 1000)
+        # Use registry for historical data
+        provider = historical_data_registry.get_primary()
+        if not provider:
+            return {"status": "error", "message": "No historical provider available"}
+
+        candles = await provider.get_hist_candles(clean_key, interval, 1000)
         
         indicators = []
-        if tv_candles:
-            df = pd.DataFrame(sorted(tv_candles, key=lambda x: x[0]), columns=['ts', 'o', 'h', 'l', 'c', 'v'])
+        if candles:
+            df = pd.DataFrame(sorted(candles, key=lambda x: x[0]), columns=['ts', 'o', 'h', 'l', 'c', 'v'])
             # Standard EMAs
             for span, color in [(9, "#3b82f6"), (20, "#f97316")]:
                 ema = df['c'].ewm(span=span, adjust=False).mean()
@@ -229,7 +234,7 @@ async def get_intraday(instrument_key: str, interval: str = '1'):
                     })
             except Exception: pass
 
-        result = {"instrumentKey": clean_key, "hrn": symbol_mapper.get_hrn(clean_key), "candles": tv_candles or [], "indicators": indicators}
+        result = {"instrumentKey": clean_key, "hrn": symbol_mapper.get_hrn(clean_key), "candles": candles or [], "indicators": indicators}
         hist_cache.set(cache_key, result)
         return result
     except Exception as e: return format_error(e, "Intraday fetch failed")
