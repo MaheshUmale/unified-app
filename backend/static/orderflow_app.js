@@ -1,140 +1,36 @@
 /**
- * PRODESK Advanced Order Flow Terminal
- * Implementing Volume Footprint, CVD Divergence, and AIP Strategy.
+ * PRODESK Advanced Order Flow Terminal - REIMPLEMENTED
  */
 
-const socket = io();
-let currentSymbol = 'NSE:NIFTY';
-let charts = {};
-let aggregator;
-let aggregatedCandles = [];
-let historicalTicks = []; // Cache of raw ticks
-let baseCandles = []; // Cache of 20-tick base candles for fast re-aggregation
-let cachedMarkers = [];
-let renderRequested = false;
-let lastSignalUpdate = 0;
-
-const COLORS = {
-    bull: '#00ffc2',
-    bear: '#ff3366',
-    bullTransparent: 'rgba(0, 255, 194, 0.2)',
-    bearTransparent: 'rgba(255, 51, 102, 0.2)',
-    poc: '#fbbf24',
-    va: 'rgba(255, 255, 255, 0.1)',
-    text: '#e6edf3',
-    muted: '#7d8590'
-};
-
-document.addEventListener('DOMContentLoaded', () => {
-    const urlParams = new URLSearchParams(window.location.search);
-    currentSymbol = (urlParams.get('symbol') || 'NSE:NIFTY').toUpperCase();
-    document.getElementById('display-symbol').textContent = currentSymbol;
-
-    const ticksInput = document.getElementById('ticks-input');
-    ticksInput.value = urlParams.get('ticks') || 100;
-    aggregator.tpc = parseInt(ticksInput.value);
-
-    initCharts();
-    setupSocket();
-    loadHistory();
-    loadSentiment();
-    setupUIListeners();
-});
-
-let pendingTpcChange = null;
-
-function setupUIListeners() {
-    document.getElementById('ticks-input').addEventListener('change', (e) => {
-        const tpc = parseInt(e.target.value) || 100;
-        if (isReaggregating) {
-            pendingTpcChange = { type: 'tpc', value: tpc };
-            return;
-        }
-        aggregator.setTicksPerCandle(tpc);
-        if (historicalTicks.length > 0) reaggregate();
-        else loadHistory();
-    });
-
-    document.getElementById('step-input').addEventListener('change', (e) => {
-        const step = parseFloat(e.target.value) || 0.05;
-        if (isReaggregating) {
-            pendingTpcChange = { type: 'step', value: step };
-            return;
-        }
-        aggregator.setPriceStep(step);
-        baseCandles = []; // Invalidate base candles on step change
-        if (historicalTicks.length > 0) reaggregate();
-        else loadHistory();
-    });
-
-    document.getElementById('replay-btn').addEventListener('click', () => {
-        const tpc = document.getElementById('ticks-input').value;
-        window.location.href = `/tick?symbol=${currentSymbol}&ticks=${tpc}`;
-    });
-
-    // Auto-resize charts
-    const resizeObserver = new ResizeObserver(() => {
-        if (charts.main) {
-            const mainEl = document.getElementById('main-chart');
-            charts.main.applyOptions({ width: mainEl.clientWidth, height: mainEl.clientHeight });
-        }
-        if (charts.cvd) {
-            const cvdEl = document.getElementById('cvd-chart');
-            charts.cvd.applyOptions({ width: cvdEl.clientWidth, height: cvdEl.clientHeight });
-        }
-        const canvas = document.getElementById('footprint-canvas');
-        if (canvas) {
-            const wrapper = document.getElementById('chart-wrapper');
-            canvas.width = wrapper.clientWidth;
-            canvas.height = wrapper.clientHeight;
-            renderFootprint(canvas, canvas.getContext('2d'));
-        }
-    });
-    resizeObserver.observe(document.getElementById('chart-wrapper'));
-    resizeObserver.observe(document.getElementById('cvd-chart'));
-}
-
-class TickAggregator {
-    constructor(tpc, priceStep = 0.05) {
+class OrderFlowEngine {
+    constructor(tpc = 100, priceStep = 0.05) {
         this.tpc = tpc;
         this.priceStep = priceStep;
-        this.currentTickCount = 0;
+        this.reset();
+    }
+
+    reset() {
+        this.ticks = [];
+        this.candles = [];
         this.currentCandle = null;
-        this.lastTime = 0;
-        this.lastPrice = 0;
-        this.lastSide = 1;
-        this.cvd = 0;
-        this.baseSize = 20;
-        this.currentBaseTickCount = 0;
-        this.currentBaseCandle = null;
-    }
-
-    setTicksPerCandle(tpc) {
-        this.tpc = tpc;
-        this.resetState();
-    }
-
-    setPriceStep(step) {
-        this.priceStep = step;
-        this.resetState();
-    }
-
-    resetState() {
-        this.currentTickCount = 0;
-        this.currentCandle = null;
+        this.tickCount = 0;
         this.cvd = 0;
         this.lastPrice = 0;
-        this.lastTime = 0;
-        this.lastSide = 1;
-        // Do NOT reset baseCandles here, they are persistent for re-aggregation
+        this.lastSide = 1; // 1 for Buy (Up), -1 for Sell (Down)
     }
 
-    processTick(tick, deferAnalytics = false, updateBase = true) {
-        // Quantize price based on current priceStep
-        const price = Number((Math.round(Number(tick.price) / this.priceStep) * this.priceStep).toFixed(2));
+    setParams(tpc, priceStep) {
+        this.tpc = tpc || this.tpc;
+        this.priceStep = priceStep || this.priceStep;
+    }
+
+    processTick(tick, isReaggregating = false) {
+        const rawPrice = Number(tick.price);
+        const price = Number((Math.round(rawPrice / this.priceStep) * this.priceStep).toFixed(2));
         const qty = Number(tick.qty || 0);
         let ts = Math.floor(tick.ts_ms / 1000);
 
+        // Tick Rule for Aggressor Side
         let side = this.lastSide;
         if (price > this.lastPrice) side = 1;
         else if (price < this.lastPrice) side = -1;
@@ -144,747 +40,530 @@ class TickAggregator {
         this.lastPrice = price;
         this.lastSide = side;
 
-        if (updateBase) this.updateBaseCandle(tick, price, side, qty);
+        // Always cache ticks unless it's an internal re-aggregation of already cached ticks
+        if (!isReaggregating) {
+            this.ticks.push({ ts_ms: tick.ts_ms, price: rawPrice, qty: qty });
+            if (this.ticks.length > 20000) this.ticks.shift();
+        }
 
-        if (!this.currentCandle || this.currentTickCount >= this.tpc) {
+        if (!this.currentCandle || this.tickCount >= this.tpc) {
+            // Finalize previous candle analytics
             if (this.currentCandle) this.calculateAnalytics(this.currentCandle);
-            if (ts <= this.lastTime) ts = this.lastTime + 1;
-            this.lastTime = ts;
+
+            // New Candle
+            if (this.currentCandle && ts <= this.currentCandle.time) {
+                ts = this.currentCandle.time + 1;
+            }
 
             this.currentCandle = {
                 time: ts,
                 open: price, high: price, low: price, close: price,
                 volume: qty, delta: delta, cvd: this.cvd,
-                footprint: {}
+                footprint: {},
+                imbalances: [],
+                poc: price, vah: price, val: price
             };
-            this.updateFootprint(this.currentCandle, price, side, qty, deferAnalytics);
-            this.currentTickCount = 1;
+            this.updateFootprint(this.currentCandle, price, side, qty);
+            this.tickCount = 1;
+            this.candles.push(this.currentCandle);
+            if (this.candles.length > 1000) this.candles.shift();
             return { type: 'new', candle: this.currentCandle };
         } else {
-            this.currentCandle.high = Math.max(this.currentCandle.high, price);
-            this.currentCandle.low = Math.min(this.currentCandle.low, price);
-            this.currentCandle.close = price;
-            this.currentCandle.volume += qty;
-            this.currentCandle.delta += delta;
-            this.currentCandle.cvd = this.cvd;
-            this.updateFootprint(this.currentCandle, price, side, qty, deferAnalytics);
-            this.currentTickCount++;
+            // Update Current Candle
+            const c = this.currentCandle;
+            c.high = Math.max(c.high, price);
+            c.low = Math.min(c.low, price);
+            c.close = price;
+            c.volume += qty;
+            c.delta += delta;
+            c.cvd = this.cvd;
+            this.updateFootprint(c, price, side, qty);
+            this.tickCount++;
             return { type: 'update', candle: this.currentCandle };
         }
     }
 
-    mergeBaseCandle(bc) {
-        if (!this.currentCandle || this.currentTickCount >= this.tpc) {
-            if (this.currentCandle) this.calculateAnalytics(this.currentCandle);
-
-            const footprintClone = {};
-            for (let p in bc.footprint) {
-                footprintClone[p] = { buy: bc.footprint[p].buy, sell: bc.footprint[p].sell };
-            }
-
-            this.currentCandle = {
-                time: bc.time,
-                open: bc.open, high: bc.high, low: bc.low, close: bc.close,
-                volume: bc.volume, delta: bc.delta,
-                footprint: footprintClone
-            };
-            this.currentTickCount = this.baseSize;
-            return { type: 'new', candle: this.currentCandle };
-        } else {
-            this.currentCandle.high = Math.max(this.currentCandle.high, bc.high);
-            this.currentCandle.low = Math.min(this.currentCandle.low, bc.low);
-            this.currentCandle.close = bc.close;
-            this.currentCandle.volume += bc.volume;
-            this.currentCandle.delta += bc.delta;
-
-            const targetFootprint = this.currentCandle.footprint;
-            const sourceFootprint = bc.footprint;
-            for (let p in sourceFootprint) {
-                if (!targetFootprint[p]) {
-                    targetFootprint[p] = { buy: sourceFootprint[p].buy, sell: sourceFootprint[p].sell };
-                } else {
-                    targetFootprint[p].buy += sourceFootprint[p].buy;
-                    targetFootprint[p].sell += sourceFootprint[p].sell;
-                }
-            }
-            this.currentTickCount += this.baseSize;
-            return { type: 'update', candle: this.currentCandle };
-        }
-    }
-
-    updateBaseCandle(tick, price, side, qty) {
-        if (!this.currentBaseCandle || this.currentBaseTickCount >= this.baseSize) {
-            if (this.currentBaseCandle) {
-                this.calculateAnalytics(this.currentBaseCandle);
-                baseCandles.push({ ...this.currentBaseCandle });
-                if (baseCandles.length > 1000) baseCandles.shift();
-            }
-            this.currentBaseCandle = {
-                time: Math.floor(tick.ts_ms / 1000),
-                open: price, high: price, low: price, close: price,
-                volume: qty, delta: side * qty,
-                footprint: {}
-            };
-            this.updateFootprint(this.currentBaseCandle, price, side, qty, true);
-            this.currentBaseTickCount = 1;
-        } else {
-            this.currentBaseCandle.high = Math.max(this.currentBaseCandle.high, price);
-            this.currentBaseCandle.low = Math.min(this.currentBaseCandle.low, price);
-            this.currentBaseCandle.close = price;
-            this.currentBaseCandle.volume += qty;
-            this.currentBaseCandle.delta += (side * qty);
-            this.updateFootprint(this.currentBaseCandle, price, side, qty, true);
-            this.currentBaseTickCount++;
-        }
-    }
-
-    updateFootprint(candle, price, side, qty, deferAnalytics = false) {
+    updateFootprint(candle, price, side, qty) {
         if (!candle.footprint[price]) {
             candle.footprint[price] = { buy: 0, sell: 0 };
         }
         if (side === 1) candle.footprint[price].buy += qty;
         else candle.footprint[price].sell += qty;
 
-        if (deferAnalytics) return;
-
-        // Throttle calculation to avoid doing it on every micro-tick
         const now = Date.now();
-        if (!candle._lastCalc || now - candle._lastCalc > 200) {
+        if (!candle._lastCalc || now - candle._lastCalc > 250) {
             this.calculateAnalytics(candle);
             candle._lastCalc = now;
         }
     }
 
     calculateAnalytics(candle) {
-        const priceLevels = Object.keys(candle.footprint).map(Number).sort((a,b) => a-b);
-        if (priceLevels.length === 0) return;
+        const fp = candle.footprint;
+        const prices = Object.keys(fp).map(Number).sort((a, b) => a - b);
+        if (prices.length === 0) return;
 
-        let maxVol = 0;
         let totalVol = 0;
-        let poc = priceLevels[0];
-        for (let p of priceLevels) {
-            let vol = candle.footprint[p].buy + candle.footprint[p].sell;
+        let maxVol = 0;
+        let poc = prices[0];
+
+        for (const p of prices) {
+            const vol = fp[p].buy + fp[p].sell;
             totalVol += vol;
             if (vol > maxVol) {
                 maxVol = vol;
                 poc = p;
             }
         }
+
         candle.poc = poc;
 
-        let vaVol = totalVol * 0.7;
+        const targetVaVol = totalVol * 0.7;
         let currentVaVol = maxVol;
-        let lowerIdx = priceLevels.indexOf(poc);
-        let upperIdx = lowerIdx;
+        let lIdx = prices.indexOf(poc);
+        let uIdx = lIdx;
 
-        while (currentVaVol < vaVol && (lowerIdx > 0 || upperIdx < priceLevels.length - 1)) {
-            let lVol = lowerIdx > 0 ? (candle.footprint[priceLevels[lowerIdx - 1]].buy + candle.footprint[priceLevels[lowerIdx - 1]].sell) : 0;
-            let uVol = upperIdx < priceLevels.length - 1 ? (candle.footprint[priceLevels[upperIdx + 1]].buy + candle.footprint[priceLevels[upperIdx + 1]].sell) : 0;
-            if (lVol >= uVol) { currentVaVol += lVol; lowerIdx--; }
-            else { currentVaVol += uVol; upperIdx++; }
+        while (currentVaVol < targetVaVol && (lIdx > 0 || uIdx < prices.length - 1)) {
+            const lVol = lIdx > 0 ? (fp[prices[lIdx - 1]].buy + fp[prices[lIdx - 1]].sell) : 0;
+            const uVol = uIdx < prices.length - 1 ? (fp[prices[uIdx + 1]].buy + fp[prices[uIdx + 1]].sell) : 0;
+
+            if (lIdx > 0 && (lVol >= uVol || uIdx === prices.length - 1)) {
+                currentVaVol += lVol;
+                lIdx--;
+            } else if (uIdx < prices.length - 1) {
+                currentVaVol += uVol;
+                uIdx++;
+            } else break;
         }
-        candle.vah = priceLevels[upperIdx];
-        candle.val = priceLevels[lowerIdx];
+
+        candle.vah = prices[uIdx];
+        candle.val = prices[lIdx];
 
         candle.imbalances = [];
-        for (let i = 0; i < priceLevels.length; i++) {
-            const p = priceLevels[i];
-            const buyV = candle.footprint[p].buy;
-            const sellV = candle.footprint[p].sell;
+        for (let i = 0; i < prices.length; i++) {
+            const p = prices[i];
+            const buyV = fp[p].buy;
+            const sellV = fp[p].sell;
+
             if (i > 0) {
-                const prevSellV = candle.footprint[priceLevels[i-1]].sell;
-                if (buyV >= prevSellV * 3 && buyV > 0 && prevSellV > 0) candle.imbalances.push({ price: p, side: 'buy' });
+                const sellBelow = fp[prices[i - 1]].sell;
+                if (buyV >= sellBelow * 3 && buyV > 0 && sellBelow > 0) {
+                    candle.imbalances.push({ price: p, side: 'buy' });
+                }
             }
-            if (i < priceLevels.length - 1) {
-                const nextBuyV = candle.footprint[priceLevels[i+1]].buy;
-                if (sellV >= nextBuyV * 3 && sellV > 0 && nextBuyV > 0) candle.imbalances.push({ price: p, side: 'sell' });
+            if (i < prices.length - 1) {
+                const buyAbove = fp[prices[i + 1]].buy;
+                if (sellV >= buyAbove * 3 && sellV > 0 && buyAbove > 0) {
+                    candle.imbalances.push({ price: p, side: 'sell' });
+                }
             }
         }
     }
 }
 
-aggregator = new TickAggregator(100, 0.05);
+class CanvasRenderer {
+    constructor(canvas, chart, series) {
+        this.canvas = canvas;
+        this.ctx = canvas.getContext('2d');
+        this.chart = chart;
+        this.series = series;
+        this.colors = {
+            bull: '#00ffc2',
+            bear: '#ff3366',
+            poc: '#fbbf24',
+            va: 'rgba(255, 255, 255, 0.08)',
+            muted: '#7d8590'
+        };
+    }
 
-function initCharts() {
-    const mainEl = document.getElementById('main-chart');
-    charts.main = LightweightCharts.createChart(mainEl, {
-        layout: { background: { type: 'solid', color: 'transparent' }, textColor: COLORS.muted },
-        grid: { vertLines: { color: 'rgba(255,255,255,0.03)' }, horzLines: { color: 'rgba(255,255,255,0.03)' } },
-        crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-        timeScale: { borderColor: 'rgba(255,255,255,0.1)', timeVisible: true, secondsVisible: true },
-        rightPriceScale: { borderColor: 'rgba(255,255,255,0.1)' }
-    });
+    render(candles) {
+        if (!this.ctx || !this.chart || !candles || candles.length === 0) return;
 
-    charts.candles = charts.main.addCandlestickSeries({
-        upColor: COLORS.bull, downColor: COLORS.bear, borderVisible: false, wickUpColor: COLORS.bull, wickDownColor: COLORS.bear
-    });
+        const timeScale = this.chart.timeScale();
+        const spacing = timeScale.options().barSpacing;
 
-    const cvdEl = document.getElementById('cvd-chart');
-    charts.cvd = LightweightCharts.createChart(cvdEl, {
-        layout: { background: { type: 'solid', color: 'transparent' }, textColor: COLORS.muted },
-        grid: { vertLines: { color: 'rgba(255,255,255,0.03)' }, horzLines: { color: 'rgba(255,255,255,0.03)' } },
-        timeScale: { visible: false },
-        rightPriceScale: { borderColor: 'rgba(255,255,255,0.1)' }
-    });
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        if (spacing < 45) return;
 
-    charts.cvdSeries = charts.cvd.addAreaSeries({
-        lineColor: '#3b82f6', topColor: 'rgba(59, 130, 246, 0.3)', bottomColor: 'transparent', lineWidth: 2
-    });
+        const visibleCandles = candles.filter(c => {
+            const x = timeScale.timeToCoordinate(c.time);
+            return x !== null && x > -spacing && x < this.canvas.width + spacing;
+        });
 
-    // Sync CVD with Main
-    charts.main.timeScale().subscribeVisibleLogicalRangeChange(range => {
-        charts.cvd.timeScale().setVisibleLogicalRange(range);
-    });
-
-    initFootprintCanvas();
-
-    // Toggle candle transparency based on zoom
-    charts.main.timeScale().subscribeVisibleLogicalRangeChange(() => {
-        const spacing = charts.main.timeScale().options().barSpacing;
-        if (spacing > 50) {
-            charts.candles.applyOptions({
-                upColor: 'rgba(0, 255, 194, 0.05)',
-                downColor: 'rgba(255, 51, 102, 0.05)',
-                wickUpColor: 'rgba(0, 255, 194, 0.2)',
-                wickDownColor: 'rgba(255, 51, 102, 0.2)',
-            });
-        } else {
-            charts.candles.applyOptions({
-                upColor: COLORS.bull,
-                downColor: COLORS.bear,
-                wickUpColor: COLORS.bull,
-                wickDownColor: COLORS.bear,
-            });
+        for (const c of visibleCandles) {
+            this.drawFootprint(c, timeScale, spacing);
         }
-    });
-}
+    }
 
-function initFootprintCanvas() {
-    const canvas = document.getElementById('footprint-canvas');
-    const ctx = canvas.getContext('2d');
-    const resize = () => {
-        const wrapper = document.getElementById('chart-wrapper');
-        canvas.width = wrapper.clientWidth;
-        canvas.height = wrapper.clientHeight;
-    };
-    window.addEventListener('resize', resize);
-    resize();
-    charts.main.timeScale().subscribeVisibleLogicalRangeChange(() => renderFootprint(canvas, ctx));
-}
-
-function renderFootprint(canvas, ctx) {
-    if (!ctx || !charts.main || aggregatedCandles.length === 0) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    const timeScale = charts.main.timeScale();
-    const barSpacing = timeScale.options().barSpacing;
-    if (barSpacing < 50) return; // Only show footprint when zoomed in
-
-    const logicalRange = timeScale.getVisibleLogicalRange();
-    if (!logicalRange) return;
-
-    // Use binary search to find visible candles efficiently
-    const findIndex = (time) => {
-        let low = 0, high = aggregatedCandles.length - 1;
-        while (low <= high) {
-            let mid = (low + high) >> 1;
-            if (aggregatedCandles[mid].time < time) low = mid + 1;
-            else high = mid - 1;
-        }
-        return low;
-    };
-
-    // Expand range slightly to handle half-visible candles
-    const startTime = timeScale.coordinateToTime(0);
-    const endTime = timeScale.coordinateToTime(canvas.width);
-
-    if (!startTime || !endTime) return;
-
-    const startIdx = Math.max(0, findIndex(startTime) - 1);
-    const endIdx = Math.min(aggregatedCandles.length - 1, findIndex(endTime) + 1);
-
-    for (let i = startIdx; i <= endIdx; i++) {
-        const candle = aggregatedCandles[i];
+    drawFootprint(candle, timeScale, spacing) {
         const x = timeScale.timeToCoordinate(candle.time);
-        if (x === null || x < -barSpacing || x > canvas.width + barSpacing) continue;
+        const fp = candle.footprint;
+        const prices = Object.keys(fp).map(Number).sort((a, b) => b - a);
+        const halfWidth = (spacing / 2) * 0.95;
 
-        const footprint = candle.footprint || {};
-        const priceLevels = Object.keys(footprint).map(Number).sort((a,b) => b-a);
-        const halfWidth = (barSpacing / 2) * 0.9;
-
-        // Draw Value Area Box
         if (candle.vah && candle.val) {
-            const vahY = charts.candles.priceToCoordinate(candle.vah);
-            const valY = charts.candles.priceToCoordinate(candle.val);
-            if (vahY !== null && valY !== null) {
-                ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
-                ctx.setLineDash([2, 2]);
-                ctx.strokeRect(x - halfWidth - 2, vahY - 6, halfWidth * 2 + 4, valY - vahY + 12);
-                ctx.setLineDash([]);
+            const vY1 = this.series.priceToCoordinate(candle.vah);
+            const vY2 = this.series.priceToCoordinate(candle.val);
+            if (vY1 !== null && vY2 !== null) {
+                this.ctx.fillStyle = this.colors.va;
+                this.ctx.fillRect(x - halfWidth - 2, vY1 - 6, halfWidth * 2 + 4, vY2 - vY1 + 12);
+                this.ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+                this.ctx.setLineDash([2, 2]);
+                this.ctx.strokeRect(x - halfWidth - 2, vY1 - 6, halfWidth * 2 + 4, vY2 - vY1 + 12);
+                this.ctx.setLineDash([]);
             }
         }
 
-        // Calculate Max Delta in this candle for Heatmap scaling
-        let maxCandleDelta = 1;
-        priceLevels.forEach(p => {
-            const d = Math.abs(footprint[p].buy - footprint[p].sell);
-            if (d > maxCandleDelta) maxCandleDelta = d;
-        });
+        let maxDelta = 1;
+        for (const p of prices) {
+            const d = Math.abs(fp[p].buy - fp[p].sell);
+            if (d > maxDelta) maxDelta = d;
+        }
 
-        priceLevels.forEach(p => {
-            const y = charts.candles.priceToCoordinate(p);
-            if (y === null || y < 0 || y > canvas.height) return;
+        for (const p of prices) {
+            const y = this.series.priceToCoordinate(p);
+            if (y === null || y < -10 || y > this.canvas.height + 10) continue;
 
-            const data = footprint[p];
+            const data = fp[p];
             const buy = data.buy;
             const sell = data.sell;
             const delta = buy - sell;
+            const intensity = Math.min(Math.abs(delta) / maxDelta, 1.0);
 
-            // Heatmap Effect: Opacity based on delta intensity
-            const intensity = Math.min(Math.abs(delta) / maxCandleDelta, 1.0);
+            const isBuyImb = candle.imbalances.some(imb => imb.price === p && imb.side === 'buy');
+            const isSellImb = candle.imbalances.some(imb => imb.price === p && imb.side === 'sell');
 
-            // Imbalance Detection
-            const isBuyImbalance = candle.imbalances.some(imb => imb.price === p && imb.side === 'buy');
-            const isSellImbalance = candle.imbalances.some(imb => imb.price === p && imb.side === 'sell');
-
-            // Cell Background
-            if (isBuyImbalance) {
-                ctx.fillStyle = `rgba(0, 255, 194, ${0.1 + intensity * 0.4})`;
-                ctx.fillRect(x, y - 6, halfWidth, 12);
-            } else if (isSellImbalance) {
-                ctx.fillStyle = `rgba(255, 51, 102, ${0.1 + intensity * 0.4})`;
-                ctx.fillRect(x - halfWidth, y - 6, halfWidth, 12);
-            } else {
-                // Normal background
-                const isVA = p >= candle.val && p <= candle.vah;
-                ctx.fillStyle = isVA ? `rgba(255,255,255,${0.05 + intensity * 0.1})` : `rgba(255,255,255,0.02)`;
-                ctx.fillRect(x - halfWidth, y - 6, halfWidth * 2, 12);
+            if (isBuyImb) {
+                this.ctx.fillStyle = `rgba(0, 255, 194, ${0.1 + intensity * 0.5})`;
+                this.ctx.fillRect(x, y - 6, halfWidth, 12);
+            } else if (isSellImb) {
+                this.ctx.fillStyle = `rgba(255, 51, 102, ${0.1 + intensity * 0.5})`;
+                this.ctx.fillRect(x - halfWidth, y - 6, halfWidth, 12);
             }
 
-            // POC Highlight
             if (p === candle.poc) {
-                ctx.strokeStyle = COLORS.poc;
-                ctx.lineWidth = 1.5;
-                ctx.strokeRect(x - halfWidth, y - 6, halfWidth * 2, 12);
-                ctx.lineWidth = 1;
+                this.ctx.strokeStyle = this.colors.poc;
+                this.ctx.lineWidth = 1.5;
+                this.ctx.strokeRect(x - halfWidth, y - 6, halfWidth * 2, 12);
+                this.ctx.lineWidth = 1;
             }
 
-            // Draw Numbers
-            ctx.font = 'bold 8px "IBM Plex Mono"';
+            this.ctx.font = 'bold 8px "IBM Plex Mono"';
+            this.ctx.textAlign = 'right';
+            this.ctx.fillStyle = isSellImb ? this.colors.bear : (delta < 0 ? '#ff99aa' : this.colors.muted);
+            this.ctx.fillText(sell, x - 3, y + 3);
 
-            // Sell Volume (Left)
-            ctx.textAlign = 'right';
-            ctx.fillStyle = isSellImbalance ? COLORS.bear : (delta < 0 ? '#ff99aa' : COLORS.muted);
-            ctx.fillText(sell, x - 4, y + 3);
+            this.ctx.textAlign = 'left';
+            this.ctx.fillStyle = isBuyImb ? this.colors.bull : (delta > 0 ? '#99ffdd' : this.colors.muted);
+            this.ctx.fillText(buy, x + 3, y + 3);
 
-            // Buy Volume (Right)
-            ctx.textAlign = 'left';
-            ctx.fillStyle = isBuyImbalance ? COLORS.bull : (delta > 0 ? '#99ffdd' : COLORS.muted);
-            ctx.fillText(buy, x + 4, y + 3);
+            this.ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+            this.ctx.beginPath();
+            this.ctx.moveTo(x, y-4);
+            this.ctx.lineTo(x, y+4);
+            this.ctx.stroke();
+        }
+    }
+}
 
-            // Center Separator
-            ctx.strokeStyle = 'rgba(255,255,255,0.1)';
-            ctx.beginPath();
-            ctx.moveTo(x, y - 4);
-            ctx.lineTo(x, y + 4);
-            ctx.stroke();
+class ChartUI {
+    constructor(engine) {
+        this.engine = engine;
+        this.charts = {};
+        this.socket = io();
+        this.currentSymbol = 'NSE:NIFTY';
+        this.renderer = null;
+        this.isReaggregating = false;
+        this.markers = [];
+    }
+
+    init() {
+        const urlParams = new URLSearchParams(window.location.search);
+        this.currentSymbol = (urlParams.get('symbol') || 'NSE:NIFTY').toUpperCase();
+        document.getElementById('display-symbol').textContent = this.currentSymbol;
+
+        const tpc = parseInt(urlParams.get('ticks')) || 100;
+        const step = parseFloat(urlParams.get('step')) || 0.05;
+        this.engine.setParams(tpc, step);
+        document.getElementById('ticks-input').value = tpc;
+        document.getElementById('step-input').value = step.toFixed(2);
+
+        this.initCharts();
+        this.setupSocket();
+        this.setupListeners();
+        this.loadHistory();
+        this.loadSentiment();
+    }
+
+    initCharts() {
+        const chartOptions = {
+            layout: { background: { type: 'solid', color: 'transparent' }, textColor: '#7d8590' },
+            grid: { vertLines: { color: 'rgba(255,255,255,0.03)' }, horzLines: { color: 'rgba(255,255,255,0.03)' } },
+            crosshair: { mode: 0 },
+            timeScale: { borderColor: 'rgba(255,255,255,0.1)', timeVisible: true, secondsVisible: true },
+            rightPriceScale: { borderColor: 'rgba(255,255,255,0.1)' }
+        };
+
+        this.charts.main = LightweightCharts.createChart(document.getElementById('main-chart'), chartOptions);
+        this.charts.candles = this.charts.main.addCandlestickSeries({
+            upColor: '#00ffc2', downColor: '#ff3366', borderVisible: false, wickUpColor: '#00ffc2', wickDownColor: '#ff3366'
         });
-    }
-}
 
-function setupSocket() {
-    socket.on('connect', () => {
-        console.log("Connected to OrderFlow Stream");
-        socket.emit('subscribe', { instrumentKeys: [currentSymbol] });
-        updateStatus('Connected', 'bg-[#00ffc2]');
-    });
+        this.charts.cvd = LightweightCharts.createChart(document.getElementById('cvd-chart'), {
+            ...chartOptions,
+            timeScale: { visible: false }
+        });
+        this.charts.cvdSeries = this.charts.cvd.addAreaSeries({
+            lineColor: '#3b82f6', topColor: 'rgba(59, 130, 246, 0.3)', bottomColor: 'transparent', lineWidth: 2
+        });
 
-    socket.on('raw_tick', (data) => {
-        if (data[currentSymbol]) {
-            processNewTick(data[currentSymbol]);
-        }
-    });
-}
+        this.charts.main.timeScale().subscribeVisibleLogicalRangeChange(range => {
+            this.charts.cvd.timeScale().setVisibleLogicalRange(range);
+        });
 
-function updateStatus(text, colorClass) {
-    const dot = document.getElementById('status-dot');
-    const label = document.getElementById('status-text');
-    label.textContent = text;
-    dot.className = `w-2 h-2 rounded-full ${colorClass}`;
-}
-
-function processNewTick(tick) {
-    const raw = {
-        price: tick.last_price,
-        qty: tick.ltq,
-        ts_ms: tick.ts_ms
-    };
-    historicalTicks.push(raw);
-    if (historicalTicks.length > 15000) historicalTicks.shift();
-
-    const result = aggregator.processTick(raw);
-
-    charts.candles.update(result.candle);
-    charts.cvdSeries.update({ time: result.candle.time, value: result.candle.cvd });
-
-    if (result.type === 'new') {
-        // When a new candle is formed, move markers for the COMPLETED candle to cache
-        if (aggregatedCandles.length > 0) {
-            updateMarkersForCandle(aggregatedCandles.length - 1);
-        }
-        aggregatedCandles.push({ ...result.candle });
-    } else {
-        aggregatedCandles[aggregatedCandles.length - 1] = { ...result.candle };
-    }
-
-    // Throttle signal updates to 2 times per second
-    const now = Date.now();
-    if (now - lastSignalUpdate > 500) {
-        updateSignals();
-        lastSignalUpdate = now;
-    }
-
-    // Use requestAnimationFrame for rendering
-    requestRender();
-    updatePriceUI(result.candle);
-}
-
-function requestRender() {
-    if (renderRequested) return;
-    renderRequested = true;
-    requestAnimationFrame(() => {
         const canvas = document.getElementById('footprint-canvas');
-        if (canvas) renderFootprint(canvas, canvas.getContext('2d'));
-        renderRequested = false;
-    });
-}
+        this.renderer = new CanvasRenderer(canvas, this.charts.main, this.charts.candles);
 
-function updatePriceUI(candle) {
-    document.getElementById('last-price').textContent = candle.close.toLocaleString(undefined, { minimumFractionDigits: 2 });
-    const deltaSummary = document.getElementById('delta-summary');
-    deltaSummary.textContent = `DELTA: ${Math.round(candle.delta)} | CVD: ${Math.round(candle.cvd)}`;
-    deltaSummary.className = `text-[11px] font-bold mt-1 ${candle.delta >= 0 ? 'text-[#00ffc2]' : 'text-[#ff3366]'}`;
-}
+        const updateRenderer = () => {
+            this.renderer.render(this.engine.candles);
+        };
 
-function updateMarkersForCandle(i) {
-    if (i < 1 || i >= aggregatedCandles.length) return;
+        this.charts.main.timeScale().subscribeVisibleLogicalRangeChange(updateRenderer);
 
-    // Remove existing markers for this time to avoid duplicates
-    const time = aggregatedCandles[i].time;
-    cachedMarkers = cachedMarkers.filter(m => m.time !== time);
+        window.addEventListener('resize', () => {
+            const wrapper = document.getElementById('chart-wrapper');
+            const cvdWrapper = document.getElementById('cvd-chart');
+            if (!wrapper || !cvdWrapper) return;
+            this.charts.main.applyOptions({ width: wrapper.clientWidth, height: wrapper.clientHeight });
+            this.charts.cvd.applyOptions({ width: cvdWrapper.clientWidth, height: cvdWrapper.clientHeight });
+            canvas.width = wrapper.clientWidth;
+            canvas.height = wrapper.clientHeight;
+            updateRenderer();
+        });
 
-    const candles = aggregatedCandles;
-    const c = candles[i];
-    const p = candles[i-1];
-    const buyImbs = (c.imbalances || []).filter(imb => imb.side === 'buy');
-    const sellImbs = (c.imbalances || []).filter(imb => imb.side === 'sell');
-
-    if (buyImbs.length >= 3) {
-        cachedMarkers.push({ time: c.time, position: 'belowBar', color: COLORS.bull, shape: 'arrowUp', text: 'STACKED BUY' });
-    } else if (sellImbs.length >= 3) {
-        cachedMarkers.push({ time: c.time, position: 'aboveBar', color: COLORS.bear, shape: 'arrowDown', text: 'STACKED SELL' });
+        setTimeout(() => window.dispatchEvent(new Event('resize')), 100);
     }
 
-    if (c.low < p.low && c.cvd > p.cvd) {
-        cachedMarkers.push({ time: c.time, position: 'belowBar', color: '#3b82f6', shape: 'circle', text: 'BULL DIV' });
-    } else if (c.high > p.high && c.cvd < p.cvd) {
-        cachedMarkers.push({ time: c.time, position: 'aboveBar', color: '#3b82f6', shape: 'circle', text: 'BEAR DIV' });
-    }
+    setupSocket() {
+        this.socket.on('connect', () => {
+            this.socket.emit('subscribe', { instrumentKeys: [this.currentSymbol] });
+            this.updateStatus('Live', 'bg-[#00ffc2]');
+        });
 
-    const isAbsorption = sellImbs.length > 0 && c.close > Math.max(...sellImbs.map(imb => imb.price));
-    if (isAbsorption) {
-        cachedMarkers.push({ time: c.time, position: 'belowBar', color: COLORS.poc, shape: 'circle', text: 'ABSORPTION' });
-    }
+        this.socket.on('raw_tick', (data) => {
+            if (data[this.currentSymbol]) {
+                const tick = data[this.currentSymbol];
+                const res = this.engine.processTick({
+                    price: tick.last_price,
+                    qty: tick.ltq,
+                    ts_ms: tick.ts_ms
+                });
 
-    // AIP Entry check (if previous was absorption and this is initiation)
-    const prevSellImbs = (p.imbalances || []).filter(imb => imb.side === 'sell');
-    const wasPrevAbs = prevSellImbs.length > 0 && p.close > Math.max(...prevSellImbs.map(imb => imb.price));
-    const isInitiation = buyImbs.length > 0 && c.close > Math.max(...buyImbs.map(imb => imb.price));
-    if (wasPrevAbs && isInitiation) {
-        cachedMarkers.push({ time: c.time, position: 'belowBar', color: COLORS.bull, shape: 'arrowUp', text: 'AIP ENTRY' });
-    }
-}
+                this.charts.candles.update(res.candle);
+                this.charts.cvdSeries.update({ time: res.candle.time, value: res.candle.cvd });
 
-function updateSignals() {
-    if (aggregatedCandles.length < 2) return;
-
-    // Update the last 2 candles (current and previous which might have changed)
-    updateMarkersForCandle(aggregatedCandles.length - 2);
-    updateMarkersForCandle(aggregatedCandles.length - 1);
-
-    charts.candles.setMarkers(cachedMarkers);
-}
-
-async function loadHistory() {
-    updateStatus('Loading History...', 'bg-yellow-500');
-    try {
-        const res = await fetch(`/api/ticks/history/${encodeURIComponent(currentSymbol)}?limit=10000`);
-        const data = await res.json();
-        let ticks = data.history || [];
-
-        if (ticks.length < 50) {
-            console.log("History low, supplementing with simulated data...");
-            ticks = [...generateSimulatedHistory(), ...ticks];
-        }
-
-        historicalTicks = ticks;
-        baseCandles = [];
-        const candles = [];
-        aggregator.cvd = 0;
-        aggregator.currentCandle = null;
-        aggregator.currentTickCount = 0;
-
-        const BATCH_SIZE = 500;
-        let currentIdx = 0;
-
-        const processBatch = () => {
-            const endIdx = Math.min(currentIdx + BATCH_SIZE, ticks.length);
-            for (let i = currentIdx; i < endIdx; i++) {
-                const result = aggregator.processTick(ticks[i], true);
-                if (result.type === 'new') {
-                    if (candles.length > 0) aggregator.calculateAnalytics(candles[candles.length - 1]);
-                    candles.push({ ...result.candle });
-                } else if (candles.length > 0) {
-                    candles[candles.length - 1] = { ...result.candle };
+                if (res.type === 'new') {
+                    this.calculateMarkersForCandle(this.engine.candles.length - 2);
+                    this.calculateMarkersForCandle(this.engine.candles.length - 1);
+                } else {
+                    this.calculateMarkersForCandle(this.engine.candles.length - 1);
                 }
+
+                requestAnimationFrame(() => this.renderer.render(this.engine.candles));
+                this.updateUI(res.candle);
             }
-            currentIdx = endIdx;
-
-            const progress = Math.round((currentIdx / ticks.length) * 100);
-            updateStatus(`Loading ${progress}%`, 'bg-yellow-500');
-
-            if (currentIdx < ticks.length) {
-                setTimeout(processBatch, 0);
-            } else {
-                finishLoading();
-            }
-        };
-
-        const finishLoading = () => {
-            if (candles.length > 0) aggregator.calculateAnalytics(candles[candles.length - 1]);
-
-            charts.candles.setData(candles);
-            charts.cvdSeries.setData(candles.map(c => ({ time: c.time, value: c.cvd })));
-            aggregatedCandles = candles;
-
-            if (candles.length > 0) {
-                charts.main.timeScale().applyOptions({ barSpacing: 60 });
-                updatePriceUI(candles[candles.length - 1]);
-            }
-
-            // Build historical markers
-            cachedMarkers = [];
-            for (let i = 1; i < candles.length; i++) {
-                updateMarkersForCandle(i);
-            }
-            charts.candles.setMarkers(cachedMarkers);
-
-            setTimeout(() => {
-                requestRender();
-            }, 50);
-
-            updateStatus('Live', 'bg-[#00ffc2]');
-        };
-
-        processBatch();
-    } catch (e) {
-        console.error("History load failed", e);
-        updateStatus('Error', 'bg-red-500');
-    }
-}
-
-let isReaggregating = false;
-
-function reaggregate() {
-    if (isReaggregating) return;
-    isReaggregating = true;
-
-    const overlay = document.getElementById('reaggregate-overlay');
-    if (overlay) overlay.classList.remove('hidden');
-
-    updateStatus('Re-aggregating...', 'bg-yellow-500');
-
-    const tempAggregator = new TickAggregator(aggregator.tpc, aggregator.priceStep);
-    tempAggregator.currentBaseCandle = aggregator.currentBaseCandle;
-    tempAggregator.currentBaseTickCount = aggregator.currentBaseTickCount;
-
-    const candles = [];
-    let currentIdx = 0;
-
-    const finalizeReaggregation = (candles) => {
-        if (candles.length > 0) tempAggregator.calculateAnalytics(candles[candles.length - 1]);
-
-        aggregator = tempAggregator;
-        aggregatedCandles = candles;
-
-        charts.candles.setData(candles);
-        charts.cvdSeries.setData(candles.map(c => ({ time: c.time, value: c.cvd })));
-
-        cachedMarkers = [];
-        for (let i = 1; i < candles.length; i++) {
-            updateMarkersForCandle(i);
-        }
-        charts.candles.setMarkers(cachedMarkers);
-
-        if (overlay) overlay.classList.add('hidden');
-        isReaggregating = false;
-        requestRender();
-        updateStatus('Live', 'bg-[#00ffc2]');
-
-        if (pendingTpcChange) {
-            const change = pendingTpcChange;
-            pendingTpcChange = null;
-            if (change.type === 'tpc') aggregator.setTicksPerCandle(change.value);
-            else { aggregator.setPriceStep(change.value); baseCandles = []; }
-            reaggregate();
-        }
-    };
-
-    // Use fast path if possible
-    if (aggregator.tpc >= aggregator.baseSize && aggregator.tpc % aggregator.baseSize === 0 && baseCandles.length > 0) {
-        console.log("Using Fast Path");
-        const processBaseBatch = () => {
-            const startTime = performance.now();
-            while (currentIdx < baseCandles.length && (performance.now() - startTime < 16)) {
-                const result = tempAggregator.mergeBaseCandle(baseCandles[currentIdx]);
-                if (result.type === 'new') {
-                    if (candles.length > 0) tempAggregator.calculateAnalytics(candles[candles.length - 1]);
-                    candles.push({ ...result.candle });
-                } else if (candles.length > 0) {
-                    candles[candles.length - 1] = { ...result.candle };
-                }
-                currentIdx++;
-            }
-            if (currentIdx < baseCandles.length) requestAnimationFrame(processBaseBatch);
-            else finalizeReaggregation(candles);
-        };
-        processBaseBatch();
-        return;
-    }
-
-    const ticks = historicalTicks;
-    const processBatch = () => {
-        const startTime = performance.now();
-        while (currentIdx < ticks.length && (performance.now() - startTime < 16)) {
-            const result = tempAggregator.processTick(ticks[currentIdx], true, false);
-            if (result.type === 'new') {
-                if (candles.length > 0) tempAggregator.calculateAnalytics(candles[candles.length - 1]);
-                candles.push({ ...result.candle });
-            } else if (candles.length > 0) {
-                candles[candles.length - 1] = { ...result.candle };
-            }
-            currentIdx++;
-        }
-
-        const progress = Math.round((currentIdx / ticks.length) * 100);
-        const statusEl = document.getElementById('reaggregate-status');
-        if (statusEl) statusEl.textContent = `Re-aggregating: ${progress}%`;
-
-        if (currentIdx < ticks.length) requestAnimationFrame(processBatch);
-        else finalizeReaggregation(candles);
-    };
-    requestAnimationFrame(processBatch);
-}
-
-function generateSimulatedHistory() {
-    const now = Date.now();
-    const ticks = [];
-    let price = 25740.00;
-    // Generate 500 ticks
-    for (let i = 0; i < 500; i++) {
-        price += (Math.random() - 0.5) * 2;
-        ticks.push({
-            ts_ms: now - (500 - i) * 1000,
-            price: price,
-            qty: Math.floor(Math.random() * 500) + 100
         });
     }
-    return ticks;
-}
 
-async function loadSentiment() {
-    try {
-        const res = await fetch(`/api/modern/data/${encodeURIComponent(currentSymbol)}`);
-        const data = await res.json();
-        if (data && !data.error) {
-            updateSentimentUI(data);
+    setupListeners() {
+        document.getElementById('ticks-input').addEventListener('change', (e) => {
+            this.engine.tpc = parseInt(e.target.value) || 100;
+            this.reaggregate();
+        });
+
+        document.getElementById('step-input').addEventListener('change', (e) => {
+            this.engine.priceStep = parseFloat(e.target.value) || 0.05;
+            this.reaggregate();
+        });
+
+        document.getElementById('replay-btn').addEventListener('click', () => {
+            window.location.href = `/tick?symbol=${this.currentSymbol}&ticks=${this.engine.tpc}`;
+        });
+    }
+
+    updateStatus(text, colorClass) {
+        document.getElementById('status-text').textContent = text;
+        const dot = document.getElementById('status-dot');
+        if (dot) dot.className = `w-1.5 h-1.5 rounded-full ${colorClass} shadow-[0_0_8px_rgba(0,255,194,0.5)]`;
+    }
+
+    updateUI(candle) {
+        document.getElementById('last-price').textContent = candle.close.toFixed(2);
+        const deltaEl = document.getElementById('delta-summary');
+        deltaEl.textContent = `DELTA: ${Math.round(candle.delta)} | CVD: ${Math.round(candle.cvd)}`;
+        deltaEl.className = `text-[11px] font-black mt-1 ${candle.delta >= 0 ? 'text-[#00ffc2]' : 'text-[#ff3366]'}`;
+    }
+
+    calculateMarkersForCandle(idx) {
+        if (idx < 1 || idx >= this.engine.candles.length) return;
+        const c = this.engine.candles[idx];
+        const p = this.engine.candles[idx - 1];
+
+        // Remove old markers for this timestamp
+        this.markers = this.markers.filter(m => m.time !== c.time);
+
+        const buyImbs = c.imbalances.filter(imb => imb.side === 'buy');
+        const sellImbs = c.imbalances.filter(imb => imb.side === 'sell');
+
+        let marker = null;
+        if (buyImbs.length >= 3) {
+            marker = { time: c.time, position: 'belowBar', color: '#00ffc2', shape: 'arrowUp', text: 'STACKED BUY' };
+        } else if (sellImbs.length >= 3) {
+            marker = { time: c.time, position: 'aboveBar', color: '#ff3366', shape: 'arrowDown', text: 'STACKED SELL' };
+        } else if (c.low < p.low && c.cvd > p.cvd) {
+            marker = { time: c.time, position: 'belowBar', color: '#3b82f6', shape: 'circle', text: 'BULL DIV' };
+        } else if (c.high > p.high && c.cvd < p.cvd) {
+            marker = { time: c.time, position: 'aboveBar', color: '#3b82f6', shape: 'circle', text: 'BEAR DIV' };
         }
-    } catch (e) {
-        console.warn("Sentiment load failed", e);
-    }
-}
 
-function updateSentimentUI(data) {
-    const pcr = data.genie?.pcr || 1.0;
-    const sentimentValue = document.getElementById('sentiment-value');
-    const pcrLabel = document.getElementById('pcr-value');
-
-    if (pcr > 1.1) {
-        sentimentValue.textContent = 'BULLISH';
-        sentimentValue.className = 'text-3xl font-black italic text-[#00ffc2]';
-    } else if (pcr < 0.9) {
-        sentimentValue.textContent = 'BEARISH';
-        sentimentValue.className = 'text-3xl font-black italic text-[#ff3366]';
-    } else {
-        sentimentValue.textContent = 'NEUTRAL';
-        sentimentValue.className = 'text-3xl font-black italic text-gray-500';
-    }
-
-    const oiChange = data.oi_buildup?.total_oi_change || 0;
-    const oiStr = oiChange >= 0 ? `+${(oiChange/1000000).toFixed(1)}M` : `${(oiChange/1000000).toFixed(1)}M`;
-    pcrLabel.textContent = `PCR: ${pcr.toFixed(2)} | OI: ${oiStr} | PAIN: ${data.genie?.max_pain || '-'}`;
-}
-
-function logSignal(type, message, hexColor) {
-    const list = document.getElementById('signals-list');
-    const time = new Date().toLocaleTimeString('en-IN', { hour12: false });
-
-    const div = document.createElement('div');
-    div.className = 'bg-black/20 p-2 rounded border-l-2';
-    div.style.borderLeftColor = hexColor;
-    div.innerHTML = `
-        <div class="flex justify-between items-center mb-1">
-            <span class="signal-badge" style="background-color: ${hexColor}33; color: ${hexColor}">${type}</span>
-            <span class="text-[8px] text-gray-600 mono">${time}</span>
-        </div>
-        <p class="text-[10px] text-gray-400 leading-tight">${message}</p>
-    `;
-
-    list.prepend(div);
-    if (list.childNodes.length > 50) list.lastChild.remove();
-}
-
-// Override updateSignals to also log to sidebar
-const originalUpdateSignals = updateSignals;
-updateSignals = function() {
-    originalUpdateSignals();
-
-    const lastCandle = aggregatedCandles[aggregatedCandles.length - 1];
-    if (!lastCandle) return;
-
-    // Detect new signals to log
-    if (lastCandle._lastLogged) return;
-
-    const buyImbs = (lastCandle.imbalances || []).filter(imb => imb.side === 'buy');
-    const sellImbs = (lastCandle.imbalances || []).filter(imb => imb.side === 'sell');
-
-    if (buyImbs.length >= 3) {
-        logSignal('STRATEGY', 'Stacked Buy Imbalance detected. Aggressive buying confirmed.', COLORS.bull);
-        lastCandle._lastLogged = true;
-    } else if (sellImbs.length >= 3) {
-        logSignal('STRATEGY', 'Stacked Sell Imbalance detected. Aggressive selling pressure.', COLORS.bear);
-        lastCandle._lastLogged = true;
-    }
-
-    // AIP Detection in log
-    if (aggregatedCandles.length > 1) {
-        const prev = aggregatedCandles[aggregatedCandles.length - 2];
-        const prevSellImbs = (prev.imbalances || []).filter(imb => imb.side === 'sell');
-        const wasPrevAbs = prevSellImbs.length > 0 && prev.close > Math.max(...prevSellImbs.map(imb => imb.price));
-
-        if (wasPrevAbs && buyImbs.length > 0 && lastCandle.close > Math.max(...buyImbs.map(imb => imb.price))) {
-            logSignal('AIP', 'Absorption-Initiation Pattern confirmed. High probability long entry.', COLORS.bull);
-            lastCandle._lastLogged = true;
+        if (marker) {
+            this.markers.push(marker);
+            this.charts.candles.setMarkers(this.markers);
+            if (!c._logged) {
+                this.addSignalLog(marker.text, `Pattern detected at ${c.close.toFixed(2)}`, marker.color);
+                c._logged = true;
+            }
         }
     }
-};
+
+    async loadHistory() {
+        this.updateStatus('Loading...', 'bg-yellow-500');
+        try {
+            const res = await fetch(`/api/ticks/history/${encodeURIComponent(this.currentSymbol)}?limit=15000`);
+            const data = await res.json();
+            let ticks = data.history || [];
+
+            if (ticks.length < 50) {
+                ticks = this.generateSimulatedHistory();
+            }
+
+            this.engine.reset();
+            // IMPORTANT: isReaggregating=false ensures ticks are cached for future re-aggregation
+            for (const t of ticks) {
+                this.engine.processTick(t, false);
+            }
+
+            this.charts.candles.setData(this.engine.candles);
+            this.charts.cvdSeries.setData(this.engine.candles.map(c => ({ time: c.time, value: c.cvd })));
+
+            this.markers = [];
+            for (let i = 1; i < this.engine.candles.length; i++) {
+                this.calculateMarkersForCandle(i);
+            }
+
+            this.renderer.render(this.engine.candles);
+            if (this.engine.candles.length > 0) {
+                this.charts.main.timeScale().applyOptions({ barSpacing: 60 });
+                this.updateUI(this.engine.candles[this.engine.candles.length - 1]);
+            }
+            this.updateStatus('Live', 'bg-[#00ffc2]');
+        } catch (err) {
+            console.error(err);
+            this.updateStatus('Error', 'bg-red-500');
+        }
+    }
+
+    reaggregate() {
+        if (this.isReaggregating) return;
+        this.isReaggregating = true;
+        document.getElementById('reaggregate-overlay').classList.remove('hidden');
+
+        setTimeout(() => {
+            const cachedTicks = [...this.engine.ticks];
+            this.engine.reset();
+            for (const t of cachedTicks) {
+                this.engine.processTick(t, true);
+            }
+            this.engine.ticks = cachedTicks;
+
+            this.charts.candles.setData(this.engine.candles);
+            this.charts.cvdSeries.setData(this.engine.candles.map(c => ({ time: c.time, value: c.cvd })));
+
+            this.markers = [];
+            for (let i = 1; i < this.engine.candles.length; i++) {
+                this.calculateMarkersForCandle(i);
+            }
+
+            this.renderer.render(this.engine.candles);
+            document.getElementById('reaggregate-overlay').classList.add('hidden');
+            this.isReaggregating = false;
+        }, 100);
+    }
+
+    async loadSentiment() {
+        try {
+            const res = await fetch(`/api/modern/data/${encodeURIComponent(this.currentSymbol)}`);
+            const data = await res.json();
+            if (data && !data.error) {
+                this.updateSentimentUI(data);
+            }
+        } catch (e) { console.warn("Sentiment fail", e); }
+    }
+
+    updateSentimentUI(data) {
+        const pcr = data.genie?.pcr || 1.0;
+        const sentimentVal = document.getElementById('sentiment-value');
+        const pcrVal = document.getElementById('pcr-value');
+        if (!sentimentVal || !pcrVal) return;
+
+        if (pcr > 1.1) {
+            sentimentVal.textContent = 'BULLISH';
+            sentimentVal.className = 'text-3xl font-black italic text-[#00ffc2] tracking-tighter';
+        } else if (pcr < 0.9) {
+            sentimentVal.textContent = 'BEARISH';
+            sentimentVal.className = 'text-3xl font-black italic text-[#ff3366] tracking-tighter';
+        } else {
+            sentimentVal.textContent = 'NEUTRAL';
+            sentimentVal.className = 'text-3xl font-black italic text-gray-500 tracking-tighter';
+        }
+        const oiChange = data.oi_buildup?.total_oi_change || 0;
+        pcrVal.textContent = `PCR: ${pcr.toFixed(2)} | OI: ${(oiChange/1000000).toFixed(1)}M | PAIN: ${data.genie?.max_pain || '-'}`;
+    }
+
+    addSignalLog(type, message, color) {
+        const list = document.getElementById('signals-list');
+        if (!list) return;
+        if (list.querySelector('.italic')) list.innerHTML = '';
+
+        const div = document.createElement('div');
+        div.className = 'bg-black/40 p-3 rounded-lg border-l-4 mb-2 border-opacity-50';
+        div.style.borderLeftColor = color;
+        div.innerHTML = `
+            <div class="flex justify-between items-center mb-1">
+                <span class="text-[9px] font-black uppercase px-2 py-0.5 rounded" style="background: ${color}22; color: ${color}">${type}</span>
+                <span class="text-[8px] text-gray-600 mono">${new Date().toLocaleTimeString()}</span>
+            </div>
+            <p class="text-[10px] text-gray-400 font-medium">${message}</p>
+        `;
+        list.prepend(div);
+        if (list.childNodes.length > 30) list.lastChild.remove();
+    }
+
+    generateSimulatedHistory() {
+        const ticks = [];
+        let price = 25500 + Math.random() * 200;
+        let ts = Date.now() - 3600000;
+        for (let i = 0; i < 2000; i++) {
+            price += (Math.random() - 0.5) * 1.5;
+            ts += Math.floor(Math.random() * 500) + 100;
+            ticks.push({ ts_ms: ts, price: price, qty: Math.floor(Math.random() * 100) + 10 });
+        }
+        return ticks;
+    }
+}
+
+// Bootstrap
+window.addEventListener('DOMContentLoaded', () => {
+    const engine = new OrderFlowEngine();
+    const ui = new ChartUI(engine);
+    ui.init();
+});
