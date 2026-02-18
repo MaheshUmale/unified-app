@@ -158,6 +158,14 @@ class TradingViewWSS:
         self._send_message("quote_create_session", [self.quote_session])
         self._send_message("quote_set_fields", [self.quote_session, "lp", "lp_time", "volume"])
 
+        # Resubscribe existing symbols
+        if self.symbols:
+            logger.info(f"Resubscribing to {len(self.symbols)} symbols on open")
+            for symbol in self.symbols:
+                self._send_message("quote_add_symbols", [self.quote_session, symbol])
+                # Note: interval "1" is default for initial symbols
+                self.ensure_chart_session(symbol, "1")
+
     def on_message(self, ws, message):
         if isinstance(message, bytes): message = message.decode('utf-8')
         payloads = [p for p in re.split(r"~m~\d+~m~", message) if p]
@@ -169,6 +177,7 @@ class TradingViewWSS:
             try:
                 data = json.loads(msg)
                 m_type = data.get("m")
+                logger.info(f"TV WSS Message received: {m_type}")
                 p = data.get("p", [])
                 if m_type == "qsd" and len(p) > 1:
                     self._handle_qsd(p[1])
