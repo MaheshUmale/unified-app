@@ -4,6 +4,10 @@ import pandas as pd
 from datetime import datetime
 from typing import Dict, Optional, Any
 from db.local_db import db
+try:
+    from config import UPSTOX_INDEX_MAP
+except ImportError:
+    UPSTOX_INDEX_MAP = {}
 
 logger = logging.getLogger(__name__)
 
@@ -152,5 +156,25 @@ class SymbolMapper:
 
         # 3. Handle HRN formats (e.g., RELIANCE 26 FEB 2026 CALL 2500)
         return target.split(" ")[0]
+
+    def to_upstox_key(self, internal_key: str) -> str:
+        """Translates internal key (NSE:NIFTY) to Upstox key (NSE_INDEX|Nifty 50)."""
+        key = internal_key.upper()
+        if key in UPSTOX_INDEX_MAP:
+            return UPSTOX_INDEX_MAP[key]
+
+        # Default mapping for equity/options if they follow common patterns
+        # Upstox Equities: NSE_EQ|INE... or NSE_EQ|SYMBOL
+        # Upstox F&O: NSE_FO|KEY
+        return key.replace(':', '|')
+
+    def from_upstox_key(self, upstox_key: str) -> str:
+        """Translates Upstox key to internal canonical symbol."""
+        # Reverse lookup in UPSTOX_INDEX_MAP
+        for int_key, u_key in UPSTOX_INDEX_MAP.items():
+            if u_key.upper() == upstox_key.upper():
+                return int_key
+
+        return upstox_key.replace('|', ':').upper()
 
 symbol_mapper = SymbolMapper()

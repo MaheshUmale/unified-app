@@ -7,6 +7,8 @@ from external.tv_options_scanner import fetch_option_chain
 from external.trendlyne_api import trendlyne_api
 from external.nse_api import fetch_nse_oi_data
 from external.tv_api import tv_api
+from external.upstox_api import upstox_api_client
+from external.upstox_wss import UpstoxWSS
 
 logger = logging.getLogger(__name__)
 
@@ -124,3 +126,47 @@ class TradingViewHistoricalProvider(IHistoricalDataProvider):
     """TradingView Historical Data Implementation."""
     async def get_hist_candles(self, symbol: str, interval: str, count: int) -> List[List]:
         return await asyncio.to_thread(tv_api.get_hist_candles, symbol, interval, count)
+
+
+class UpstoxLiveStreamProvider(ILiveStreamProvider):
+    """Upstox WebSocket Implementation."""
+    def __init__(self, callback: Callable = None):
+        self.wss = UpstoxWSS(callback)
+        self.callback = callback
+
+    def subscribe(self, symbols: List[str], interval: str = "1"):
+        self.wss.subscribe(symbols, interval)
+
+    def unsubscribe(self, symbol: str, interval: str = "1"):
+        self.wss.unsubscribe(symbol, interval)
+
+    def set_callback(self, callback: Callable):
+        self.callback = callback
+        self.wss.callback = callback
+
+    def start(self):
+        self.wss.start()
+
+    def stop(self):
+        self.wss.stop()
+
+    def is_connected(self) -> bool:
+        return self.wss.is_running
+
+
+class UpstoxOptionsProvider(IOptionsDataProvider):
+    """Upstox API Implementation for Options data."""
+    async def get_option_chain(self, underlying: str) -> Dict[str, Any]:
+        return await upstox_api_client.get_option_chain(underlying)
+
+    async def get_expiry_dates(self, underlying: str) -> List[str]:
+        return await upstox_api_client.get_expiry_dates(underlying)
+
+    async def get_oi_data(self, underlying: str, expiry: str, time_str: str) -> Dict[str, Any]:
+        return {}
+
+
+class UpstoxHistoricalProvider(IHistoricalDataProvider):
+    """Upstox Historical Data Implementation."""
+    async def get_hist_candles(self, symbol: str, interval: str, count: int) -> List[List]:
+        return await upstox_api_client.get_hist_candles(symbol, interval, count)
