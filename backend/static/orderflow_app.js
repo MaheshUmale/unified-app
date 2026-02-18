@@ -323,6 +323,7 @@ class OrderFlowUI {
                 time: c.time, open: c.cvdOpen, high: c.cvdHigh, low: c.cvdLow, close: c.cvdClose
             })));
 
+            this.charts.main.timeScale().fitContent();
             this.renderer.render(this.engine.candles);
             this.updateStatus('Live', 'bg-[#00ffc2]');
         } catch (e) { this.updateStatus('Error', 'bg-red-500'); }
@@ -361,6 +362,7 @@ class OrderFlowUI {
             this.charts.cvdSeries.setData(this.engine.candles.map(c => ({
                 time: c.time, open: c.cvdOpen, high: c.cvdHigh, low: c.cvdLow, close: c.cvdClose
             })));
+            this.charts.main.timeScale().fitContent();
             this.renderer.render(this.engine.candles);
             document.getElementById('reaggregate-overlay').classList.add('hidden');
         }, 50);
