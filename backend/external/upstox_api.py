@@ -19,7 +19,7 @@ class UpstoxAPIClient:
 
     async def get_hist_candles(self, symbol: str, interval: str, count: int) -> List[List]:
         """Fetch historical candles from Upstox with client-side aggregation for unsupported timeframes."""
-        supported_intervals = ["1", "30", "1D", "1W", "1M"]
+        supported_intervals = ["1", "30", "1D", "1W", "1M", "D", "W"]
 
         # If the interval is not natively supported by Upstox, we'll fetch 1-min and aggregate
         needs_aggregation = interval not in supported_intervals and interval.isdigit()

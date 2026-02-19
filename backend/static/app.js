@@ -345,7 +345,10 @@ class ChartInstance {
     }
 
     getIntervalSeconds() {
-        const m = { '1': 60, '5': 300, '15': 900, '60': 3600, 'D': 86400 };
+        const m = {
+            '1': 60, '3': 180, '5': 300, '15': 900, '30': 1800,
+            '60': 3600, '120': 7200, '240': 14400, 'D': 86400, 'W': 604800
+        };
         return m[this.interval] || 60;
     }
 
@@ -665,12 +668,6 @@ class MultiChartEngine {
             });
         });
 
-        document.getElementById('clearDrawingsBtn').addEventListener('click', () => {
-            const c = this.charts[this.activeIdx];
-            c.drawings.forEach(d => c.mainSeries.removePriceLine(d.line));
-            c.drawings = [];
-            this.saveLayout();
-        });
 
         document.getElementById('themeToggleBtn').addEventListener('click', () => {
             const isLight = document.body.classList.toggle('light-theme');
@@ -775,7 +772,9 @@ class MultiChartEngine {
                 label.className = 'chart-label';
                 wrapper.appendChild(label);
             }
-            label.innerText = `${chart.symbol} (${chart.interval}m)`;
+            const isDailyOrWeekly = chart.interval === 'D' || chart.interval === 'W';
+            const suffix = isDailyOrWeekly ? '' : 'm';
+            label.innerText = `${chart.symbol} (${chart.interval}${suffix})`;
         });
     }
 

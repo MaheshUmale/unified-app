@@ -95,10 +95,16 @@
                 <!-- Group: Timeframe & Layout -->
                 <div class="flex items-center gap-2 p-1 rounded-full border border-white/10 shadow-lg" style="background: var(--header-group-bg);">
                     <div id="timeframeSelector" class="flex items-center gap-1 px-1">
-                        <button data-interval="1" class="tf-btn active px-3 py-1.5 text-[10px] font-black rounded-full transition-all hover:bg-white/5 [&.active]:bg-blue-600 [&.active]:text-white">1M</button>
-                        <button data-interval="5" class="tf-btn px-3 py-1.5 text-[10px] font-black rounded-full transition-all hover:bg-white/5 [&.active]:bg-blue-600 [&.active]:text-white">5M</button>
-                        <button data-interval="15" class="tf-btn px-3 py-1.5 text-[10px] font-black rounded-full transition-all hover:bg-white/5 [&.active]:bg-blue-600 [&.active]:text-white">15M</button>
-                        <button data-interval="60" class="tf-btn px-3 py-1.5 text-[10px] font-black rounded-full transition-all hover:bg-white/5 [&.active]:bg-blue-600 [&.active]:text-white">1H</button>
+                        <button data-interval="1" class="tf-btn active px-3 py-1.5 text-[10px] font-black rounded-full transition-all hover:bg-white/5 [&.active]:bg-blue-600 [&.active]:text-white">1</button>
+                        <button data-interval="3" class="tf-btn px-3 py-1.5 text-[10px] font-black rounded-full transition-all hover:bg-white/5 [&.active]:bg-blue-600 [&.active]:text-white">3</button>
+                        <button data-interval="5" class="tf-btn px-3 py-1.5 text-[10px] font-black rounded-full transition-all hover:bg-white/5 [&.active]:bg-blue-600 [&.active]:text-white">5</button>
+                        <button data-interval="15" class="tf-btn px-3 py-1.5 text-[10px] font-black rounded-full transition-all hover:bg-white/5 [&.active]:bg-blue-600 [&.active]:text-white">15</button>
+                        <button data-interval="30" class="tf-btn px-3 py-1.5 text-[10px] font-black rounded-full transition-all hover:bg-white/5 [&.active]:bg-blue-600 [&.active]:text-white">30</button>
+                        <button data-interval="60" class="tf-btn px-3 py-1.5 text-[10px] font-black rounded-full transition-all hover:bg-white/5 [&.active]:bg-blue-600 [&.active]:text-white">60</button>
+                        <button data-interval="120" class="tf-btn px-3 py-1.5 text-[10px] font-black rounded-full transition-all hover:bg-white/5 [&.active]:bg-blue-600 [&.active]:text-white">120</button>
+                        <button data-interval="240" class="tf-btn px-3 py-1.5 text-[10px] font-black rounded-full transition-all hover:bg-white/5 [&.active]:bg-blue-600 [&.active]:text-white">240</button>
+                        <button data-interval="D" class="tf-btn px-3 py-1.5 text-[10px] font-black rounded-full transition-all hover:bg-white/5 [&.active]:bg-blue-600 [&.active]:text-white">D</button>
+                        <button data-interval="W" class="tf-btn px-3 py-1.5 text-[10px] font-black rounded-full transition-all hover:bg-white/5 [&.active]:bg-blue-600 [&.active]:text-white">W</button>
                     </div>
                     <div class="w-px h-5 bg-white/10 mx-1"></div>
                 <div id="layoutSelector" class="flex items-center gap-1 px-1" role="group" aria-label="Chart layout">
@@ -135,9 +141,6 @@
                     </div>
 
                     <div class="flex items-center gap-1">
-                        <button id="manageIndicatorsBtn" class="text-[10px] font-black px-3.5 py-1.5 rounded-full transition-all uppercase tracking-tight shadow-sm active:scale-95" style="background: var(--btn-bg-muted); color: var(--btn-text);">Plots</button>
-                        <button id="drawingToolBtn" class="text-[10px] font-black px-3.5 py-1.5 rounded-full transition-all uppercase tracking-tight shadow-sm active:scale-95" title="Shift+Click to place Horizontal Line" style="background: var(--btn-bg-muted); color: var(--btn-text);">H-Line</button>
-                        <button id="clearDrawingsBtn" class="text-[10px] font-black px-3.5 py-1.5 rounded-full transition-all uppercase tracking-tight shadow-sm active:scale-95" style="background: var(--btn-bg-muted); color: var(--btn-text);">Clear</button>
                         <button id="toggleIndicatorsBtn" class="hidden"></button>
                         <button id="replayModeBtn" class="text-[10px] font-black px-4 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-full text-white transition-all uppercase tracking-tight shadow-md shadow-blue-500/20 active:scale-95">Replay</button>
                     </div>

@@ -83,7 +83,9 @@ class TradingViewAPI:
                 tf = f"{interval_min}m"
                 if interval_min == 'D': tf = '1d'
                 elif interval_min == 'W': tf = '1w'
-                if interval_min == '60': tf = '1h'
+                elif interval_min == '60': tf = '1h'
+                elif interval_min == '120': tf = '2h'
+                elif interval_min == '240': tf = '4h'
 
                 logger.info(f"Using timeframe {tf} for Streamer (interval_min={interval_min})")
 
@@ -126,10 +128,14 @@ class TradingViewAPI:
             # Fallback to tvDatafeed
             if self.tv:
                 tv_interval = Interval.in_1_minute
-                if interval_min == '5': tv_interval = Interval.in_5_minute
+                if interval_min == '3': tv_interval = Interval.in_3_minute
+                elif interval_min == '5': tv_interval = Interval.in_5_minute
                 elif interval_min == '15': tv_interval = Interval.in_15_minute
                 elif interval_min == '30': tv_interval = Interval.in_30_minute
+                elif interval_min == '45': tv_interval = Interval.in_45_minute
                 elif interval_min == '60': tv_interval = Interval.in_1_hour
+                elif interval_min == '120': tv_interval = Interval.in_2_hour
+                elif interval_min == '240': tv_interval = Interval.in_4_hour
                 elif interval_min == 'D' or interval_min == '1d': tv_interval = Interval.in_daily
                 elif interval_min == 'W' or interval_min == '1w': tv_interval = Interval.in_weekly
 
