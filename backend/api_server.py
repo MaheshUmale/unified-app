@@ -211,9 +211,31 @@ async def tv_search(text: str = Query(..., min_length=1)):
     return tv_results
 
 @fastapi_app.get("/api/tv/intraday/{instrument_key}")
-async def get_intraday(instrument_key: str, interval: str = '1'):
+async def get_intraday(
+    instrument_key: str,
+    interval: str = '1',
+    rvol_len: Optional[int] = None,
+    rvol_threshold: Optional[float] = None,
+    bubble_threshold: Optional[float] = None,
+    ray_wick_ratio: Optional[float] = None,
+    max_rays: Optional[int] = None,
+    ema_9: Optional[int] = None,
+    ema_20: Optional[int] = None
+):
     """Fetch intraday candles with automated technical indicators."""
-    cache_key = f"intraday_{instrument_key}_{interval}"
+    # Settings object for analyzer
+    settings = {
+        'rvol_len': rvol_len,
+        'rvol_threshold': rvol_threshold,
+        'bubble_threshold': bubble_threshold,
+        'ray_wick_ratio': ray_wick_ratio,
+        'max_rays': max_rays
+    }
+    # Filter None values
+    settings = {k: v for k, v in settings.items() if v is not None}
+
+    # Cache key should include settings
+    cache_key = f"intraday_{instrument_key}_{interval}_{hash(frozenset(settings.items()))}"
     cached = hist_cache.get(cache_key)
     if cached: return cached
 
@@ -246,7 +268,8 @@ async def get_intraday(instrument_key: str, interval: str = '1'):
             candles = sorted(candles, key=lambda x: x[0])
             df = pd.DataFrame(candles, columns=['ts', 'o', 'h', 'l', 'c', 'v'])
             # Standard EMAs
-            for span, color in [(9, "#3b82f6"), (20, "#f97316")]:
+            ema_spans = [(ema_9 or 9, "#3b82f6"), (ema_20 or 20, "#f97316")]
+            for span, color in ema_spans:
                 ema = df['c'].ewm(span=span, adjust=False).mean()
                 indicators.append({
                     "id": f"ema_{span}", "title": f"EMA {span}", "type": "line",
@@ -278,7 +301,7 @@ async def get_intraday(instrument_key: str, interval: str = '1'):
             # RVOL & High Volume Node Indicators
             try:
                 from brain.VolumeAnalyzer import VolumeAnalyzer
-                vol_data = VolumeAnalyzer().analyze(candles)
+                vol_data = VolumeAnalyzer().analyze(candles, settings=settings)
 
                 # 1. RVOL Markers (Bubbles)
                 if vol_data['markers']:

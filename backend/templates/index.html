@@ -237,7 +237,7 @@
             </div>
         </div>
 
-        <!-- Indicator Management Panel -->
+        <!-- Indicator Management Panel (Legacy) -->
         <div id="indicatorPanel" class="hidden absolute top-4 right-4 w-64 glass-panel rounded-xl p-4 z-[60] shadow-2xl border border-white/10">
             <div class="flex justify-between items-center mb-4">
                 <h3 class="text-xs font-black uppercase italic tracking-wider">Indicator Plots</h3>
@@ -247,6 +247,65 @@
             </div>
             <div id="indicatorList" class="space-y-2 max-h-96 overflow-y-auto custom-scrollbar">
                 <!-- Plot items injected by app.js -->
+            </div>
+        </div>
+
+        <!-- NEW: Pro-Analysis Settings Modal -->
+        <div id="analysisSettingsModal" class="hidden fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+            <div class="w-96 glass-panel rounded-2xl p-6 shadow-2xl border border-white/10">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-sm font-black uppercase italic tracking-widest text-blue-500">Pro-Analysis Settings</h3>
+                    <button id="closeSettingsBtn" class="text-gray-400 hover:text-white">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
+                </div>
+
+                <div class="space-y-4 max-h-[70vh] overflow-y-auto custom-scrollbar pr-2">
+                    <!-- EMA Spans -->
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="space-y-1">
+                            <label class="text-[10px] font-black text-gray-500 uppercase">EMA 1 Span</label>
+                            <input type="number" id="ema_9" value="9" class="w-full bg-gray-900 border border-white/10 rounded-lg px-3 py-2 text-xs outline-none focus:border-blue-500 transition-all">
+                        </div>
+                        <div class="space-y-1">
+                            <label class="text-[10px] font-black text-gray-500 uppercase">EMA 2 Span</label>
+                            <input type="number" id="ema_20" value="20" class="w-full bg-gray-900 border border-white/10 rounded-lg px-3 py-2 text-xs outline-none focus:border-blue-500 transition-all">
+                        </div>
+                    </div>
+
+                    <!-- Volume Logic -->
+                    <div class="space-y-3 pt-2 border-t border-white/5">
+                        <div class="space-y-1">
+                            <label class="text-[10px] font-black text-gray-500 uppercase">RVOL Period</label>
+                            <input type="number" id="rvol_len" value="20" class="w-full bg-gray-900 border border-white/10 rounded-lg px-3 py-2 text-xs outline-none focus:border-blue-500 transition-all">
+                        </div>
+                        <div class="space-y-1">
+                            <label class="text-[10px] font-black text-gray-500 uppercase">RVOL Threshold (x)</label>
+                            <input type="number" step="0.1" id="rvol_threshold" value="2.0" class="w-full bg-gray-900 border border-white/10 rounded-lg px-3 py-2 text-xs outline-none focus:border-blue-500 transition-all">
+                        </div>
+                        <div class="space-y-1">
+                            <label class="text-[10px] font-black text-gray-500 uppercase">Bubble Ratio Threshold</label>
+                            <input type="number" step="0.1" id="bubble_threshold" value="2.5" class="w-full bg-gray-900 border border-white/10 rounded-lg px-3 py-2 text-xs outline-none focus:border-blue-500 transition-all">
+                        </div>
+                    </div>
+
+                    <!-- Ray Logic -->
+                    <div class="space-y-3 pt-2 border-t border-white/5">
+                        <div class="space-y-1">
+                            <label class="text-[10px] font-black text-gray-500 uppercase">Ray Wick Ratio (x)</label>
+                            <input type="number" step="0.1" id="ray_wick_ratio" value="1.5" class="w-full bg-gray-900 border border-white/10 rounded-lg px-3 py-2 text-xs outline-none focus:border-blue-500 transition-all">
+                        </div>
+                        <div class="space-y-1">
+                            <label class="text-[10px] font-black text-gray-500 uppercase">Max Rays Count</label>
+                            <input type="number" id="max_rays" value="50" class="w-full bg-gray-900 border border-white/10 rounded-lg px-3 py-2 text-xs outline-none focus:border-blue-500 transition-all">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-8 flex gap-3">
+                    <button id="resetAnalysisBtn" class="flex-1 py-3 text-[10px] font-black uppercase tracking-widest border border-white/10 rounded-xl hover:bg-white/5 transition-all">Reset</button>
+                    <button id="applyAnalysisBtn" class="flex-1 py-3 text-[10px] font-black uppercase tracking-widest bg-blue-600 rounded-xl hover:bg-blue-500 transition-all shadow-lg shadow-blue-600/20">Apply</button>
+                </div>
             </div>
         </div>
     </main>
