@@ -38,6 +38,7 @@ class LocalDB:
         self.conn.execute("SET memory_limit = '1GB'")
         self.conn.execute("SET threads = 4")
         self.conn.execute("SET TimeZone='UTC'")
+        self.conn.execute("SET preserve_insertion_order = false")
 
         # Check and load extensions to avoid slow INSTALL calls on every boot
         try:
@@ -267,5 +268,30 @@ class LocalDB:
         df = pd.DataFrame([record])[cols]
         with self._execute_lock:
             self.conn.execute(f"INSERT INTO pcr_history ({', '.join(cols)}) SELECT * FROM df")
+
+    def cleanup_old_data(self, days: int = 30):
+        """Deletes ticks older than X days to keep the DB size manageable."""
+        with self._execute_lock:
+            try:
+                self.conn.execute(f"DELETE FROM ticks WHERE date < CURRENT_DATE - INTERVAL '{days} days'")
+                self.conn.execute("CHECKPOINT")
+                logger.info(f"Cleaned up ticks older than {days} days")
+            except Exception as e:
+                logger.error(f"Cleanup error: {e}")
+
+    def optimize_storage(self):
+        """Performs a vacuum-like optimization by re-sorting ticks by instrument and timestamp."""
+        with self._execute_lock:
+            try:
+                logger.info("Optimizing data storage for replay...")
+                # DuckDB doesn't have CLUSTER, so we recreate the table sorted
+                self.conn.execute("CREATE TABLE ticks_new AS SELECT * FROM ticks ORDER BY instrumentKey, ts_ms")
+                self.conn.execute("DROP TABLE ticks")
+                self.conn.execute("ALTER TABLE ticks_new RENAME TO ticks")
+                self.conn.execute("CREATE INDEX IF NOT EXISTS idx_ticks_key_ts ON ticks (instrumentKey, ts_ms)")
+                self.conn.execute("CHECKPOINT")
+                logger.info("Storage optimization complete.")
+            except Exception as e:
+                logger.error(f"Optimization error: {e}")
 
 db = LocalDB()

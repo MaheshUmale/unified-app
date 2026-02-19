@@ -102,8 +102,25 @@ def periodic_flush():
             logger.error(f"Error in periodic_flush: {e}")
             time.sleep(5)
 
-# Start periodic flush thread
+def periodic_maintenance():
+    """Background task to optimize DB and cleanup old data."""
+    # Wait for initial load
+    time.sleep(60)
+    while True:
+        try:
+            from config import DATABASE_CONFIG
+            retention = DATABASE_CONFIG.get('retention_days', 30)
+            db.cleanup_old_data(retention)
+            db.optimize_storage()
+            # Run every 24 hours
+            time.sleep(24 * 3600)
+        except Exception as e:
+            logger.error(f"Error in periodic_maintenance: {e}")
+            time.sleep(3600)
+
+# Start background threads
 threading.Thread(target=periodic_flush, daemon=True).start()
+threading.Thread(target=periodic_maintenance, daemon=True).start()
 
 last_emit_times = {}
 

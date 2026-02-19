@@ -518,9 +518,114 @@ class MultiChartEngine {
 
     init() {
         this.setupEventListeners();
+        this.setupSearch();
         this.loadLayout();
         window.addEventListener('resize', () => {
             this.charts.forEach(c => c.chart.resize(c.container.clientWidth, c.container.clientHeight));
+        });
+    }
+
+    setupSearch() {
+        const searchInput = document.getElementById('symbolSearch');
+        const resultsDiv = document.getElementById('searchResults');
+        let debounceTimer;
+        let selectedIndex = -1;
+
+        searchInput.addEventListener('input', (e) => {
+            clearTimeout(debounceTimer);
+            const query = e.target.value.trim();
+            if (query.length < 2) {
+                resultsDiv.classList.add('hidden');
+                return;
+            }
+
+            debounceTimer = setTimeout(async () => {
+                try {
+                    const res = await fetch(`/api/tv/search?text=${encodeURIComponent(query)}`);
+                    const data = await res.json();
+                    this.renderSearchResults(data.symbols || []);
+                    selectedIndex = -1;
+                } catch (err) {
+                    console.error("[Search] Failed:", err);
+                }
+            }, 300);
+        });
+
+        searchInput.addEventListener('keydown', async (e) => {
+            const items = resultsDiv.querySelectorAll('.search-item');
+
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                selectedIndex = Math.min(selectedIndex + 1, items.length - 1);
+                this.updateSearchSelection(items, selectedIndex);
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                selectedIndex = Math.max(selectedIndex - 1, 0);
+                this.updateSearchSelection(items, selectedIndex);
+            } else if (e.key === 'Enter') {
+                if (selectedIndex >= 0 && items[selectedIndex]) {
+                    items[selectedIndex].click();
+                } else {
+                    const sym = searchInput.value.trim().toUpperCase();
+                    if (sym) {
+                        await this.charts[this.activeIdx].switchSymbol(sym);
+                        this.saveLayout();
+                        resultsDiv.classList.add('hidden');
+                    }
+                }
+            } else if (e.key === 'Escape') {
+                resultsDiv.classList.add('hidden');
+            }
+        });
+
+        document.addEventListener('click', (e) => {
+            if (!searchInput.contains(e.target) && !resultsDiv.contains(e.target)) {
+                resultsDiv.classList.add('hidden');
+            }
+        });
+    }
+
+    renderSearchResults(symbols) {
+        const resultsDiv = document.getElementById('searchResults');
+        if (!symbols.length) {
+            resultsDiv.classList.add('hidden');
+            return;
+        }
+
+        resultsDiv.innerHTML = symbols.map((s, i) => `
+            <div class="search-item p-3 flex items-center justify-between cursor-pointer border-b border-white/5 hover:bg-blue-500/10 transition-colors"
+                 data-symbol="${s.symbol}" data-exchange="${s.exchange}">
+                <div class="flex flex-col">
+                    <span class="text-xs font-black text-white">${s.symbol}</span>
+                    <span class="text-[10px] text-gray-500 truncate max-w-[250px]">${s.description || ''}</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-gray-800 text-gray-400 uppercase border border-white/5">${s.exchange}</span>
+                    <span class="text-[9px] font-black text-blue-500/70 uppercase italic tracking-tighter">${s.type || ''}</span>
+                </div>
+            </div>
+        `).join('');
+
+        resultsDiv.querySelectorAll('.search-item').forEach(item => {
+            item.addEventListener('click', async () => {
+                const sym = item.dataset.symbol;
+                const exch = item.dataset.exchange;
+                const fullSym = exch ? `${exch}:${sym}` : sym;
+
+                document.getElementById('symbolSearch').value = fullSym;
+                await this.charts[this.activeIdx].switchSymbol(fullSym);
+                this.saveLayout();
+                resultsDiv.classList.add('hidden');
+            });
+        });
+
+        resultsDiv.classList.remove('hidden');
+    }
+
+    updateSearchSelection(items, index) {
+        items.forEach((item, i) => {
+            item.classList.toggle('bg-blue-500/20', i === index);
+            if (i === index) item.scrollIntoView({ block: 'nearest' });
         });
     }
 
@@ -542,15 +647,6 @@ class MultiChartEngine {
             });
         });
 
-        document.getElementById('symbolSearch').addEventListener('keydown', async (e) => {
-            if (e.key === 'Enter') {
-                const sym = e.target.value.trim().toUpperCase();
-                if (sym) {
-                    await this.charts[this.activeIdx].switchSymbol(sym);
-                    this.saveLayout();
-                }
-            }
-        });
 
         document.getElementById('chartTypeSelector').addEventListener('change', (e) => {
             this.charts[this.activeIdx].setChartType(e.target.value);
