@@ -34,7 +34,7 @@
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #374151; border-radius: 10px; }
     </style>
 </head>
-<body class="h-full flex flex-col overflow-hidden light-theme">
+<body class="h-full flex flex-col overflow-hidden">
     <header class="h-14 py-2 glass-panel border-b border-white/5 px-4 md:px-6 flex items-center shrink-0">
         <div class="flex items-center justify-between w-full">
             <div class="flex items-center gap-4">
@@ -282,7 +282,7 @@
         };
 
         // Init
-        applyTheme(localStorage.getItem('theme') || 'light');
+        applyTheme(localStorage.getItem('theme') || 'dark');
         fetchTables();
     </script>
 </body>

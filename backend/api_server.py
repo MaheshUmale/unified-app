@@ -386,7 +386,16 @@ async def get_tick_history(instrument_key: str, limit: int = 10000):
 @fastapi_app.get("/api/db/tables")
 async def get_db_tables():
     tables = await asyncio.to_thread(db.get_tables)
-    return {"tables": [{"name": t, "row_count": (await asyncio.to_thread(db.query, f'SELECT COUNT(*) as c FROM "{t}"'))[0]['c']} for t in tables]}
+    results = []
+    for t in tables:
+        row_count = (await asyncio.to_thread(db.query, f'SELECT COUNT(*) as c FROM "{t}"'))[0]['c']
+        schema = await asyncio.to_thread(db.get_table_schema, t)
+        results.append({
+            "name": t,
+            "row_count": row_count,
+            "schema": [{"column_name": c.get('column_name')} for c in schema]
+        })
+    return {"tables": results}
 
 @fastapi_app.post("/api/db/query")
 async def run_db_query(req: Request):
