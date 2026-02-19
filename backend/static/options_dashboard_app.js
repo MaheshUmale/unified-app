@@ -8,7 +8,7 @@ class OptionsDashboardManager {
         this.currentUnderlying = 'NSE:NIFTY';
         this.socket = null;
         this.charts = {};
-        this.theme = localStorage.getItem('theme') || 'light';
+        this.theme = localStorage.getItem('theme') || 'dark';
 
         // Chart.js defaults
         if (window.Chart) {
@@ -51,8 +51,6 @@ class OptionsDashboardManager {
             }
         });
 
-        this.socket.on('scalper_metrics', (data) => this.renderScalperMetrics(data));
-        this.socket.on('scalper_log', (data) => this.renderScalperLog(data));
         this.socket.on('options_alert', (data) => alert(data.message));
     }
 
@@ -69,16 +67,12 @@ class OptionsDashboardManager {
         });
 
         // Sub-modules
-        document.getElementById('strategyBtn').addEventListener('click', () => this.switchTab('strategies'));
-        document.getElementById('alertsBtn').addEventListener('click', () => this.switchTab('alerts'));
+        document.getElementById('strategyBtn')?.addEventListener('click', () => this.switchTab('strategies'));
         document.getElementById('buildStrategyBtn')?.addEventListener('click', () => this.buildStrategy());
         document.getElementById('addLegBtn')?.addEventListener('click', () => this.addLeg());
         document.getElementById('strategyType')?.addEventListener('change', (e) => {
             document.getElementById('customLegsContainer').classList.toggle('hidden', e.target.value !== 'custom');
         });
-        document.getElementById('createAlertBtn')?.addEventListener('click', () => this.createAlert());
-        document.getElementById('startScalperBtn')?.addEventListener('click', () => this.startScalper());
-        document.getElementById('stopScalperBtn')?.addEventListener('click', () => this.stopScalper());
     }
 
     async switchUnderlying(newUnderlying) {
@@ -108,6 +102,7 @@ class OptionsDashboardManager {
             this.renderBuildupSummary(buildup);
             this.renderIVCard(iv);
 
+            document.getElementById('dataSource').textContent = chain.source || 'N/A';
             document.getElementById('lastUpdated').textContent = new Date().toLocaleTimeString('en-IN', { hour12: false });
         } catch (e) { console.error("[Options] Load failed:", e); }
     }
@@ -133,6 +128,11 @@ class OptionsDashboardManager {
 
         const spot = data.spot_price || 0;
         document.getElementById('spotPrice').textContent = spot.toLocaleString(undefined, {minimumFractionDigits: 2});
+
+        // Update Expiry Date from first item
+        if (data.chain && data.chain.length > 0) {
+            document.getElementById('expiryDate').textContent = data.chain[0].expiry;
+        }
 
         const grouped = {};
         data.chain.forEach(item => {
@@ -171,6 +171,31 @@ class OptionsDashboardManager {
         el.className = `text-lg font-black uppercase ${data.control.includes('BUYERS') ? 'text-green-500' : data.control.includes('SELLERS') ? 'text-red-500' : 'text-white'}`;
         document.getElementById('genieDistribution').textContent = data.distribution.status;
         document.getElementById('genieRange').textContent = `${data.boundaries.lower} - ${data.boundaries.upper}`;
+
+        // Sync Spot Sentiment
+        const spotSent = document.getElementById('spotSentiment');
+        if (spotSent) {
+            spotSent.textContent = data.sentiment;
+            spotSent.className = `text-[8px] font-black px-1.5 py-0.5 rounded uppercase ${data.sentiment === 'BULLISH' ? 'bg-green-500/20 text-green-500' : data.sentiment === 'BEARISH' ? 'bg-red-500/20 text-red-500' : 'bg-gray-500/20 text-gray-400'}`;
+        }
+
+        // Target (Aim)
+        const aim = data.sentiment === 'BULLISH' ? data.boundaries.upper : (data.sentiment === 'BEARISH' ? data.boundaries.lower : '-');
+        document.getElementById('aimSpot').textContent = aim;
+
+        // Max Pain distance
+        const spot = parseFloat(document.getElementById('spotPrice').textContent.replace(/,/g, ''));
+        if (spot > 0 && data.max_pain > 0) {
+            const diff = data.max_pain - spot;
+            const mpDiffEl = document.getElementById('maxPainDiff');
+            mpDiffEl.textContent = `${diff > 0 ? '+' : ''}${diff.toFixed(2)}`;
+            mpDiffEl.className = `text-[8px] font-black uppercase tracking-tighter ${diff > 0 ? 'text-green-500' : 'text-red-500'}`;
+        }
+
+        document.getElementById('maxPain').textContent = data.max_pain.toLocaleString();
+
+        // Sideways badge
+        document.getElementById('sidewaysBadge')?.classList.toggle('hidden', !data.sideways_expected);
     }
 
     renderBuildupSummary(data) {
@@ -204,7 +229,7 @@ class OptionsDashboardManager {
         if (!ctx) return;
         if (this.charts.pcr) this.charts.pcr.destroy();
 
-        const history = (data.history || data || []).filter(h => (h.spot_price || h.underlying_price) > 0);
+        const history = (data.history || data || []).filter(h => (Number(h.spot_price) || Number(h.underlying_price)) > 0);
         const labels = history.map(h => new Date(h.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false }));
 
         this.charts.pcr = new Chart(ctx, {
@@ -212,15 +237,15 @@ class OptionsDashboardManager {
             data: {
                 labels,
                 datasets: [
-                    { label: 'Spot', data: history.map(h => h.spot_price || h.underlying_price), borderColor: this.theme === 'light' ? '#0f172a' : '#fff', borderDash: [3,3], pointRadius: 0, yAxisID: 'y1' },
-                    { label: 'PCR', data: history.map(h => h.pcr_oi), borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.1)', fill: true, tension: 0.4, pointRadius: 0, yAxisID: 'y' }
+                    { label: 'Spot', data: history.map(h => Number(h.spot_price) || Number(h.underlying_price)), borderColor: this.theme === 'light' ? '#f59e0b' : '#fff', borderDash: [3,3], pointRadius: 0, yAxisID: 'y1' },
+                    { label: 'PCR', data: history.map(h => Number(h.pcr_oi)), borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.1)', fill: true, tension: 0.4, pointRadius: 0, yAxisID: 'y' }
                 ]
             },
             options: {
                 responsive: true, maintainAspectRatio: false,
                 scales: {
                     y: { type: 'linear', position: 'left', title: { display: true, text: 'PCR', color: '#94a3b8' }, ticks: { color: '#94a3b8' } },
-                    y1: { type: 'linear', position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'SPOT', color: '#94a3b8' }, ticks: { color: '#94a3b8' } }
+                    y1: { type: 'linear', position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'SPOT', color: '#94a3b8' }, ticks: { color: '#94a3b8' }, beginAtZero: false }
                 },
                 plugins: { legend: { labels: { color: '#94a3b8' } } }
             }
@@ -399,8 +424,6 @@ class OptionsDashboardManager {
     switchTab(tabId) {
         document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.toggle('tab-active', btn.dataset.tab === tabId));
         document.querySelectorAll('.tab-pane').forEach(pane => pane.classList.toggle('hidden', pane.id !== `${tabId}Tab`));
-        if (tabId === 'scalper') this.updateScalperStatusUI();
-        if (tabId === 'alerts') this.loadAlerts();
     }
 
     async triggerBackfill() {
@@ -412,15 +435,16 @@ class OptionsDashboardManager {
         this.theme = this.theme === 'light' ? 'dark' : 'light';
         localStorage.setItem('theme', this.theme);
         this.applyTheme(this.theme);
+        // Re-render charts to update colors
+        this.loadData();
     }
 
     applyTheme(theme) {
+        document.body.classList.toggle('light-theme', theme === 'light');
         if (theme === 'light') {
-            document.body.classList.add('light-theme');
             document.getElementById('optionsSunIcon')?.classList.add('hidden');
             document.getElementById('optionsMoonIcon')?.classList.remove('hidden');
         } else {
-            document.body.classList.remove('light-theme');
             document.getElementById('optionsSunIcon')?.classList.remove('hidden');
             document.getElementById('optionsMoonIcon')?.classList.add('hidden');
         }

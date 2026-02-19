@@ -154,6 +154,13 @@ class CanvasRenderer {
         this.chart = chart;
         this.series = series;
         this.colors = { bull: '#00ffc2', bear: '#ff3366', poc: '#fbbf24', va: 'rgba(255, 255, 255, 0.08)' };
+        this.updateTheme();
+    }
+
+    updateTheme() {
+        const isLight = document.body.classList.contains('light-theme');
+        this.colors.va = isLight ? 'rgba(15, 23, 42, 0.08)' : 'rgba(255, 255, 255, 0.08)';
+        this.colors.text = isLight ? '#475569' : '#9ea7b3';
     }
 
     render(candles) {
@@ -208,11 +215,11 @@ class CanvasRenderer {
             };
 
             this.ctx.textAlign = 'right';
-            this.ctx.fillStyle = sell > buy ? '#ff3366' : '#9ea7b3';
+            this.ctx.fillStyle = sell > buy ? '#ff3366' : this.colors.text;
             this.ctx.fillText(formatV(sell), x - 4, y + 3);
 
             this.ctx.textAlign = 'left';
-            this.ctx.fillStyle = buy > sell ? '#00ffc2' : '#9ea7b3';
+            this.ctx.fillStyle = buy > sell ? '#00ffc2' : this.colors.text;
             this.ctx.fillText(formatV(buy), x + 4, y + 3);
         });
     }
@@ -229,6 +236,7 @@ class OrderFlowUI {
     }
 
     init() {
+        this.loadTheme();
         this.setupCharts();
         this.setupSocket();
         this.setupListeners();
@@ -236,6 +244,43 @@ class OrderFlowUI {
 
         window.addEventListener('resize', () => this.handleResize());
         setTimeout(() => this.handleResize(), 100);
+    }
+
+    loadTheme() {
+        const theme = localStorage.getItem('theme') || 'dark';
+        document.body.classList.toggle('light-theme', theme === 'light');
+        this.applyThemeIcons();
+    }
+
+    applyThemeIcons() {
+        const isLight = document.body.classList.contains('light-theme');
+        document.getElementById('sunIcon')?.classList.toggle('hidden', !isLight);
+        document.getElementById('moonIcon')?.classList.toggle('hidden', isLight);
+    }
+
+    toggleTheme() {
+        const isLight = document.body.classList.toggle('light-theme');
+        localStorage.setItem('theme', isLight ? 'light' : 'dark');
+        this.applyThemeIcons();
+        this.updateChartTheme();
+    }
+
+    updateChartTheme() {
+        const isLight = document.body.classList.contains('light-theme');
+        const options = {
+            layout: { textColor: isLight ? '#1e293b' : '#7d8590' },
+            grid: {
+                vertLines: { color: isLight ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.02)' },
+                horzLines: { color: isLight ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.02)' }
+            },
+            timeScale: { borderColor: isLight ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.1)' },
+            rightPriceScale: { borderColor: isLight ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.1)' }
+        };
+
+        this.charts.main.applyOptions(options);
+        this.charts.cvd.applyOptions(options);
+        this.renderer.updateTheme();
+        this.renderer.render(this.engine.candles);
     }
 
     setupCharts() {
@@ -351,6 +396,10 @@ class OrderFlowUI {
 
         document.getElementById('replay-btn')?.addEventListener('click', () => {
             this.startReplay();
+        });
+
+        document.getElementById('themeToggleBtn')?.addEventListener('click', () => {
+            this.toggleTheme();
         });
     }
 

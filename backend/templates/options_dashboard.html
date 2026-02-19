@@ -67,7 +67,7 @@
         .light-theme .bg-black\/30 { background-color: rgba(0, 0, 0, 0.05) !important; }
     </style>
 </head>
-<body class="h-full flex flex-col overflow-hidden custom-scrollbar light-theme">
+<body class="h-full flex flex-col overflow-hidden custom-scrollbar">
     <!-- Header -->
     <header class="h-14 py-2 glass-panel border-b border-white/5 px-4 md:px-6 flex items-center justify-between shrink-0" role="banner">
         <div class="flex items-center gap-6">
@@ -94,9 +94,6 @@
                 </button>
                 <button id="backfillBtn" class="bg-slate-700 hover:bg-slate-600 text-white text-[10px] font-black px-6 py-2 rounded-full transition-all uppercase tracking-tighter ml-1 active:scale-95" style="background: var(--btn-bg-muted); color: var(--btn-text);">
                     BACKFILL
-                </button>
-                <button id="alertsBtn" class="text-gray-400 hover:text-white p-1.5 transition-colors">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
                 </button>
                 <button id="strategyBtn" class="text-gray-400 hover:text-white p-1.5 transition-colors">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
@@ -206,9 +203,6 @@
         <nav class="flex gap-6 border-b border-white/10 pt-2" role="tablist" aria-label="Dashboard sections">
             <button class="tab-btn tab-active pb-2 text-xs uppercase tracking-wider" data-tab="overview" role="tab" aria-selected="true" aria-controls="overviewTab">Analysis Overview</button>
             <button class="tab-btn pb-2 text-xs uppercase tracking-wider" data-tab="strategies" role="tab" aria-selected="false" aria-controls="strategiesTab">Strategies</button>
-            <button class="tab-btn pb-2 text-xs uppercase tracking-wider" data-tab="alerts" role="tab" aria-selected="false" aria-controls="alertsTab">Alerts</button>
-            <button class="tab-btn pb-2 text-xs uppercase tracking-wider" data-tab="scalper" role="tab" aria-selected="false" aria-controls="scalperTab">Scalper</button>
-            <button class="tab-btn pb-2 text-xs uppercase tracking-wider" data-tab="system" role="tab" aria-selected="false" aria-controls="systemTab">System</button>
             <button class="tab-btn pb-2 text-xs uppercase tracking-wider" data-tab="chain" role="tab" aria-selected="false" aria-controls="chainTab">Chain</button>
         </nav>
 
@@ -317,199 +311,7 @@
                 </div>
             </div>
 
-            <!-- Alerts Tab -->
-            <div id="alertsTab" class="tab-pane hidden">
-                <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                    <div class="glass-panel rounded-xl p-4">
-                        <h3 class="text-xs font-bold uppercase tracking-wider mb-4">Create Alert</h3>
-                        <div class="space-y-3">
-                            <input id="alertName" type="text" placeholder="Alert Name" class="w-full bg-slate-900 border border-white/10 rounded px-3 py-2 text-xs">
-                            <select id="alertType" class="w-full bg-slate-900 border border-white/10 rounded px-3 py-2 text-xs">
-                                <option value="price_above">Price Above</option>
-                                <option value="price_below">Price Below</option>
-                                <option value="pcr_above">PCR Above</option>
-                                <option value="pcr_below">PCR Below</option>
-                                <option value="iv_rank_above">IV Rank Above</option>
-                                <option value="iv_rank_below">IV Rank Below</option>
-                            </select>
-                            <input id="alertThreshold" type="number" step="0.01" placeholder="Threshold Value" class="w-full bg-slate-900 border border-white/10 rounded px-3 py-2 text-xs">
-                            <button id="createAlertBtn" class="w-full bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold py-2 rounded transition-all">
-                                Create Alert
-                            </button>
-                        </div>
-                    </div>
-                    <div class="glass-panel rounded-xl p-4 lg:col-span-2">
-                        <h3 class="text-xs font-bold uppercase tracking-wider mb-4">Active Alerts</h3>
-                        <div id="alertsList" class="space-y-2">
-                            <!-- Dynamic content -->
-                            <p class="text-gray-500 text-xs">Loading alerts...</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
 
-            <!-- Scalper Tab -->
-            <div id="systemTab" class="tab-pane hidden">
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    <div class="glass-panel rounded-xl p-4">
-                        <h3 class="text-xs font-bold uppercase tracking-wider mb-4">TradingView Engine Health</h3>
-                        <div class="flex items-center gap-6 mb-6">
-                            <div class="relative w-24 h-24">
-                                <svg class="w-full h-full" viewBox="0 0 36 36">
-                                    <path class="stroke-slate-800" stroke-width="3" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-                                    <path id="healthCircle" class="stroke-blue-500" stroke-width="3" stroke-dasharray="100, 100" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-                                    <text x="18" y="20.35" class="fill-white font-black text-[8px] text-center" text-anchor="middle" id="healthScoreText" style="fill: var(--text-primary);">100%</text>
-                                </svg>
-                            </div>
-                            <div class="flex-1 space-y-2">
-                                <div class="flex justify-between items-center">
-                                    <span class="text-[10px] text-gray-500 uppercase">Status</span>
-                                    <span id="engineStatus" class="text-[10px] font-bold text-green-500 uppercase">RUNNING</span>
-                                </div>
-                                <div class="flex justify-between items-center">
-                                    <span class="text-[10px] text-gray-500 uppercase">Connections</span>
-                                    <span id="engineConnections" class="text-[10px] font-bold text-white" style="color: var(--text-primary);">0 Active</span>
-                                </div>
-                                <div class="flex justify-between items-center">
-                                    <span class="text-[10px] text-gray-500 uppercase">Cache Usage</span>
-                                    <span id="engineCache" class="text-[10px] font-bold text-blue-400">0%</span>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="space-y-3">
-                            <h4 class="text-[9px] text-gray-500 uppercase font-bold">Quality Metrics</h4>
-                            <div class="grid grid-cols-2 gap-3">
-                                <div class="bg-black/20 p-2 rounded">
-                                    <div class="text-[8px] text-gray-500 uppercase">Completeness</div>
-                                    <div id="qualityCompleteness" class="text-xs font-bold text-white" style="color: var(--text-primary);">0%</div>
-                                </div>
-                                <div class="bg-black/20 p-2 rounded">
-                                    <div class="text-[8px] text-gray-500 uppercase">Accuracy</div>
-                                    <div id="qualityAccuracy" class="text-xs font-bold text-white" style="color: var(--text-primary);">0%</div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="glass-panel rounded-xl p-4">
-                        <h3 class="text-xs font-bold uppercase tracking-wider mb-4">Engine Performance</h3>
-                        <div class="space-y-4">
-                            <div class="flex justify-between items-center border-b border-white/5 pb-2">
-                                <span class="text-[10px] text-gray-500 uppercase">Avg Response Time</span>
-                                <span id="perfLatency" class="text-sm font-black text-blue-400">0ms</span>
-                            </div>
-                            <div class="flex justify-between items-center border-b border-white/5 pb-2">
-                                <span class="text-[10px] text-gray-500 uppercase">Throughput</span>
-                                <span id="perfThroughput" class="text-sm font-black text-white" style="color: var(--text-primary);">0 req/s</span>
-                            </div>
-                            <div class="flex justify-between items-center">
-                                <span class="text-[10px] text-gray-500 uppercase">Error Rate</span>
-                                <span id="perfErrorRate" class="text-sm font-black text-red-500">0%</span>
-                            </div>
-                        </div>
-                        <div class="mt-6 p-3 bg-blue-500/10 rounded border border-blue-500/20">
-                            <h4 class="text-[9px] text-blue-400 uppercase font-black mb-1">System Recommendation</h4>
-                            <p id="systemRec" class="text-[10px] text-gray-300 italic">System operating within normal parameters.</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div id="scalperTab" class="tab-pane hidden">
-                <div class="grid grid-cols-1 lg:grid-cols-4 gap-4">
-                    <div class="lg:col-span-1 space-y-4">
-                        <div class="glass-panel rounded-xl p-4">
-                            <h3 class="text-xs font-bold uppercase tracking-wider mb-4">Scalper Control</h3>
-                            <div class="space-y-3">
-                                <div class="flex flex-col gap-1">
-                                    <label class="text-[10px] text-gray-500 uppercase">Underlying</label>
-                                    <select id="scalperUnderlying" class="w-full bg-slate-900 border border-white/10 rounded px-3 py-2 text-xs">
-                                        <option value="NSE:NIFTY">NIFTY 50</option>
-                                        <option value="NSE:BANKNIFTY">BANKNIFTY</option>
-                                        <option value="NSE:CNXFINANCE">CNXFINANCE</option>
-                                    </select>
-                                </div>
-                                <div id="scalperStatus" class="flex items-center gap-2 py-2 px-3 bg-slate-900/50 rounded border border-white/5">
-                                    <div id="statusDot" class="w-2 h-2 rounded-full bg-red-500"></div>
-                                    <span id="statusText" class="text-[10px] font-bold text-gray-400 uppercase">Inactive</span>
-                                </div>
-                                <button id="startScalperBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2 rounded transition-all">
-                                    Start Scalper
-                                </button>
-                                <button id="stopScalperBtn" class="w-full bg-red-600 hover:bg-red-700 text-white text-xs font-bold py-2 rounded transition-all hidden">
-                                    Stop Scalper
-                                </button>
-                            </div>
-                        </div>
-                        <div class="glass-panel rounded-xl p-4">
-                            <h3 class="text-xs font-bold uppercase tracking-wider mb-2">Active Trades</h3>
-                            <div id="activeTradesList" class="space-y-2">
-                                <p class="text-[10px] text-gray-500">No active trades</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="lg:col-span-3 space-y-4">
-                        <!-- Confluence Metrics -->
-                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                            <div class="glass-panel rounded-xl p-3 border-l-4 border-blue-500">
-                                <div class="text-[10px] text-gray-400 uppercase font-bold">OI Power</div>
-                                <div id="scalperOIPower" class="text-lg font-black text-white mt-1">-</div>
-                            </div>
-                            <div class="glass-panel rounded-xl p-3 border-l-4 border-purple-500">
-                                <div class="text-[10px] text-gray-400 uppercase font-bold">Sentiment</div>
-                                <div id="scalperOISentiment" class="text-lg font-black text-white mt-1">-</div>
-                            </div>
-                            <div class="glass-panel rounded-xl p-3 border-l-4 border-orange-500">
-                                <div class="text-[10px] text-gray-400 uppercase font-bold">OI Status</div>
-                                <div id="scalperOIStatus" class="text-lg font-black text-white mt-1">-</div>
-                            </div>
-                            <div class="glass-panel rounded-xl p-3 border-l-4 border-green-500">
-                                <div class="text-[10px] text-gray-400 uppercase font-bold">Signal Zone</div>
-                                <div id="scalperSignalZone" class="text-lg font-black text-white mt-1">-</div>
-                            </div>
-                        </div>
-
-                        <!-- Confluence Checkbox Grid -->
-                        <div class="grid grid-cols-5 gap-4">
-                            <div id="conf-lvl" class="glass-panel rounded-lg p-3 text-center border border-white/5 opacity-40">
-                                <div class="text-[9px] text-gray-400 uppercase font-bold">Lvl Hunt</div>
-                                <div class="text-xs font-black mt-1">ZONE</div>
-                            </div>
-                            <div id="conf-pcr" class="glass-panel rounded-lg p-3 text-center border border-white/5 opacity-40">
-                                <div class="text-[9px] text-gray-400 uppercase font-bold">PCR Trend</div>
-                                <div class="text-xs font-black mt-1">PULSE</div>
-                            </div>
-                            <div id="conf-oi" class="glass-panel rounded-lg p-3 text-center border border-white/5 opacity-40">
-                                <div class="text-[9px] text-gray-400 uppercase font-bold">OI Spurt</div>
-                                <div class="text-xs font-black mt-1">SMART</div>
-                            </div>
-                            <div id="conf-brk" class="glass-panel rounded-lg p-3 text-center border border-white/5 opacity-40">
-                                <div class="text-[9px] text-gray-400 uppercase font-bold">Option Brk</div>
-                                <div class="text-xs font-black mt-1">MOMENTUM</div>
-                            </div>
-                            <div id="conf-inv" class="glass-panel rounded-lg p-3 text-center border border-white/5 opacity-40">
-                                <div class="text-[9px] text-gray-400 uppercase font-bold">Inverse Dn</div>
-                                <div class="text-xs font-black mt-1">CONFIRM</div>
-                            </div>
-                        </div>
-
-                        <div class="glass-panel rounded-xl p-4 h-[450px] flex flex-col">
-                            <div class="flex justify-between items-center mb-4">
-                                <h3 class="text-xs font-bold uppercase tracking-wider">Scalper Log Pulse</h3>
-                                <div class="flex gap-4 items-center">
-                                    <div class="flex gap-2 text-[9px]">
-                                        <span class="text-gray-500">CE VWAP: <span id="ceVwap" class="text-blue-400 font-bold">-</span></span>
-                                        <span class="text-gray-500">PE VWAP: <span id="peVwap" class="text-red-400 font-bold">-</span></span>
-                                    </div>
-                                    <button id="clearLogBtn" class="text-[10px] text-gray-500 hover:text-white uppercase font-bold">Clear Log</button>
-                                </div>
-                            </div>
-                            <div id="scalperLog" class="flex-1 bg-black/40 rounded p-4 font-mono text-[11px] overflow-y-auto custom-scrollbar space-y-1">
-                                <p class="text-gray-600 italic">Connecting to scalper stream...</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
         </div>
     </main>
 

@@ -165,6 +165,7 @@ class ChartInstance {
         this.chart.priceScale('volume').applyOptions({ scaleMargins: { top: 0.8, bottom: 0 }, visible: false });
 
         this.container.addEventListener('mousedown', () => this.engine.setActiveChart(this.index));
+        this.addLocalControls();
 
         // Horizontal line drawing support (Shift+Click)
         this.chart.subscribeClick((param) => {
@@ -366,6 +367,35 @@ class ChartInstance {
         }
     }
 
+    addLocalControls() {
+        const wrapper = this.container.parentElement;
+        const controls = document.createElement('div');
+        controls.className = 'chart-controls';
+
+        const zoomOut = document.createElement('button');
+        zoomOut.className = 'chart-ctrl-btn';
+        zoomOut.title = 'Zoom Out';
+        zoomOut.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/></svg>`;
+        zoomOut.onclick = (e) => { e.stopPropagation(); this.chart.timeScale().zoomOut(); };
+
+        const zoomIn = document.createElement('button');
+        zoomIn.className = 'chart-ctrl-btn';
+        zoomIn.title = 'Zoom In';
+        zoomIn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>`;
+        zoomIn.onclick = (e) => { e.stopPropagation(); this.chart.timeScale().zoomIn(); };
+
+        const reset = document.createElement('button');
+        reset.className = 'chart-ctrl-btn';
+        reset.title = 'Fit Content';
+        reset.innerHTML = `<span class="text-[9px] font-black px-1">FIT</span>`;
+        reset.onclick = (e) => { e.stopPropagation(); this.chart.timeScale().fitContent(); };
+
+        controls.appendChild(zoomOut);
+        controls.appendChild(reset);
+        controls.appendChild(zoomIn);
+        wrapper.appendChild(controls);
+    }
+
     destroy() {
         if (this.chart) this.chart.remove();
     }
@@ -467,26 +497,31 @@ class MultiChartEngine {
         });
 
         document.querySelectorAll('.tf-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
+            btn.addEventListener('click', async () => {
                 const c = this.charts[this.activeIdx];
                 if (c) {
                     // Visual feedback
                     document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
                     btn.classList.add('active');
-                    c.switchSymbol(c.symbol, btn.dataset.interval);
+                    await c.switchSymbol(c.symbol, btn.dataset.interval);
+                    this.saveLayout();
                 }
             });
         });
 
-        document.getElementById('symbolSearch').addEventListener('keydown', (e) => {
+        document.getElementById('symbolSearch').addEventListener('keydown', async (e) => {
             if (e.key === 'Enter') {
                 const sym = e.target.value.trim().toUpperCase();
-                if (sym) this.charts[this.activeIdx].switchSymbol(sym);
+                if (sym) {
+                    await this.charts[this.activeIdx].switchSymbol(sym);
+                    this.saveLayout();
+                }
             }
         });
 
         document.getElementById('chartTypeSelector').addEventListener('change', (e) => {
             this.charts[this.activeIdx].setChartType(e.target.value);
+            this.saveLayout();
         });
 
         document.getElementById('oiProfileToggle').addEventListener('change', (e) => {
@@ -535,6 +570,18 @@ class MultiChartEngine {
         });
     }
 
+    saveLayout() {
+        if (window.INITIAL_CONFIG && window.INITIAL_CONFIG.symbol && window.INITIAL_CONFIG.symbol !== "None" && window.INITIAL_CONFIG.symbol !== "") {
+            return; // Don't save if in single chart pop-out mode
+        }
+        localStorage.setItem('prodesk_layout', this.layout);
+        this.charts.forEach((c, i) => {
+            localStorage.setItem(`chart_config_${i}`, JSON.stringify({
+                symbol: c.symbol, interval: c.interval, chartType: c.chartType
+            }));
+        });
+    }
+
     setLayout(n) {
         this.layout = n;
         const container = document.getElementById('chartsContainer');
@@ -573,6 +620,7 @@ class MultiChartEngine {
             }
         }
         this.setActiveChart(0);
+        this.saveLayout();
     }
 
     setActiveChart(idx) {
@@ -620,20 +668,17 @@ class MultiChartEngine {
         document.getElementById('loading').classList.toggle('hidden', !show);
     }
 
-    saveLayout() {
-        localStorage.setItem('prodesk_layout', this.layout);
-        this.charts.forEach((c, i) => {
-            localStorage.setItem(`chart_config_${i}`, JSON.stringify({
-                symbol: c.symbol, interval: c.interval, chartType: c.chartType
-            }));
-        });
-    }
 
     loadLayout() {
         const theme = localStorage.getItem('theme') || 'dark';
-        if (theme === 'light') document.body.classList.add('light-theme');
-        const saved = localStorage.getItem('prodesk_layout');
-        this.setLayout(saved ? parseInt(saved) : 1);
+        document.body.classList.toggle('light-theme', theme === 'light');
+
+        if (window.INITIAL_CONFIG && window.INITIAL_CONFIG.symbol && window.INITIAL_CONFIG.symbol !== "None" && window.INITIAL_CONFIG.symbol !== "") {
+            this.setLayout(1);
+        } else {
+            const saved = localStorage.getItem('prodesk_layout');
+            this.setLayout(saved ? parseInt(saved) : 1);
+        }
     }
 }
 
