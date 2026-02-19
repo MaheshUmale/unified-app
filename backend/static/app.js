@@ -101,7 +101,6 @@ class ChartInstance {
         this.symbol = 'NSE:NIFTY';
         this.interval = '1';
         this.chartType = 'candles';
-        this.showIndicators = false;
         this.hiddenPlots = new Set();
         this.colorOverrides = {};
         this.fullHistory = { candles: new Map(), volume: new Map(), indicators: {} };

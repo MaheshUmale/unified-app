@@ -92,15 +92,19 @@ class VolumeAnalyzer:
         # 4. EVWMA Calculation
         evma_len = 5
         df['shares_sum'] = df['v'].rolling(window=evma_len).sum()
-        evma = [0.0] * len(df)
+        evma = [np.nan] * len(df)
         for i in range(1, len(df)):
             shares = df['shares_sum'].iloc[i]
             vol = df['v'].iloc[i]
             price = df['c'].iloc[i]
+
+            # Use previous value or current price as fallback
+            prev_val = evma[i-1] if i > 0 and not np.isnan(evma[i-1]) else price
+
             if shares > 0:
-                evma[i] = (evma[i-1] * (shares - vol) / shares) + (vol * price / shares)
+                evma[i] = (prev_val * (shares - vol) / shares) + (vol * price / shares)
             else:
-                evma[i] = evma[i-1] if i > 0 else price
+                evma[i] = prev_val
         df['evwma'] = evma
 
         # 5. Dynamic Pivot Calculation
@@ -120,13 +124,13 @@ class VolumeAnalyzer:
 
         # Ensure no NaN values for JSON compatibility
         df['rvol'] = df['rvol'].fillna(1.0)
-        df['evwma_final'] = pd.Series(evma).fillna(df['c']) # Fallback to close if evma is NaN
-        df['dynP'] = df['dynP'].fillna(df['baseP']).fillna(df['c']) # Multiple fallbacks
+        df['evwma_final'] = pd.Series(evma) # No fallback, skip plotting for invalid candles
+        df['dynP'] = df['dynP'] # No fallback, skip plotting for invalid candles
 
         return {
             'rvol': [float(v) if np.isfinite(v) else 1.0 for v in df['rvol']],
             'markers': markers,
             'lines': lines,
-            'evwma': [{"time": int(ts), "value": float(v)} for ts, v in zip(df['ts'], df['evwma_final']) if np.isfinite(v)],
-            'dyn_pivot': [{"time": int(ts), "value": float(v)} for ts, v in zip(df['ts'], df['dynP']) if np.isfinite(v)]
+            'evwma': [{"time": int(ts), "value": float(v)} for ts, v in zip(df['ts'], df['evwma_final']) if np.isfinite(v) and v > 0],
+            'dyn_pivot': [{"time": int(ts), "value": float(v)} for ts, v in zip(df['ts'], df['dynP']) if np.isfinite(v) and v > 0]
         }
