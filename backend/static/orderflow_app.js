@@ -230,7 +230,14 @@ class OrderFlowUI {
         this.engine = new OrderFlowEngine();
         this.charts = {};
         this.socket = io();
-        this.symbol = 'NSE:NIFTY';
+
+        // Parse URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        this.symbol = urlParams.get('symbol')?.toUpperCase() || 'NSE:NIFTY';
+        const tpc = parseInt(urlParams.get('ticks')) || 100;
+        const priceStep = parseFloat(urlParams.get('step')) || 1.0;
+
+        this.engine.setParams(tpc, priceStep);
         this.markers = [];
         this.init();
     }
@@ -288,6 +295,7 @@ class OrderFlowUI {
             layout: { background: { type: 'solid', color: 'transparent' }, textColor: '#7d8590' },
             grid: { vertLines: { color: 'rgba(255,255,255,0.02)' }, horzLines: { color: 'rgba(255,255,255,0.02)' } },
             timeScale: {
+                rightOffset: 15,
                 timeVisible: true,
                 secondsVisible: true,
                 borderColor: 'rgba(255,255,255,0.1)',
@@ -375,20 +383,31 @@ class OrderFlowUI {
     }
 
     setupListeners() {
-        document.getElementById('ticks-input').addEventListener('change', (e) => {
+        // Sync inputs with engine state
+        const ticksInput = document.getElementById('ticks-input');
+        const stepInput = document.getElementById('step-input');
+        const displaySymbol = document.getElementById('display-symbol');
+
+        if (ticksInput) ticksInput.value = this.engine.tpc;
+        if (stepInput) stepInput.value = this.engine.priceStep.toFixed(2);
+        if (displaySymbol) displaySymbol.textContent = this.symbol;
+
+        ticksInput.addEventListener('change', (e) => {
             this.engine.tpc = parseInt(e.target.value) || 100;
             this.reaggregate();
         });
-        document.getElementById('step-input').addEventListener('change', (e) => {
+        stepInput.addEventListener('change', (e) => {
             this.engine.priceStep = parseFloat(e.target.value) || 0.50;
             this.reaggregate();
         });
 
         document.getElementById('zoomInBtn')?.addEventListener('click', () => {
-            this.charts.main.timeScale().zoomIn();
+            const ts = this.charts.main.timeScale();
+            ts.applyOptions({ barSpacing: Math.min(100, ts.options().barSpacing * 1.2) });
         });
         document.getElementById('zoomOutBtn')?.addEventListener('click', () => {
-            this.charts.main.timeScale().zoomOut();
+            const ts = this.charts.main.timeScale();
+            ts.applyOptions({ barSpacing: Math.max(1, ts.options().barSpacing / 1.2) });
         });
         document.getElementById('resetZoomBtn')?.addEventListener('click', () => {
             this.charts.main.timeScale().fitContent();
