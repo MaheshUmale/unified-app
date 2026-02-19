@@ -272,6 +272,49 @@ async def get_intraday(instrument_key: str, interval: str = '1'):
                     })
             except Exception: pass
 
+            # RVOL & High Volume Node Indicators
+            try:
+                from brain.VolumeAnalyzer import VolumeAnalyzer
+                vol_data = VolumeAnalyzer().analyze(candles)
+
+                # 1. RVOL Markers (Bubbles)
+                if vol_data['markers']:
+                    indicators.append({
+                        "id": "volume_bubbles", "type": "markers", "title": "Vol Bubbles",
+                        "data": vol_data['markers']
+                    })
+
+                # 2. High Volume Nodes (Lines)
+                if vol_data['lines']:
+                    indicators.append({
+                        "id": "volume_nodes", "type": "price_lines", "title": "High Vol Nodes",
+                        "data": vol_data['lines']
+                    })
+
+                # 3. EVWMA & Dynamic Pivot
+                if vol_data['evwma']:
+                    indicators.append({
+                        "id": "evwma", "type": "line", "title": "EVWMA",
+                        "style": {"color": "#63c58c", "lineWidth": 2},
+                        "data": vol_data['evwma']
+                    })
+                if vol_data['dyn_pivot']:
+                    indicators.append({
+                        "id": "dyn_pivot", "type": "line", "title": "DynPivot",
+                        "style": {"color": "#e44451", "lineWidth": 2},
+                        "data": vol_data['dyn_pivot']
+                    })
+
+                # 4. Add RVOL to candles for coloring
+                for i, rvol in enumerate(vol_data['rvol']):
+                    if i < len(candles):
+                        # Convert list to list if it's already a list, to be safe
+                        c_list = list(candles[i])
+                        c_list.append(rvol)
+                        candles[i] = c_list
+            except Exception as e:
+                logger.error(f"Volume analysis failed: {e}")
+
         result = {"instrumentKey": clean_key, "hrn": symbol_mapper.get_hrn(clean_key), "candles": candles or [], "indicators": indicators}
         hist_cache.set(cache_key, result)
         return result

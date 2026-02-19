@@ -78,7 +78,7 @@ class DataManager {
                 return {
                     hrn: data.hrn || '',
                     candles: data.candles.map(c => ({
-                        time: c[0], open: c[1], high: c[2], low: c[3], close: c[4], volume: c[5]
+                        time: c[0], open: c[1], high: c[2], low: c[3], close: c[4], volume: c[5], rvol: c[6] || 1.0
                     })),
                     indicators: data.indicators || []
                 };
@@ -230,9 +230,34 @@ class ChartInstance {
         this.engine.updateUI();
     }
 
+    getColorByRvol(candle) {
+        const isUp = candle.close >= candle.open;
+        const rvol = candle.rvol || 1.0;
+        let baseColor = isUp ? '#22c55e' : '#ef4444';
+
+        if (rvol >= 3) return isUp ? '#007504' : '#890101';
+        if (rvol >= 2) return isUp ? '#03b309' : '#d30101';
+
+        let alpha = "FF";
+        if (rvol >= 1.6) alpha = "E6";
+        else if (rvol >= 1.2) alpha = "B3";
+        else if (rvol >= 0.8) alpha = "66";
+        else if (rvol >= 0.5) alpha = "33";
+        else alpha = "1A";
+
+        return baseColor + alpha;
+    }
+
     renderData() {
         const candles = Array.from(this.fullHistory.candles.values()).sort((a,b) => a.time - b.time);
-        this.mainSeries.setData(candles);
+
+        const coloredCandles = candles.map(c => ({
+            ...c,
+            color: this.getColorByRvol(c),
+            borderColor: this.getColorByRvol(c),
+            wickColor: this.getColorByRvol(c)
+        }));
+        this.mainSeries.setData(coloredCandles);
 
         const volumes = candles.map(c => ({
             time: c.time, value: c.volume,
@@ -269,7 +294,14 @@ class ChartInstance {
         }
 
         this.fullHistory.candles.set(this.lastCandle.time, { ...this.lastCandle });
-        this.mainSeries.update(this.lastCandle);
+
+        const coloredUpdate = {
+            ...this.lastCandle,
+            color: this.getColorByRvol(this.lastCandle),
+            borderColor: this.getColorByRvol(this.lastCandle),
+            wickColor: this.getColorByRvol(this.lastCandle)
+        };
+        this.mainSeries.update(coloredUpdate);
         this.volumeSeries.update({
             time: this.lastCandle.time, value: this.lastCandle.volume,
             color: this.lastCandle.close >= this.lastCandle.open ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'
@@ -279,9 +311,16 @@ class ChartInstance {
     handleChartUpdate(data) {
         if (data.ohlcv) {
             data.ohlcv.forEach(v => {
-                const c = { time: v[0], open: v[1], high: v[2], low: v[3], close: v[4], volume: v[5] };
+                const c = { time: v[0], open: v[1], high: v[2], low: v[3], close: v[4], volume: v[5], rvol: v[6] || 1.0 };
                 this.fullHistory.candles.set(c.time, c);
-                this.mainSeries.update(c);
+
+                const coloredUpdate = {
+                    ...c,
+                    color: this.getColorByRvol(c),
+                    borderColor: this.getColorByRvol(c),
+                    wickColor: this.getColorByRvol(c)
+                };
+                this.mainSeries.update(coloredUpdate);
 
                 this.volumeSeries.update({
                     time: c.time, value: c.volume,
@@ -319,6 +358,27 @@ class ChartInstance {
 
                 this.markers.sort((a, b) => a.time - b.time);
                 this.applyMarkers();
+                return;
+            }
+
+            if (ind.type === 'price_lines') {
+                if (!Array.isArray(ind.data)) return;
+                this.indicatorPriceLines = this.indicatorPriceLines || {};
+                if (this.indicatorPriceLines[ind.id]) {
+                    this.indicatorPriceLines[ind.id].forEach(l => this.mainSeries.removePriceLine(l));
+                }
+                this.indicatorPriceLines[ind.id] = [];
+                ind.data.forEach(lineData => {
+                    const line = this.mainSeries.createPriceLine({
+                        price: lineData.price,
+                        color: lineData.color,
+                        lineWidth: lineData.width || 2,
+                        lineStyle: 2,
+                        axisLabelVisible: true,
+                        title: ind.title
+                    });
+                    this.indicatorPriceLines[ind.id].push(line);
+                });
                 return;
             }
 
