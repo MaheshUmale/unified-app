@@ -126,6 +126,7 @@ class ChartInstance {
                 horzLines: { color: isLight ? '#f1f5f9' : 'rgba(255,255,255,0.05)' }
             },
             timeScale: {
+                rightOffset: 20,
                 timeVisible: true,
                 secondsVisible: false,
                 borderColor: isLight ? '#e2e8f0' : 'rgba(255,255,255,0.1)',
@@ -335,33 +336,37 @@ class ChartInstance {
 
         if (visible) {
             const data = await this.engine.dataManager.fetchOIProfile(this.symbol);
-            if (data && data.chain) {
-                // Get top 5 call and top 5 put OI strikes
-                const calls = data.chain.filter(c => c.option_type === 'call').sort((a,b) => b.oi - a.oi).slice(0, 5);
-                const puts = data.chain.filter(c => c.option_type === 'put').sort((a,b) => b.oi - a.oi).slice(0, 5);
+            if (data && data.chain && data.spot_price) {
+                const spot = data.spot_price;
+                const strikes = [...new Set(data.chain.map(c => c.strike))].sort((a, b) => a - b);
 
-                calls.forEach(c => {
-                    const line = this.mainSeries.createPriceLine({
-                        price: c.strike,
-                        color: 'rgba(239, 68, 68, 0.4)',
-                        lineWidth: 2,
-                        lineStyle: 0,
-                        axisLabelVisible: true,
-                        title: `C-OI: ${(c.oi/1000000).toFixed(1)}M`
-                    });
-                    this.oiLines.push(line);
+                let atmIdx = 0;
+                let minDiff = Infinity;
+                strikes.forEach((s, i) => {
+                    const diff = Math.abs(s - spot);
+                    if (diff < minDiff) { minDiff = diff; atmIdx = i; }
                 });
 
-                puts.forEach(p => {
-                    const line = this.mainSeries.createPriceLine({
-                        price: p.strike,
-                        color: 'rgba(34, 197, 94, 0.4)',
-                        lineWidth: 2,
-                        lineStyle: 0,
-                        axisLabelVisible: true,
-                        title: `P-OI: ${(p.oi/1000000).toFixed(1)}M`
-                    });
-                    this.oiLines.push(line);
+                const start = Math.max(0, atmIdx - 10);
+                const end = Math.min(strikes.length, atmIdx + 11);
+                const targetStrikes = strikes.slice(start, end);
+
+                targetStrikes.forEach(strike => {
+                    const call = data.chain.find(c => c.strike === strike && c.option_type === 'call');
+                    const put = data.chain.find(c => c.strike === strike && c.option_type === 'put');
+
+                    if (call && call.oi > 0) {
+                        this.oiLines.push(this.mainSeries.createPriceLine({
+                            price: strike, color: 'rgba(239, 68, 68, 0.4)', lineWidth: 1, lineStyle: 0,
+                            axisLabelVisible: true, title: `C-OI: ${(call.oi/1000000).toFixed(1)}M`
+                        }));
+                    }
+                    if (put && put.oi > 0) {
+                        this.oiLines.push(this.mainSeries.createPriceLine({
+                            price: strike, color: 'rgba(34, 197, 94, 0.4)', lineWidth: 1, lineStyle: 0,
+                            axisLabelVisible: true, title: `P-OI: ${(put.oi/1000000).toFixed(1)}M`
+                        }));
+                    }
                 });
             }
         }
@@ -376,13 +381,21 @@ class ChartInstance {
         zoomOut.className = 'chart-ctrl-btn';
         zoomOut.title = 'Zoom Out';
         zoomOut.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/></svg>`;
-        zoomOut.onclick = (e) => { e.stopPropagation(); this.chart.timeScale().zoomOut(); };
+        zoomOut.onclick = (e) => {
+            e.stopPropagation();
+            const ts = this.chart.timeScale();
+            ts.applyOptions({ barSpacing: Math.max(0.5, ts.options().barSpacing / 1.2) });
+        };
 
         const zoomIn = document.createElement('button');
         zoomIn.className = 'chart-ctrl-btn';
         zoomIn.title = 'Zoom In';
         zoomIn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>`;
-        zoomIn.onclick = (e) => { e.stopPropagation(); this.chart.timeScale().zoomIn(); };
+        zoomIn.onclick = (e) => {
+            e.stopPropagation();
+            const ts = this.chart.timeScale();
+            ts.applyOptions({ barSpacing: Math.min(50, ts.options().barSpacing * 1.2) });
+        };
 
         const reset = document.createElement('button');
         reset.className = 'chart-ctrl-btn';

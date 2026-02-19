@@ -295,6 +295,7 @@ class OrderFlowUI {
             layout: { background: { type: 'solid', color: 'transparent' }, textColor: '#7d8590' },
             grid: { vertLines: { color: 'rgba(255,255,255,0.02)' }, horzLines: { color: 'rgba(255,255,255,0.02)' } },
             timeScale: {
+                rightOffset: 15,
                 timeVisible: true,
                 secondsVisible: true,
                 borderColor: 'rgba(255,255,255,0.1)',
@@ -401,10 +402,12 @@ class OrderFlowUI {
         });
 
         document.getElementById('zoomInBtn')?.addEventListener('click', () => {
-            this.charts.main.timeScale().zoomIn();
+            const ts = this.charts.main.timeScale();
+            ts.applyOptions({ barSpacing: Math.min(100, ts.options().barSpacing * 1.2) });
         });
         document.getElementById('zoomOutBtn')?.addEventListener('click', () => {
-            this.charts.main.timeScale().zoomOut();
+            const ts = this.charts.main.timeScale();
+            ts.applyOptions({ barSpacing: Math.max(1, ts.options().barSpacing / 1.2) });
         });
         document.getElementById('resetZoomBtn')?.addEventListener('click', () => {
             this.charts.main.timeScale().fitContent();
