@@ -109,6 +109,7 @@ class ChartInstance {
         this.drawings = [];
         this.lastCandle = null;
         this.showOIProfile = false;
+        this.showIndicators = true; // Enabled by default
         this.oiLines = [];
 
         this.initChart();

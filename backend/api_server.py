@@ -242,7 +242,9 @@ async def get_intraday(instrument_key: str, interval: str = '1'):
         
         indicators = []
         if candles:
-            df = pd.DataFrame(sorted(candles, key=lambda x: x[0]), columns=['ts', 'o', 'h', 'l', 'c', 'v'])
+            # Sort candles once ascending (oldest first)
+            candles = sorted(candles, key=lambda x: x[0])
+            df = pd.DataFrame(candles, columns=['ts', 'o', 'h', 'l', 'c', 'v'])
             # Standard EMAs
             for span, color in [(9, "#3b82f6"), (20, "#f97316")]:
                 ema = df['c'].ewm(span=span, adjust=False).mean()

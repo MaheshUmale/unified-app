@@ -118,10 +118,15 @@ class VolumeAnalyzer:
         df['fA'] = df['netF'] / df['hN'].replace(0, 1)
         df['dynP'] = df['baseP'] + (df['fA'] * df['c'] * df['fS'].fillna(0))
 
+        # Ensure no NaN values for JSON compatibility
+        df['rvol'] = df['rvol'].fillna(1.0)
+        df['evwma_final'] = pd.Series(evma).fillna(df['c']) # Fallback to close if evma is NaN
+        df['dynP'] = df['dynP'].fillna(df['baseP']).fillna(df['c']) # Multiple fallbacks
+
         return {
-            'rvol': df['rvol'].fillna(1.0).tolist(),
+            'rvol': [float(v) if np.isfinite(v) else 1.0 for v in df['rvol']],
             'markers': markers,
             'lines': lines,
-            'evwma': [{"time": int(ts), "value": float(v)} for ts, v in zip(df['ts'], df['evwma'])],
-            'dyn_pivot': [{"time": int(ts), "value": float(v)} for ts, v in zip(df['ts'], df['dynP'])]
+            'evwma': [{"time": int(ts), "value": float(v)} for ts, v in zip(df['ts'], df['evwma_final']) if np.isfinite(v)],
+            'dyn_pivot': [{"time": int(ts), "value": float(v)} for ts, v in zip(df['ts'], df['dynP']) if np.isfinite(v)]
         }
