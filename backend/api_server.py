@@ -255,13 +255,20 @@ async def get_intraday(instrument_key: str, interval: str = '1'):
             # Market Psychology Signals
             try:
                 from brain.MarketPsychologyAnalyzer import MarketPsychologyAnalyzer
-                zones, signals = MarketPsychologyAnalyzer().analyze(tv_candles)
+                zones, signals = MarketPsychologyAnalyzer().analyze(candles)
+                psych_markers = []
                 for ts, sig_type in signals.items():
+                    psych_markers.append({
+                        "time": int(ts.timestamp()),
+                        "position": "aboveBar" if "SHORT" in sig_type else "belowBar",
+                        "color": "#ef4444" if "SHORT" in sig_type else "#22c55e",
+                        "shape": "arrowDown" if "SHORT" in sig_type else "arrowUp",
+                        "text": sig_type
+                    })
+                if psych_markers:
                     indicators.append({
                         "id": "psych_signals", "type": "markers", "title": "Psychology",
-                        "data": [{"time": int(ts.timestamp()), "position": "aboveBar" if "SHORT" in sig_type else "belowBar",
-                                 "color": "#ef4444" if "SHORT" in sig_type else "#22c55e", "shape": "arrowDown" if "SHORT" in sig_type else "arrowUp",
-                                 "text": sig_type}]
+                        "data": psych_markers
                     })
             except Exception: pass
 

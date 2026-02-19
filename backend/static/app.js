@@ -171,7 +171,8 @@ class ChartInstance {
         // Horizontal line drawing support (Shift+Click)
         this.chart.subscribeClick((param) => {
             if (param.time && param.point) {
-                const isHlineActive = document.getElementById('drawingToolBtn')?.classList.contains('bg-blue-600');
+                const hBtn = document.getElementById('drawingToolBtn');
+                const isHlineActive = hBtn && hBtn.classList.contains('bg-blue-600');
                 if (isHlineActive || (param.sourceEvent && param.sourceEvent.shiftKey)) {
                     const price = this.mainSeries.coordinateToPrice(param.point.y);
                     if (price) this.addHorizontalLine(price);
@@ -300,8 +301,10 @@ class ChartInstance {
     }
 
     applyIndicators(indicators) {
+        if (!Array.isArray(indicators)) return;
         indicators.forEach(ind => {
             if (ind.type === 'markers') {
+                if (!Array.isArray(ind.data)) return;
                 const newMarkers = ind.data.map(m => ({
                     time: m.time, position: m.position, color: m.color, shape: m.shape, text: m.text
                 }));
@@ -318,6 +321,8 @@ class ChartInstance {
                 this.applyMarkers();
                 return;
             }
+
+            if (!Array.isArray(ind.data)) return;
 
             if (!this.indicatorSeries[ind.id]) {
                 const options = {
