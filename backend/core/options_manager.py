@@ -336,8 +336,12 @@ class OptionsManager:
             await asyncio.gather(self._task, self._tracking_task, return_exceptions=True)
         except: pass
         
-        for wss in self.wss_clients.values():
-            wss.stop()
+        for clients in self.wss_clients.values():
+            for wss in clients:
+                try:
+                    wss.stop()
+                except:
+                    pass
         self.wss_clients.clear()
         
         logger.info("Options management stopped")
@@ -362,20 +366,36 @@ class OptionsManager:
             else:
                 self.handle_wss_data(underlying, data)
 
-        # Check primary live streamer
-        primary_live = live_stream_registry.get_primary()
-        if primary_live and getattr(primary_live, 'wss', None) and hasattr(primary_live.wss, 'subscribed_keys'):
-             # If it's the Upstox streamer, we don't create a new instance
-             # We just ensure it's started and we'll subscribe symbols to it later
-             primary_live.set_callback(on_data)
-             primary_live.start()
-             self.wss_clients[underlying] = primary_live
-             logger.info(f"Using primary LiveStream provider for {underlying} options")
-        else:
-             # Fallback to TradingView-based OptionsWSS (per underlying)
-             wss = OptionsWSS(underlying, on_data)
-             wss.start()
-             self.wss_clients[underlying] = wss
+        # Subscribe to all available live streamers for redundancy
+        providers = live_stream_registry.get_all()
+        self.wss_clients[underlying] = []
+
+        for provider in providers:
+            try:
+                # Upstox is a singleton provider, TradingView (OptionsWSS) is per-underlying
+                if getattr(provider, 'wss', None) and hasattr(provider.wss, 'subscribed_keys'):
+                    # Upstox provider
+                    provider.set_callback(on_data)
+                    provider.start()
+                    self.wss_clients[underlying].append(provider)
+                    logger.info(f"Using LiveStream provider {type(provider).__name__} for {underlying} options")
+                elif provider.is_connected():
+                    # Any other connected provider
+                    provider.set_callback(on_data)
+                    self.wss_clients[underlying].append(provider)
+
+            except Exception as e:
+                logger.error(f"Failed to setup provider {type(provider).__name__} for {underlying}: {e}")
+
+        # Always fallback/include TradingView-based OptionsWSS (per underlying)
+        # as it provides robust option-specific fields
+        try:
+            wss = OptionsWSS(underlying, on_data)
+            wss.start()
+            self.wss_clients[underlying].append(wss)
+            logger.info(f"Started dedicated OptionsWSS for {underlying}")
+        except Exception as e:
+            logger.error(f"Failed to start OptionsWSS for {underlying}: {e}")
 
     def handle_wss_data(self, underlying: str, data: Any):
         symbol = data.get('symbol')
@@ -480,10 +500,14 @@ class OptionsManager:
 
         self.monitored_symbols[underlying] = new_monitored_symbols
 
-        # Ensure WSS is subscribed to these
+        # Ensure ALL WSS clients are subscribed to these
         if underlying in self.wss_clients and new_monitored_symbols:
-            self.wss_clients[underlying].add_symbols(list(new_monitored_symbols))
-            logger.debug(f"Dynamic ATM tracking updated for {underlying}: {len(new_monitored_symbols)} symbols")
+            for wss in self.wss_clients[underlying]:
+                try:
+                    wss.add_symbols(list(new_monitored_symbols))
+                except Exception as e:
+                    logger.warning(f"Failed to add symbols to WSS client: {e}")
+            logger.debug(f"Dynamic ATM tracking updated for {underlying}: {len(new_monitored_symbols)} symbols across {len(self.wss_clients[underlying])} providers")
     
     async def take_snapshot(self, underlying: str):
         """Take enhanced snapshot with all metrics."""

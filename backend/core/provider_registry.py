@@ -74,6 +74,7 @@ def initialize_default_providers():
         options_data_registry.register("upstox", UpstoxOptionsProvider(), priority=20)
 
     # Historical Data
-    historical_data_registry.register("tradingview", TradingViewHistoricalProvider(), priority=10)
+    # TradingView is preferred for charts due to reliable volume and multiple timeframes
+    historical_data_registry.register("tradingview", TradingViewHistoricalProvider(), priority=20)
     if UPSTOX_ACCESS_TOKEN:
-        historical_data_registry.register("upstox", UpstoxHistoricalProvider(), priority=20)
+        historical_data_registry.register("upstox", UpstoxHistoricalProvider(), priority=10)
