@@ -15,6 +15,7 @@ from typing import Any, Optional, List
 from contextlib import asynccontextmanager
 from logging.config import dictConfig
 from urllib.parse import unquote
+import re
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.staticfiles import StaticFiles
@@ -62,6 +63,20 @@ def format_error(e: Exception, message: str = "Internal Server Error"):
     logging.error(f"{message}: {str(e)}")
     return {"status": "error", "message": str(e)}
 
+def validate_sql(sql: str):
+    """
+    SECURITY: Basic validation to ensure only SELECT queries are executed via the API.
+    Prevents DML/DDL operations from being triggered via the unauthenticated DB Explorer.
+    """
+    forbidden = ["INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE", "TRUNCATE", "REPLACE"]
+    # Ensure it starts with SELECT
+    if not re.match(r"^\s*SELECT\b", sql, re.IGNORECASE):
+        raise HTTPException(400, "Only SELECT queries are allowed via this endpoint")
+    # Check for forbidden keywords with word boundaries
+    for word in forbidden:
+        if re.search(rf"\b{word}\b", sql, re.IGNORECASE):
+            raise HTTPException(400, f"Query contains forbidden keyword: {word}")
+
 # ==================== INITIALIZATION ====================
 
 dictConfig(LOGGING_CONFIG)
@@ -97,9 +112,11 @@ fastapi_app = FastAPI(title="ProTrade Enhanced API", lifespan=lifespan)
 sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*', ping_timeout=60, ping_interval=25)
 main_loop = None
 
+# SECURITY: Restricted CORS origins to prevent cross-site request forgery and unauthorized access
+# from malicious websites when the server is running on a local machine.
 fastapi_app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:3001", "http://127.0.0.1:3001"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -401,11 +418,14 @@ async def get_db_tables():
 async def run_db_query(req: Request):
     sql = (await req.json()).get("sql")
     if not sql: raise HTTPException(400, "SQL required")
+    validate_sql(sql)
     return {"results": await asyncio.to_thread(db.query, sql, json_serialize=True)}
 
 @fastapi_app.post("/api/db/export")
 async def export_db_query(req: Request):
     sql = (await req.json()).get("sql")
+    if not sql: raise HTTPException(400, "SQL required")
+    validate_sql(sql)
     res = await asyncio.to_thread(db.query, sql, json_serialize=False)
     if not res: raise HTTPException(400, "No data")
 
