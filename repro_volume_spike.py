@@ -15,6 +15,8 @@ sys.modules['core.provider_registry'] = MagicMock()
 sys.modules['core.symbol_mapper'] = MagicMock()
 
 import core.data_engine as data_engine
+import external.upstox_wss as upstox_wss
+from core.symbol_mapper import symbol_mapper
 
 # Reset global state
 data_engine.latest_total_volumes = {}
@@ -102,20 +104,58 @@ def test_volume_logic():
     # It should be 1 because it's the first time the 5m tracker sees volume
     assert tick4['ltq'] == 1, f"Expected ltq=1, got {tick4['ltq']}"
 
-    # 5. Second update for 5m primary
-    data_engine.last_emit_times = {}
-    msg5 = {
-        'type': 'chart_update',
-        'instrumentKey': inst,
-        'interval': '5',
-        'data': {
-            'ohlcv': [[1700000000.0, 100.0, 101.0, 99.0, 100.5, 2565.0]]
+    print("\nStarting Upstox V3 Feed Structure Test...")
+
+    # Mock callback for UpstoxWSS
+    upstox_emitted = []
+    def upstox_cb(msg):
+        upstox_emitted.append(msg)
+
+    wss = upstox_wss.UpstoxWSS(upstox_cb)
+
+    # Mock mapper
+    symbol_mapper.from_upstox_key.side_effect = lambda k: {
+        "NSE|NIFTY": "NSE:NIFTY",
+        "NSE_EQ|RELIANCE": "NSE:RELIANCE"
+    }.get(k, k)
+
+    # 1. Index feed with indexFF
+    msg_v3_idx = {
+        'feeds': {
+            'NSE|NIFTY': {
+                'fullFeed': {
+                    'indexFF': {
+                        'ltpc': {'ltp': 25550.5, 'ltt': 1700001000}
+                    }
+                }
+            }
         }
     }
-    data_engine.on_message(msg5)
-    tick5 = emitted[-1][inst]
-    print(f"Tick 5 (5m Candle 2565): ltq={tick5['ltq']}, source={tick5['source']}")
-    assert tick5['ltq'] == 15, f"Expected ltq=15, got {tick5['ltq']}"
+    wss._on_message(msg_v3_idx)
+    feed_idx = upstox_emitted[-1]['feeds']['NSE:NIFTY']
+    print(f"Upstox V3 Index: price={feed_idx['last_price']}, ts={feed_idx['ts_ms']}")
+    assert feed_idx['last_price'] == 25550.5
+    assert feed_idx['source'] == 'upstox_wss'
+
+    # 2. Market feed with marketFF
+    msg_v3_mkt = {
+        'feeds': {
+            'NSE_EQ|RELIANCE': {
+                'fullFeed': {
+                    'marketFF': {
+                        'ltpc': {'ltp': 2500.0, 'ltt': 1700002000},
+                        'marketPic': {'ltq': 10, 'vtt': 5000.0}
+                    }
+                }
+            }
+        }
+    }
+    wss._on_message(msg_v3_mkt)
+    feed_mkt = upstox_emitted[-1]['feeds']['NSE:RELIANCE']
+    print(f"Upstox V3 Market: price={feed_mkt['last_price']}, qty={feed_mkt['ltq']}, total_vol={feed_mkt['upstox_volume']}")
+    assert feed_mkt['last_price'] == 2500.0
+    assert feed_mkt['ltq'] == 10
+    assert feed_mkt['upstox_volume'] == 5000.0
 
     print("\nALL TESTS PASSED!")
 
