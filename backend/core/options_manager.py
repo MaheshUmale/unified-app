@@ -15,7 +15,7 @@ import pandas as pd
 from config import OPTIONS_UNDERLYINGS, SNAPSHOT_CONFIG
 from db.local_db import db
 from core.interfaces import ILiveStreamProvider
-from core.provider_registry import options_data_registry, historical_data_registry
+from core.provider_registry import options_data_registry, historical_data_registry, live_stream_registry
 from external.tv_options_wss import OptionsWSS
 
 # Import new modules
@@ -347,11 +347,35 @@ class OptionsManager:
             return
 
         def on_data(data):
-            self.handle_wss_data(underlying, data)
+            # Special handling for singleton providers (Upstox) vs per-underlying (TV)
+            # If data has 'feeds', it might be from a unified streamer
+            if 'feeds' in data:
+                for symbol, tick in data['feeds'].items():
+                    # Map back to what handle_wss_data expects
+                    self.handle_wss_data(underlying, {
+                        'symbol': symbol,
+                        'lp': tick.get('last_price'),
+                        'volume': tick.get('ltq') or tick.get('upstox_volume'),
+                        'bid': tick.get('bid'),
+                        'ask': tick.get('ask')
+                    })
+            else:
+                self.handle_wss_data(underlying, data)
 
-        wss = OptionsWSS(underlying, on_data)
-        wss.start()
-        self.wss_clients[underlying] = wss
+        # Check primary live streamer
+        primary_live = live_stream_registry.get_primary()
+        if primary_live and getattr(primary_live, 'wss', None) and hasattr(primary_live.wss, 'subscribed_keys'):
+             # If it's the Upstox streamer, we don't create a new instance
+             # We just ensure it's started and we'll subscribe symbols to it later
+             primary_live.set_callback(on_data)
+             primary_live.start()
+             self.wss_clients[underlying] = primary_live
+             logger.info(f"Using primary LiveStream provider for {underlying} options")
+        else:
+             # Fallback to TradingView-based OptionsWSS (per underlying)
+             wss = OptionsWSS(underlying, on_data)
+             wss.start()
+             self.wss_clients[underlying] = wss
 
     def handle_wss_data(self, underlying: str, data: Any):
         symbol = data.get('symbol')

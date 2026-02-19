@@ -42,19 +42,34 @@ class UpstoxWSS:
         logger.info("Upstox WSS Streamer stopped")
 
     def subscribe(self, symbols, interval="1"):
-        upstox_keys = [symbol_mapper.to_upstox_key(s) for s in symbols]
+        if not symbols: return
+
+        upstox_keys = []
+        for s in symbols:
+            k = symbol_mapper.to_upstox_key(s)
+            if k: upstox_keys.append(k)
+
         new_keys = [k for k in upstox_keys if k not in self.subscribed_keys]
+
+        if not new_keys:
+            return
 
         self.subscribed_keys.update(new_keys)
 
-        if new_keys and self.is_running and self.streamer:
+        if self.is_running and self.streamer:
             try:
                 # Check if websocket is actually connected before subscribing
-                if hasattr(self.streamer, 'feeder') and self.streamer.feeder.ws and self.streamer.feeder.ws.sock and self.streamer.feeder.ws.sock.connected:
+                is_connected = False
+                if hasattr(self.streamer, 'feeder') and self.streamer.feeder and hasattr(self.streamer.feeder, 'ws'):
+                    ws = self.streamer.feeder.ws
+                    if ws and hasattr(ws, 'sock') and ws.sock and ws.sock.connected:
+                        is_connected = True
+
+                if is_connected:
                     self.streamer.subscribe(new_keys, "full")
                     logger.info(f"Upstox WSS subscribed to: {new_keys}")
                 else:
-                    logger.info(f"Upstox WSS subscription for {new_keys} queued (waiting for connection)")
+                    logger.info(f"Upstox WSS subscription for {len(new_keys)} keys queued (waiting for connection)")
             except Exception as e:
                 logger.error(f"Error subscribing in Upstox WSS: {e}")
 
