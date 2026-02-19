@@ -469,7 +469,12 @@ class MultiChartEngine {
         document.querySelectorAll('.tf-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 const c = this.charts[this.activeIdx];
-                if (c) c.switchSymbol(c.symbol, btn.dataset.interval);
+                if (c) {
+                    // Visual feedback
+                    document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    c.switchSymbol(c.symbol, btn.dataset.interval);
+                }
             });
         });
 
@@ -520,6 +525,14 @@ class MultiChartEngine {
         document.getElementById('replayNextBtn').addEventListener('click', () => this.replay.next());
         document.getElementById('replayPrevBtn').addEventListener('click', () => this.replay.prev());
         document.getElementById('exitReplayBtn').addEventListener('click', () => this.replay.exit());
+
+        document.getElementById('maximizeBtn')?.addEventListener('click', () => {
+            const c = this.charts[this.activeIdx];
+            if (c) {
+                const url = `/?symbol=${encodeURIComponent(c.symbol)}&interval=${c.interval}`;
+                window.open(url, '_blank');
+            }
+        });
     }
 
     setLayout(n) {
@@ -547,7 +560,10 @@ class MultiChartEngine {
             this.charts.push(c);
 
             const saved = JSON.parse(localStorage.getItem(`chart_config_${i}`));
-            if (saved) {
+            if (i === 0 && window.INITIAL_CONFIG && window.INITIAL_CONFIG.symbol !== "None") {
+                // Use URL params for the primary chart
+                c.switchSymbol(window.INITIAL_CONFIG.symbol, window.INITIAL_CONFIG.interval);
+            } else if (saved) {
                 c.symbol = saved.symbol;
                 c.interval = saved.interval;
                 c.chartType = saved.chartType;

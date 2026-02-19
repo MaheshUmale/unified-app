@@ -202,12 +202,19 @@ async def get_intraday(instrument_key: str, interval: str = '1'):
 
     try:
         clean_key = unquote(instrument_key)
-        # Use registry for historical data
-        provider = historical_data_registry.get_primary()
-        if not provider:
-            return {"status": "error", "message": "No historical provider available"}
+        # Use registry for historical data with automatic fallback
+        candles = []
+        for provider in historical_data_registry.get_all():
+            try:
+                candles = await provider.get_hist_candles(clean_key, interval, 1000)
+                if candles and len(candles) > 0:
+                    break
+            except Exception as e:
+                logger.warning(f"Historical provider {type(provider).__name__} failed: {e}")
+                continue
 
-        candles = await provider.get_hist_candles(clean_key, interval, 1000)
+        if not candles:
+            return {"status": "error", "message": "No historical data available from any provider"}
         
         indicators = []
         if candles:
@@ -402,7 +409,12 @@ async def export_db_query(req: Request):
 # ==================== STATIC ROUTES ====================
 
 @fastapi_app.get("/")
-async def serve_index(request: Request): return templates.TemplateResponse("index.html", {"request": request})
+async def serve_index(request: Request, symbol: Optional[str] = None, interval: Optional[str] = None):
+    return templates.TemplateResponse("index.html", {
+        "request": request,
+        "initial_symbol": symbol or "NSE:NIFTY",
+        "initial_interval": interval or "1"
+    })
 
 @fastapi_app.get("/options")
 async def serve_options(request: Request): return templates.TemplateResponse("options_dashboard.html", {"request": request})

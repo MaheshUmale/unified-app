@@ -165,22 +165,26 @@ def on_message(message: Union[Dict, str]):
             feed_datum['ts_ms'] = ts_val
 
             delta_vol = 0
-            is_index = inst_key in UPSTOX_INDEX_MAP or "INDEX" in inst_key
+            is_index = inst_key in UPSTOX_INDEX_MAP or "INDEX" in inst_key.upper()
+
+            # Use tv_volume if present, otherwise try upstox_volume
+            # Only update latest_total_volumes if volume is > 0 to avoid resetting
+            # and causing spikes when switching between sources (Upstox/TV)
             curr_vol = feed_datum.get('tv_volume')
-            if curr_vol is None and not is_index:
+            if curr_vol is None:
                 curr_vol = feed_datum.get('upstox_volume')
-            if curr_vol is not None:
+
+            if curr_vol is not None and float(curr_vol) > 0:
                 curr_vol = float(curr_vol)
-                if inst_key in latest_total_volumes:
+                if inst_key in latest_total_volumes and latest_total_volumes[inst_key] > 0:
                     delta_vol = max(0, curr_vol - latest_total_volumes[inst_key])
                 else:
                     delta_vol = 0
                 latest_total_volumes[inst_key] = curr_vol
 
-            # If volume is 0 but price changed, and it's an index, we might want a small synthetic qty
-            # to make sure the footprint chart renders something.
-            if delta_vol == 0 and feed_datum.get('source') == 'tv_chart_fallback':
-                delta_vol = 1 # Minimal volume for chart-derived ticks
+            # Ensure minimum volume for indices to trigger Orderflow footprints
+            if is_index and delta_vol == 0:
+                delta_vol = 1
 
             feed_datum['ltq'] = int(delta_vol)
             sym_feeds[inst_key] = feed_datum

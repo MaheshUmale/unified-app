@@ -18,7 +18,13 @@ class UpstoxAPIClient:
         self.api_client = upstox_client.ApiClient(self.configuration)
 
     async def get_hist_candles(self, symbol: str, interval: str, count: int) -> List[List]:
-        """Fetch historical candles from Upstox."""
+        """Fetch historical candles from Upstox with client-side aggregation for unsupported timeframes."""
+        supported_intervals = ["1", "30", "1D", "1W", "1M"]
+
+        # If the interval is not natively supported by Upstox, we'll fetch 1-min and aggregate
+        needs_aggregation = interval not in supported_intervals and interval.isdigit()
+        fetch_interval = "1" if needs_aggregation else interval
+
         logger.info(f"Upstox fetching historical candles for {symbol} (interval={interval}, count={count})")
         try:
             instrument_key = symbol_mapper.to_upstox_key(symbol)
@@ -28,15 +34,23 @@ class UpstoxAPIClient:
 
             def fetch():
                 try:
+                    # Map to Upstox specific interval strings
+                    upstox_interval = "1minute" if fetch_interval == "1" else \
+                                      "30minute" if fetch_interval == "30" else \
+                                      "day" if fetch_interval in ["1D", "D"] else \
+                                      "week" if fetch_interval in ["1W", "W"] else \
+                                      "month" if fetch_interval in ["1M", "M"] else "1minute"
+
                     # Try intraday first if it's a small interval
-                    if interval != "1D":
-                         res = history_api.get_intra_day_candle_data(instrument_key, u_interval, "2.0")
+                    if upstox_interval in ["1minute", "30minute"]:
+                         res = history_api.get_intra_day_candle_data(instrument_key, upstox_interval, "2.0")
                          if res and res.status == "success" and res.data and res.data.candles:
                              return res
 
                     # Fallback to historical for larger window or if intraday empty
-                    from_date = (datetime.now() - (timedelta(days=7) if interval != "1D" else timedelta(days=365))).strftime("%Y-%m-%d")
-                    res = history_api.get_historical_candle_data1(instrument_key, u_interval, now, from_date, "2.0")
+                    days_back = 7 if upstox_interval == "1minute" else 30 if upstox_interval == "30minute" else 365
+                    from_date = (datetime.now() - timedelta(days=days_back)).strftime("%Y-%m-%d")
+                    res = history_api.get_historical_candle_data1(instrument_key, upstox_interval, now, from_date, "2.0")
                     return res
                 except ApiException as e:
                     logger.error(f"Upstox API Error fetching candles for {symbol}: {e}")
@@ -54,6 +68,44 @@ class UpstoxAPIClient:
                     except Exception as e:
                         logger.warning(f"Error parsing Upstox candle: {e}")
                 formatted.sort(key=lambda x: x[0])
+
+                # Client-side aggregation if needed (e.g. 1m -> 5m)
+                if needs_aggregation:
+                    try:
+                        step = int(interval)
+                        agg = []
+                        for i in range(0, len(formatted), step):
+                            chunk = formatted[i:i+step]
+                            if not chunk: continue
+                            # [ts, o, h, l, c, v]
+                            ts = chunk[0][0]
+                            o = chunk[0][1]
+                            h = max(c[2] for c in chunk)
+                            l = min(c[3] for c in chunk)
+                            c = chunk[-1][4]
+                            v = sum(c[5] for c in chunk)
+                            agg.append([ts, o, h, l, c, v])
+                        formatted = agg
+                        logger.info(f"Aggregated {len(agg)} candles for interval {interval}")
+                    except Exception as e:
+                        logger.error(f"Aggregation failed: {e}")
+
+                # Hybrid Volume for Indices: Fetch from TradingView
+                is_index = any(idx in symbol.upper() for idx in ["NIFTY", "BANKNIFTY", "FINNIFTY"])
+                if is_index:
+                    try:
+                        from external.tv_api import tv_api
+                        tv_candles = await asyncio.to_thread(tv_api.get_hist_candles, symbol, interval, count + 50)
+                        if tv_candles:
+                            # Map TV candles by timestamp
+                            tv_map = {c[0]: c[5] for c in tv_candles} # ts -> volume
+                            for c in formatted:
+                                if c[0] in tv_map:
+                                    c[5] = int(tv_map[c[0]])
+                            logger.info(f"Merged TradingView volume for index {symbol}")
+                    except Exception as e:
+                        logger.error(f"Failed to merge TradingView volume: {e}")
+
                 return formatted[-count:]
             return []
         except Exception as e:

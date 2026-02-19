@@ -253,6 +253,12 @@
         </div>
     </main>
 
-    <script src="/static/app.js?v=3"></script>
+    <script>
+        window.INITIAL_CONFIG = {
+            symbol: "{{ initial_symbol }}",
+            interval: "{{ initial_interval }}"
+        };
+    </script>
+    <script src="/static/app.js?v=4"></script>
 </body>
 </html>
