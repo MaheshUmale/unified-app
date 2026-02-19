@@ -38,13 +38,20 @@ class TradingViewAPI:
             self.tv = None
             logger.warning("tvDatafeed not installed, falling back to Streamer only")
 
-        self.streamer = Streamer(export_result=False)
+        self._init_streamer()
         self.symbol_map = {
             'NIFTY': {'symbol': 'NIFTY', 'exchange': 'NSE'},
             'BANKNIFTY': {'symbol': 'BANKNIFTY', 'exchange': 'NSE'},
             'FINNIFTY': {'symbol': 'CNXFINANCE', 'exchange': 'NSE'},
             'INDIA VIX': {'symbol': 'INDIAVIX', 'exchange': 'NSE'}
         }
+
+    def _init_streamer(self):
+        try:
+            self.streamer = Streamer(export_result=False)
+        except Exception as e:
+            logger.error(f"Failed to initialize TV Streamer: {e}")
+            self.streamer = None
 
     def get_hist_candles(self, symbol_or_hrn, interval_min='1', n_bars=1000):
         try:
@@ -79,6 +86,8 @@ class TradingViewAPI:
                 if interval_min == '60': tf = '1h'
 
                 logger.info(f"Using timeframe {tf} for Streamer (interval_min={interval_min})")
+
+                if not self.streamer: self._init_streamer()
 
                 with contextlib.redirect_stdout(io.StringIO()):
                     stream = self.streamer.stream(

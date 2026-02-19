@@ -32,6 +32,10 @@ class TradingViewLiveStreamProvider(ILiveStreamProvider):
     def unsubscribe(self, symbol: str, interval: str = "1"):
         self.wss.unsubscribe(symbol, interval)
 
+    def add_symbols(self, symbols: List[str]):
+        """Alias for subscribe to match OptionsWSS interface."""
+        self.subscribe(symbols)
+
     def set_callback(self, callback: Callable):
         if callback not in self.callbacks:
             self.callbacks.append(callback)

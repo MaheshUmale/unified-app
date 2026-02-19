@@ -94,7 +94,7 @@ class UpstoxAPIClient:
                 is_index = any(idx in symbol.upper() for idx in ["NIFTY", "BANKNIFTY", "FINNIFTY"])
                 if is_index:
                     try:
-                        from external.tv_api import tv_api
+                        from .tv_api import tv_api
                         tv_candles = await asyncio.to_thread(tv_api.get_hist_candles, symbol, interval, count + 50)
                         if tv_candles:
                             # Map TV candles by timestamp

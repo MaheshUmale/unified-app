@@ -606,7 +606,11 @@ class OptionsManager:
         except Exception as e:
             logger.error(f"Error in multi-layer spot discovery for {underlying}: {e}")
         
-        logger.error(f"CRITICAL: Could not discover any Spot Price for {underlying}")
+        # Only log critical if we've tried all fallbacks and it's not the very beginning of startup
+        if not self.running:
+            logger.warning(f"Spot Price discovery skipped for {underlying} (Manager not fully started)")
+        else:
+            logger.error(f"CRITICAL: Could not discover any Spot Price for {underlying}")
         return 0
     
     async def _fetch_oi_data(self, underlying: str) -> tuple:
