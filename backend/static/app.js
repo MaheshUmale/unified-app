@@ -248,13 +248,23 @@ class ChartInstance {
         const duration = this.getIntervalSeconds();
         const candleTime = ts - (ts % duration);
 
+        let ltq = parseInt(quote.ltq || 0);
+        if (ltq < 0) ltq = 0;
+
+        // Safeguard against extreme volume spikes (e.g. > 1M in a single tick for indices)
+        const isIndex = this.symbol.includes('NIFTY') || this.symbol.includes('SENSEX') || this.symbol.includes('BANKEX');
+        if (isIndex && ltq > 1000000) {
+            console.warn(`[Chart] Extreme volume spike detected for ${this.symbol}: ${ltq}. Clamping to 0.`);
+            ltq = 0;
+        }
+
         if (!this.lastCandle || candleTime > this.lastCandle.time) {
-            this.lastCandle = { time: candleTime, open: price, high: price, low: price, close: price, volume: quote.ltq || 0 };
+            this.lastCandle = { time: candleTime, open: price, high: price, low: price, close: price, volume: ltq };
         } else {
             this.lastCandle.close = price;
             this.lastCandle.high = Math.max(this.lastCandle.high, price);
             this.lastCandle.low = Math.min(this.lastCandle.low, price);
-            this.lastCandle.volume += (quote.ltq || 0);
+            this.lastCandle.volume += ltq;
         }
 
         this.fullHistory.candles.set(this.lastCandle.time, { ...this.lastCandle });
@@ -271,6 +281,16 @@ class ChartInstance {
                 const c = { time: v[0], open: v[1], high: v[2], low: v[3], close: v[4], volume: v[5] };
                 this.fullHistory.candles.set(c.time, c);
                 this.mainSeries.update(c);
+
+                this.volumeSeries.update({
+                    time: c.time, value: c.volume,
+                    color: c.close >= c.open ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'
+                });
+
+                // Update lastCandle reference if this is a newer or current candle
+                if (!this.lastCandle || c.time >= this.lastCandle.time) {
+                    this.lastCandle = c;
+                }
             });
         }
         if (data.indicators) {

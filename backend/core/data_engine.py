@@ -27,6 +27,20 @@ main_event_loop = None
 latest_total_volumes = {}
 # Track subscribers per (instrumentKey, interval)
 room_subscribers = {} # (instrumentKey, interval) -> set of sids
+
+def get_primary_interval(instrument_key: str) -> str:
+    """Find the smallest active interval for an instrument to act as the primary tick source."""
+    instrument_key = instrument_key.upper()
+    active = []
+    for (ik, interval) in room_subscribers.keys():
+        if ik == instrument_key:
+            if interval.isdigit():
+                active.append(int(interval))
+            elif interval == 'D':
+                active.append(1440)
+    if not active: return "1"
+    return str(min(active))
+
 # Track last processed state to avoid redundant ticks
 last_processed_tick = {} # instrumentKey -> {ts_ms, price, volume}
 
@@ -102,7 +116,7 @@ def on_message(message: Union[Dict, str]):
         # Handle Chart/OHLCV Updates - Indices often update primarily here
         if data.get('type') == 'chart_update':
             instrument_key = data.get('instrumentKey')
-            interval = data.get('interval')
+            interval = str(data.get('interval', '1'))
             if instrument_key:
                 payload = data['data']
                 if isinstance(payload, dict):
@@ -113,7 +127,8 @@ def on_message(message: Union[Dict, str]):
                 emit_event('chart_update', payload, room=instrument_key.upper())
 
                 # Synthetic Tick Generation for indices from chart updates
-                if payload.get('ohlcv'):
+                # Only generate ticks from the most granular (primary) interval to avoid double-counting
+                if payload.get('ohlcv') and interval == get_primary_interval(instrument_key):
                     last_ohlcv = payload['ohlcv'][-1]
                     ts_ms = int(last_ohlcv[0] * 1000)
                     price = float(last_ohlcv[4])
@@ -127,7 +142,8 @@ def on_message(message: Union[Dict, str]):
                             'last_price': price,
                             'tv_volume': volume,
                             'ts_ms': ts_ms,
-                            'source': 'tv_chart_fallback'
+                            'source': 'tv_chart_fallback',
+                            'interval': interval
                         }
                         last_processed_tick[instrument_key] = {'ts_ms': ts_ms, 'price': price, 'volume': volume}
 
@@ -166,24 +182,40 @@ def on_message(message: Union[Dict, str]):
 
             delta_vol = 0
             is_index = inst_key in UPSTOX_INDEX_MAP or "INDEX" in inst_key.upper()
+            is_candle_source = feed_datum.get('source') == 'tv_chart_fallback'
+            interval = str(feed_datum.get('interval', '1'))
+
+            # Track daily and candle volumes separately, and per-interval for candles
+            if is_candle_source:
+                tracker_key = f"{inst_key}_{interval}_candle"
+            else:
+                tracker_key = f"{inst_key}_daily"
 
             # Use tv_volume if present, otherwise try upstox_volume
-            # Only update latest_total_volumes if volume is > 0 to avoid resetting
-            # and causing spikes when switching between sources (Upstox/TV)
             curr_vol = feed_datum.get('tv_volume')
             if curr_vol is None:
                 curr_vol = feed_datum.get('upstox_volume')
 
             if curr_vol is not None and float(curr_vol) > 0:
                 curr_vol = float(curr_vol)
-                if inst_key in latest_total_volumes and latest_total_volumes[inst_key] > 0:
-                    delta_vol = max(0, curr_vol - latest_total_volumes[inst_key])
-                else:
-                    delta_vol = 0
-                latest_total_volumes[inst_key] = curr_vol
+                prev_vol = latest_total_volumes.get(tracker_key, 0)
 
-            # Ensure minimum volume for indices to trigger Orderflow footprints
-            if is_index and delta_vol == 0:
+                if prev_vol > 0:
+                    # Detect reset (common in candle volume at the start of a new candle)
+                    if is_candle_source and curr_vol < prev_vol * 0.5:
+                        delta_vol = curr_vol
+                    else:
+                        delta_vol = max(0, curr_vol - prev_vol)
+                else:
+                    # First time seeing this source for this instrument
+                    delta_vol = 0
+
+                latest_total_volumes[tracker_key] = curr_vol
+
+            # Special case for Index synthetic volume:
+            # only force it if no other real volume has been detected for this tick
+            # and reduce frequency to avoid over-inflating bars (only for candle fallback)
+            if is_index and delta_vol <= 0 and is_candle_source:
                 delta_vol = 1
 
             feed_datum['ltq'] = int(delta_vol)
