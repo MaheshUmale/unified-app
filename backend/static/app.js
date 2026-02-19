@@ -78,7 +78,7 @@ class DataManager {
                 return {
                     hrn: data.hrn || '',
                     candles: data.candles.map(c => ({
-                        time: c[0], open: c[1], high: c[2], low: c[3], close: c[4], volume: c[5], rvol: c[6] || 1.0
+                        time: Number(c[0]), open: c[1], high: c[2], low: c[3], close: c[4], volume: c[5], rvol: c[6] || 1.0
                     })),
                     indicators: data.indicators || []
                 };
@@ -116,6 +116,7 @@ class ChartInstance {
 
     initChart() {
         const isLight = document.body.classList.contains('light-theme');
+        this.createLegend();
         this.chart = LightweightCharts.createChart(this.container, {
             layout: {
                 background: { type: 'solid', color: isLight ? '#f8fafc' : '#0f172a' },
@@ -183,7 +184,7 @@ class ChartInstance {
 
     setChartType(type) {
         this.chartType = type;
-        const data = Array.from(this.fullHistory.candles.values()).sort((a,b) => a.time - b.time);
+        const data = Array.from(this.fullHistory.candles.values()).sort((a,b) => Number(a.time) - Number(b.time));
         if (this.mainSeries) this.chart.removeSeries(this.mainSeries);
 
         const options = { lastValueVisible: false, priceLineVisible: false };
@@ -214,7 +215,10 @@ class ChartInstance {
         this.engine.setLoading(false);
 
         if (data.candles.length > 0) {
-            data.candles.forEach(c => this.fullHistory.candles.set(c.time, c));
+            data.candles.forEach(c => {
+                const ts = Number(c.time);
+                this.fullHistory.candles.set(ts, { ...c, time: ts });
+            });
             this.lastCandle = data.candles[data.candles.length - 1];
             this.renderData();
             this.chart.timeScale().fitContent();
@@ -223,6 +227,7 @@ class ChartInstance {
         if (data.indicators) {
             this.fullHistory.indicators_raw = data.indicators;
             this.applyIndicators(data.indicators);
+            this.updateLegend(data.indicators);
         }
         if (this.showOIProfile) this.toggleOIProfile(true);
 
@@ -249,10 +254,11 @@ class ChartInstance {
     }
 
     renderData() {
-        const candles = Array.from(this.fullHistory.candles.values()).sort((a,b) => a.time - b.time);
+        const candles = Array.from(this.fullHistory.candles.values()).sort((a,b) => Number(a.time) - Number(b.time));
 
         const coloredCandles = candles.map(c => ({
             ...c,
+            time: Number(c.time),
             color: this.getColorByRvol(c),
             borderColor: this.getColorByRvol(c),
             wickColor: this.getColorByRvol(c)
@@ -267,10 +273,15 @@ class ChartInstance {
     }
 
     updateRealtimeCandle(quote) {
+        // Block live updates during Replay for the active chart
+        if (this.engine.replay.isActive && this.engine.activeIdx === this.index) return;
+
         const price = parseFloat(quote.last_price);
         if (isNaN(price) || price <= 0) return;
 
-        const ts = Math.floor(quote.ts_ms / 1000);
+        const ts = Math.floor(Number(quote.ts_ms) / 1000);
+        if (isNaN(ts)) return;
+
         const duration = this.getIntervalSeconds();
         const candleTime = ts - (ts % duration);
 
@@ -309,9 +320,17 @@ class ChartInstance {
     }
 
     handleChartUpdate(data) {
+        // Block live updates during Replay for the active chart
+        if (this.engine.replay.isActive && this.engine.activeIdx === this.index) return;
+
         if (data.ohlcv) {
-            data.ohlcv.forEach(v => {
-                const c = { time: v[0], open: v[1], high: v[2], low: v[3], close: v[4], volume: v[5], rvol: v[6] || 1.0 };
+            const sortedOhlcv = [...data.ohlcv].sort((a, b) => a[0] - b[0]);
+
+            sortedOhlcv.forEach(v => {
+                const ts = Number(v[0]);
+                if (isNaN(ts)) return;
+
+                const c = { time: ts, open: v[1], high: v[2], low: v[3], close: v[4], volume: v[5], rvol: v[6] || 1.0 };
                 this.fullHistory.candles.set(c.time, c);
 
                 const coloredUpdate = {
@@ -320,14 +339,17 @@ class ChartInstance {
                     borderColor: this.getColorByRvol(c),
                     wickColor: this.getColorByRvol(c)
                 };
-                this.mainSeries.update(coloredUpdate);
 
-                this.volumeSeries.update({
-                    time: c.time, value: c.volume,
-                    color: c.close >= c.open ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'
-                });
+                try {
+                    this.mainSeries.update(coloredUpdate);
+                    this.volumeSeries.update({
+                        time: c.time, value: c.volume,
+                        color: c.close >= c.open ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'
+                    });
+                } catch (e) {
+                    console.warn("[Chart] Update failed (likely out of order):", e.message);
+                }
 
-                // Update lastCandle reference if this is a newer or current candle
                 if (!this.lastCandle || c.time >= this.lastCandle.time) {
                     this.lastCandle = c;
                 }
@@ -336,6 +358,7 @@ class ChartInstance {
         if (data.indicators) {
             this.fullHistory.indicators_raw = data.indicators;
             this.applyIndicators(data.indicators);
+            this.updateLegend(data.indicators);
         }
     }
 
@@ -345,18 +368,18 @@ class ChartInstance {
             if (ind.type === 'markers') {
                 if (!Array.isArray(ind.data)) return;
                 const newMarkers = ind.data.map(m => ({
-                    time: m.time, position: m.position, color: m.color, shape: m.shape, text: m.text
+                    time: Number(m.time), position: m.position, color: m.color, shape: m.shape, text: m.text
                 }));
 
                 // Merge markers, avoiding exact duplicates
-                const existingTimes = new Set(this.markers.map(m => `${m.time}_${m.text}`));
+                const existingTimes = new Set(this.markers.map(m => `${Number(m.time)}_${m.text}`));
                 newMarkers.forEach(m => {
-                    if (!existingTimes.has(`${m.time}_${m.text}`)) {
+                    if (!existingTimes.has(`${Number(m.time)}_${m.text}`)) {
                         this.markers.push(m);
                     }
                 });
 
-                this.markers.sort((a, b) => a.time - b.time);
+                this.markers.sort((a, b) => Number(a.time) - Number(b.time));
                 this.applyMarkers();
                 return;
             }
@@ -374,8 +397,8 @@ class ChartInstance {
                         color: lineData.color,
                         lineWidth: lineData.width || 2,
                         lineStyle: 2,
-                        axisLabelVisible: true,
-                        title: ind.title
+                        axisLabelVisible: !ind.hideLabel,
+                        title: ind.hideLabel ? "" : (lineData.title || ind.title)
                     });
                     this.indicatorPriceLines[ind.id].push(line);
                 });
@@ -392,7 +415,8 @@ class ChartInstance {
                 };
                 this.indicatorSeries[ind.id] = this.chart.addLineSeries(options);
             }
-            this.indicatorSeries[ind.id].setData(ind.data);
+            const cleanData = ind.data.map(d => ({ ...d, time: Number(d.time) }));
+            this.indicatorSeries[ind.id].setData(cleanData);
             this.indicatorSeries[ind.id].applyOptions({ visible: this.showIndicators && !this.hiddenPlots.has(ind.id) });
         });
     }
@@ -497,6 +521,39 @@ class ChartInstance {
         wrapper.appendChild(controls);
     }
 
+    createLegend() {
+        const wrapper = this.container.parentElement;
+        this.legend = document.createElement('div');
+        this.legend.className = 'absolute top-12 left-2 z-20 flex flex-col gap-1 pointer-events-none';
+        this.legend.style.fontFamily = "'Plus Jakarta Sans', sans-serif";
+        wrapper.appendChild(this.legend);
+    }
+
+    updateLegend(indicators) {
+        if (!this.legend) return;
+        this.legend.innerHTML = '';
+        if (!this.showIndicators) return;
+
+        indicators.forEach(ind => {
+            if (this.hiddenPlots.has(ind.id)) return;
+
+            const item = document.createElement('div');
+            item.className = 'flex items-center gap-2 px-2 py-0.5 rounded bg-black/40 backdrop-blur-sm border border-white/5';
+
+            const dot = document.createElement('div');
+            dot.className = 'w-1.5 h-1.5 rounded-full';
+            dot.style.backgroundColor = ind.style?.color || (ind.data && ind.data[0]?.color) || '#3b82f6';
+
+            const text = document.createElement('span');
+            text.className = 'text-[9px] font-black text-gray-300 uppercase tracking-tighter';
+            text.innerText = ind.title || ind.id;
+
+            item.appendChild(dot);
+            item.appendChild(text);
+            this.legend.appendChild(item);
+        });
+    }
+
     destroy() {
         if (this.chart) this.chart.remove();
     }
@@ -513,11 +570,42 @@ class ReplayController {
     }
 
     start(data) {
+        if (!data || data.length === 0) {
+            console.warn("[Replay] No data available for replay");
+            return;
+        }
         this.isActive = true;
         this.fullData = data;
+        // Start halfway through the data for demo
         this.currentIndex = Math.floor(data.length / 2);
-        this.engine.charts[this.engine.activeIdx].mainSeries.setData(this.fullData.slice(0, this.currentIndex));
+        this.renderState();
         this.updateUI();
+    }
+
+    renderState() {
+        const chart = this.engine.charts[this.engine.activeIdx];
+        if (!chart) return;
+
+        const slice = this.fullData.slice(0, this.currentIndex);
+        const coloredCandles = slice.map(c => ({
+            ...c,
+            time: Number(c.time),
+            color: chart.getColorByRvol(c),
+            borderColor: chart.getColorByRvol(c),
+            wickColor: chart.getColorByRvol(c)
+        }));
+
+        try {
+            chart.mainSeries.setData(coloredCandles);
+
+            const volumes = slice.map(c => ({
+                time: Number(c.time), value: c.volume,
+                color: c.close >= c.open ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'
+            }));
+            chart.volumeSeries.setData(volumes);
+        } catch (e) {
+            console.error("[Replay] renderState failed:", e);
+        }
     }
 
     togglePlay() {
@@ -533,7 +621,24 @@ class ReplayController {
     next() {
         if (this.currentIndex < this.fullData.length) {
             const candle = this.fullData[this.currentIndex++];
-            this.engine.charts[this.engine.activeIdx].mainSeries.update(candle);
+            const chart = this.engine.charts[this.engine.activeIdx];
+
+            const coloredUpdate = {
+                ...candle,
+                time: Number(candle.time),
+                color: chart.getColorByRvol(candle),
+                borderColor: chart.getColorByRvol(candle),
+                wickColor: chart.getColorByRvol(candle)
+            };
+            try {
+                chart.mainSeries.update(coloredUpdate);
+                chart.volumeSeries.update({
+                    time: Number(candle.time), value: candle.volume,
+                    color: candle.close >= candle.open ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'
+                });
+            } catch (e) {
+                console.warn("[Replay] update failed:", e.message);
+            }
         } else {
             this.isPlaying = false;
             clearInterval(this.intervalId);
@@ -544,7 +649,7 @@ class ReplayController {
     prev() {
         if (this.currentIndex > 1) {
             this.currentIndex--;
-            this.engine.charts[this.engine.activeIdx].mainSeries.setData(this.fullData.slice(0, this.currentIndex));
+            this.renderState();
         }
         this.updateUI();
     }
@@ -553,19 +658,30 @@ class ReplayController {
         this.isActive = false;
         this.isPlaying = false;
         clearInterval(this.intervalId);
-        this.engine.charts[this.engine.activeIdx].renderData();
+        const chart = this.engine.charts[this.engine.activeIdx];
+        if (chart) chart.renderData();
         this.updateUI();
     }
 
     updateUI() {
         const controls = document.getElementById('replayControls');
         const normal = document.getElementById('normalControls');
-        controls.classList.toggle('hidden', !this.isActive);
-        normal.classList.toggle('hidden', this.isActive);
+        if (controls && normal) {
+            controls.classList.toggle('hidden', !this.isActive);
+            normal.classList.toggle('hidden', this.isActive);
+        }
 
-        document.getElementById('playIcon').classList.toggle('hidden', this.isPlaying);
-        document.getElementById('pauseIcon').classList.toggle('hidden', !this.isPlaying);
-        document.getElementById('replayStatus').innerText = `REPLAY: ${this.currentIndex}/${this.fullData.length}`;
+        const pIcon = document.getElementById('playIcon');
+        const paIcon = document.getElementById('pauseIcon');
+        if (pIcon && paIcon) {
+            pIcon.classList.toggle('hidden', this.isPlaying);
+            paIcon.classList.toggle('hidden', !this.isPlaying);
+        }
+
+        const status = document.getElementById('replayStatus');
+        if (status) {
+            status.innerText = this.isActive ? `REPLAY: ${this.currentIndex}/${this.fullData.length}` : 'REPLAY';
+        }
 
         ['replayPrevBtn', 'replayPlayBtn', 'replayNextBtn'].forEach(id => {
             const btn = document.getElementById(id);

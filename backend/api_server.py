@@ -251,7 +251,8 @@ async def get_intraday(instrument_key: str, interval: str = '1'):
                 indicators.append({
                     "id": f"ema_{span}", "title": f"EMA {span}", "type": "line",
                     "style": {"color": color, "lineWidth": 1},
-                    "data": [{"time": int(df['ts'][i]), "value": float(val)} for i, val in enumerate(ema) if i >= span-1]
+                    "data": [{"time": int(df['ts'][i]), "value": float(val)} for i, val in enumerate(ema) if i >= span-1],
+                    "hideLabel": True
                 })
 
             # Market Psychology Signals
@@ -293,18 +294,30 @@ async def get_intraday(instrument_key: str, interval: str = '1'):
                         "data": vol_data['lines']
                     })
 
-                # 3. EVWMA & Dynamic Pivot
+                # 3. Volume Rays (Requested Levels)
+                if vol_data.get('volume_rays'):
+                    indicators.append({
+                        "id": "volume_rays",
+                        "type": "price_lines",
+                        "title": "V-Ray",
+                        "data": vol_data['volume_rays'],
+                        "hideLabel": True # Requested: REMOVE LABELS from Y AXIS
+                    })
+
+                # 4. EVWMA & Dynamic Pivot
                 if vol_data['evwma']:
                     indicators.append({
                         "id": "evwma", "type": "line", "title": "EVWMA",
                         "style": {"color": "#63c58c", "lineWidth": 2},
-                        "data": vol_data['evwma']
+                        "data": vol_data['evwma'],
+                        "hideLabel": True
                     })
                 if vol_data['dyn_pivot']:
                     indicators.append({
                         "id": "dyn_pivot", "type": "line", "title": "DynPivot",
                         "style": {"color": "#e44451", "lineWidth": 2},
-                        "data": vol_data['dyn_pivot']
+                        "data": vol_data['dyn_pivot'],
+                        "hideLabel": True
                     })
 
                 # 4. Add RVOL to candles for coloring

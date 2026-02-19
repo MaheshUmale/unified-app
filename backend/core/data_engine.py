@@ -231,9 +231,17 @@ def on_message(message: Union[Dict, str]):
 
             # Special case for Index synthetic volume:
             # only force it if no other real volume has been detected for this tick
-            # and reduce frequency to avoid over-inflating bars (only for candle fallback)
+            # and only if it's a new timestamp to avoid over-inflation from multiple updates to the same candle
             if is_index and delta_vol <= 0 and is_candle_source:
-                delta_vol = 1
+                prev_ts = last_processed_tick.get(inst_key, {}).get('ts_ms')
+                if ts_val != prev_ts:
+                    delta_vol = 1
+
+            # Final safety check: Clamp extreme LTQ that would ruin chart scaling
+            # Unless it's a known liquid stock, anything > 5M in a single tick is likely a calculation error
+            if delta_vol > 5000000:
+                logger.warning(f"Extreme volume detected for {inst_key}: {delta_vol}. Clamping.")
+                delta_vol = 100 if is_index else delta_vol % 10000
 
             feed_datum['ltq'] = int(delta_vol)
             sym_feeds[inst_key] = feed_datum

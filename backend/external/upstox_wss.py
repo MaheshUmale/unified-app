@@ -101,32 +101,41 @@ class UpstoxWSS:
 
                     if index_ff:
                         ltpc = index_ff.get('ltpc', {})
+                        ltt = int(ltpc.get('ltt', 0))
+                        # Upstox ltt is in seconds, convert to ms
+                        ts_ms = ltt * 1000 if ltt < 1e12 else ltt
                         feed_data = {
                             'last_price': float(ltpc.get('ltp', 0)),
-                            'ts_ms': int(ltpc.get('ltt', 0)),
+                            'ts_ms': ts_ms,
                             'ltq': 0, # Indices don't have LTQ usually
                             'upstox_volume': 0
                         }
                     elif market_ff:
                         ltpc = market_ff.get('ltpc', {})
                         market_pic = market_ff.get('marketPic', {})
+                        ltt = int(ltpc.get('ltt', market_pic.get('ltt', 0)))
+                        ts_ms = ltt * 1000 if ltt < 1e12 else ltt
                         feed_data = {
                             'last_price': float(ltpc.get('ltp', market_pic.get('ltp', 0))),
                             'ltq': int(market_pic.get('ltq', 0)),
-                            'ts_ms': int(ltpc.get('ltt', market_pic.get('ltt', 0))),
+                            'ts_ms': ts_ms,
                             'upstox_volume': float(market_pic.get('vtt', 0))
                         }
                     else:
                         # Fallback for other potential fullFeed structures
                         market_pic = full_feed.get('marketPic', {})
+                        ltt = int(market_pic.get('ltt', 0))
+                        ts_ms = ltt * 1000 if ltt < 1e12 else ltt
                         feed_data = {
                             'last_price': float(market_pic.get('ltp', 0)),
                             'ltq': int(market_pic.get('ltq', 0)),
-                            'ts_ms': int(market_pic.get('ltt', 0)),
+                            'ts_ms': ts_ms,
                             'upstox_volume': float(market_pic.get('vtt', 0))
                         }
                 elif ltpc_feed:
-                    feed_data = {'last_price': float(ltpc_feed.get('ltp', 0)), 'ts_ms': int(ltpc_feed.get('ltt', 0))}
+                    ltt = int(ltpc_feed.get('ltt', 0))
+                    ts_ms = ltt * 1000 if ltt < 1e12 else ltt
+                    feed_data = {'last_price': float(ltpc_feed.get('ltp', 0)), 'ts_ms': ts_ms}
 
                 if feed_data and feed_data.get('last_price', 0) > 0:
                     feed_data['source'] = 'upstox_wss'

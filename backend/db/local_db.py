@@ -13,9 +13,13 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
+import numpy as np
+
 class LocalDBJSONEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, datetime): return obj.isoformat()
+        if isinstance(obj, (float, np.float64, np.float32)):
+            if not np.isfinite(obj): return None
         return super().default(obj)
 
 DB_PATH = os.getenv('DUCKDB_PATH', 'pro_trade.db')

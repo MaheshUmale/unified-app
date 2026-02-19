@@ -7,6 +7,7 @@ import time
 import logging
 import re
 import requests
+import numpy as np
 from config import TV_COOKIE
 from core.symbol_mapper import symbol_mapper
 
@@ -268,7 +269,12 @@ class TradingViewWSS:
                     "title": "EMA 9",
                     "type": "line",
                     "style": {"color": "#3b82f6", "lineWidth": 1},
-                    "data": [{"time": ohlcv_data[i][0], "value": float(val)} for i, val in enumerate(ema9) if i >= 8]
+                    "data": [
+                        {"time": int(ohlcv_data[i][0]), "value": float(val)}
+                        for i, val in enumerate(ema9)
+                        if i >= 8 and np.isfinite(val)
+                    ],
+                    "hideLabel": True
                 })
                 ema20 = df['c'].ewm(span=20, adjust=False).mean()
                 indicators.append({
@@ -276,24 +282,31 @@ class TradingViewWSS:
                     "title": "EMA 20",
                     "type": "line",
                     "style": {"color": "#f97316", "lineWidth": 1},
-                    "data": [{"time": ohlcv_data[i][0], "value": float(val)} for i, val in enumerate(ema20) if i >= 19]
+                    "data": [
+                        {"time": int(ohlcv_data[i][0]), "value": float(val)}
+                        for i, val in enumerate(ema20)
+                        if i >= 19 and np.isfinite(val)
+                    ],
+                    "hideLabel": True
                 })
 
                 from brain.MarketPsychologyAnalyzer import MarketPsychologyAnalyzer
                 analyzer = MarketPsychologyAnalyzer()
                 zones, signals = analyzer.analyze(ohlcv_data)
 
-                for i, zone in enumerate(zones):
+                if zones:
                     indicators.append({
-                        "id": f"battle_zone_{i}",
-                        "type": "price_line",
-                        "title": "",
-                        "data": {
-                            "price": zone['price'],
-                            "color": "rgba(59, 130, 246, 0.4)",
-                            "lineStyle": 2,
-                            "title": ""
-                        }
+                        "id": "battle_zones",
+                        "type": "price_lines",
+                        "title": "Zones",
+                        "data": [
+                            {
+                                "price": float(zone['price']),
+                                "color": "rgba(59, 130, 246, 0.4)",
+                                "lineStyle": 2,
+                                "title": ""
+                            } for zone in zones
+                        ]
                     })
 
                 marker_data = []
