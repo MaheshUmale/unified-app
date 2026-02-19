@@ -218,10 +218,17 @@ async def get_intraday(instrument_key: str, interval: str = '1'):
     if cached: return cached
 
     try:
-        clean_key = unquote(instrument_key)
+        clean_key = unquote(instrument_key).upper()
         # Use registry for historical data with automatic fallback
         candles = []
-        for provider in historical_data_registry.get_all():
+
+        # Prioritize Upstox for BSE (delay) and all Indices (speed/sync)
+        providers = historical_data_registry.get_all()
+        is_index = "INDEX" in clean_key or clean_key in symbol_mapper._reverse_cache or "BSE:" in clean_key
+        if is_index:
+            providers = sorted(providers, key=lambda p: 20 if "Upstox" in type(p).__name__ else 10, reverse=True)
+
+        for provider in providers:
             try:
                 candles = await provider.get_hist_candles(clean_key, interval, 1000)
                 if candles and len(candles) > 0:

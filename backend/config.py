@@ -114,6 +114,8 @@ UPSTOX_INDEX_MAP = {
     "NSE:NIFTY": "NSE_INDEX|Nifty 50",
     "NSE:BANKNIFTY": "NSE_INDEX|Nifty Bank",
     "NSE:FINNIFTY": "NSE_INDEX|Nifty Fin Service",
+    "BSE:SENSEX": "BSE_INDEX|SENSEX",
+    "BSE:BANKEX": "BSE_INDEX|BANKEX",
 }
 
 # TradingView Cookie (Optional)
