@@ -108,210 +108,120 @@
 
     <!-- Main Content -->
     <main class="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
-        <!-- Summary Cards Section -->
-        <div class="space-y-4">
-            <!-- Row 1: Core Metrics -->
-            <div class="grid grid-cols-1 lg:grid-cols-4 gap-4">
-                <!-- Spot Price -->
-                <div class="glass-panel rounded-xl p-3 flex flex-col justify-between shadow-sm">
-                    <div class="text-[10px] text-gray-500 font-black uppercase tracking-widest flex justify-between items-center">
-                        Spot Price
-                        <div id="spotSentiment" class="text-[8px] font-black bg-green-500/20 text-green-500 px-1.5 py-0.5 rounded uppercase">BULLISH</div>
-                    </div>
-                    <div class="flex items-baseline gap-2 mt-1">
-                        <div id="spotPrice" class="text-xl font-black text-white tracking-tighter">0.00</div>
-                        <div class="text-[9px] text-gray-500 font-bold">AIM: <span id="aimSpot" class="text-blue-500">-</span></div>
-                    </div>
+        <!-- Genie Insights Card (Only one kept as requested) -->
+        <div class="glass-panel rounded-xl p-4 border-l-4 border-blue-500 flex items-center justify-between shadow-md">
+            <div class="flex-1">
+                <div class="text-[10px] text-blue-500 font-black uppercase tracking-widest flex items-center gap-3">
+                    OiGenie Market Control
+                    <span id="sidewaysBadge" class="hidden text-[8px] bg-yellow-500/20 text-yellow-500 px-2 py-0.5 rounded">SIDEWAYS EXPECTED</span>
                 </div>
-
-                <!-- PCR Sentiment (Merged from Modern) -->
-                <div class="lg:col-span-2 glass-panel rounded-xl p-3 flex flex-col justify-between shadow-sm">
-                    <div class="text-[10px] text-gray-500 font-black uppercase tracking-widest flex justify-between items-center">
-                        Sentiment (PCR)
-                        <div id="pcrSignal" class="text-[8px] font-black bg-gray-500/20 text-gray-400 px-1.5 py-0.5 rounded uppercase">NEUTRAL</div>
-                    </div>
-                    <div class="flex items-center gap-4 mt-1">
-                        <div class="w-24 h-16 relative">
-                            <canvas id="pcrGauge"></canvas>
-                            <div class="absolute bottom-1 w-full flex flex-col items-center">
-                                <span id="pcrValue" class="text-xs font-black mono text-white leading-none">0.00</span>
-                            </div>
-                        </div>
-                        <div class="flex-1 h-12">
-                            <canvas id="pcrTrendSparkline"></canvas>
-                        </div>
-                        <div class="text-right">
-                            <div class="text-[9px] text-gray-500 font-bold">Vol PCR: <span id="pcrVol" class="text-blue-500">-</span></div>
-                            <div class="text-[9px] text-gray-500 font-bold">OI Chg PCR: <span id="pcrOiChg" class="text-purple-500">-</span></div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Max Pain -->
-                <div class="glass-panel rounded-xl p-3 flex flex-col justify-between shadow-sm">
-                    <div class="text-[10px] text-gray-500 font-black uppercase tracking-widest flex justify-between items-center">
-                        Max Pain
-                        <div id="maxPainDiff" class="text-[8px] font-black text-gray-400 uppercase tracking-tighter">-</div>
-                    </div>
-                    <div class="flex items-baseline gap-2 mt-1">
-                        <div id="maxPain" class="text-xl font-black text-white tracking-tighter">0.00</div>
-                        <div class="text-[8px] text-gray-500 font-bold">EXP: <span id="expiryDate" class="text-blue-500">-</span></div>
-                    </div>
+                <div class="flex items-center gap-6 mt-1">
+                    <div id="genieControl" class="text-lg font-black text-white uppercase tracking-tight">-</div>
+                    <div class="h-4 w-px bg-white/10"></div>
+                    <div id="genieDistribution" class="text-[10px] font-bold text-gray-500 uppercase">-</div>
                 </div>
             </div>
-
-            <!-- Row 2: Insights & Secondary -->
-            <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
-                <!-- Genie Insights Card -->
-                <div class="lg:col-span-5 glass-panel rounded-xl p-3 border-l-4 border-blue-500 flex items-center justify-between shadow-md">
-                    <div class="flex-1">
-                        <div class="text-[10px] text-blue-500 font-black uppercase tracking-widest flex items-center gap-3">
-                            OiGenie Market Control
-                            <span id="sidewaysBadge" class="hidden text-[8px] bg-yellow-500/20 text-yellow-500 px-2 py-0.5 rounded">SIDEWAYS EXPECTED</span>
-                        </div>
-                        <div class="flex items-center gap-6 mt-1">
-                            <div id="genieControl" class="text-lg font-black text-white uppercase tracking-tight">-</div>
-                            <div class="h-4 w-px bg-white/10"></div>
-                            <div id="genieDistribution" class="text-[10px] font-bold text-gray-500 uppercase">-</div>
-                        </div>
-                    </div>
-                    <div class="text-right">
-                        <div class="text-[9px] text-gray-500 font-black uppercase">Institutional Range</div>
-                        <div id="genieRange" class="text-sm text-blue-500 font-black tracking-tighter">-</div>
-                    </div>
+            <div class="flex items-center gap-8">
+                <div class="text-right">
+                    <div class="text-[9px] text-gray-500 font-black uppercase">Spot Price</div>
+                    <div id="spotPrice" class="text-lg text-white font-black tracking-tighter">0.00</div>
                 </div>
-
-                <!-- OI Buildup Pulse Card -->
-                <div class="lg:col-span-3 glass-panel rounded-xl p-3 border-l-4 border-purple-500 shadow-md">
-                    <div class="text-[10px] text-purple-400 font-black uppercase tracking-widest mb-1">OI Buildup Pulse</div>
-                    <div id="buildupAnalysis" class="grid grid-cols-2 gap-1">
-                        <!-- Dynamic: Long Buildup, Short Buildup, etc. -->
-                    </div>
+                <div class="text-right">
+                    <div class="text-[9px] text-gray-500 font-black uppercase">Institutional Range</div>
+                    <div id="genieRange" class="text-sm text-blue-500 font-black tracking-tighter">-</div>
                 </div>
-
-                <!-- OI Divergence Spotter (Moved from Modern) -->
-                <div class="lg:col-span-4 glass-panel rounded-xl p-3 shadow-md">
-                    <div class="text-[10px] text-gray-500 font-black uppercase tracking-widest mb-1">OI Divergence Spotter</div>
-                    <div class="h-16">
-                        <canvas id="oiPriceDivergenceChart"></canvas>
-                    </div>
+                <div class="text-right">
+                    <div class="text-[9px] text-gray-500 font-black uppercase">Max Pain</div>
+                    <div id="maxPain" class="text-sm text-purple-500 font-black tracking-tighter">-</div>
                 </div>
             </div>
         </div>
 
-        <!-- Tabs -->
-        <nav class="flex gap-6 border-b border-white/10 pt-2" role="tablist" aria-label="Dashboard sections">
-            <button class="tab-btn tab-active pb-2 text-xs uppercase tracking-wider" data-tab="overview" role="tab" aria-selected="true" aria-controls="overviewTab">Analysis Overview</button>
-            <button class="tab-btn pb-2 text-xs uppercase tracking-wider" data-tab="strategies" role="tab" aria-selected="false" aria-controls="strategiesTab">Strategies</button>
-            <button class="tab-btn pb-2 text-xs uppercase tracking-wider" data-tab="chain" role="tab" aria-selected="false" aria-controls="chainTab">Chain</button>
-        </nav>
-
-        <!-- Tab Content -->
-        <div id="tabContent">
-            <!-- Option Chain Tab -->
-            <div id="chainTab" class="tab-pane hidden" role="tabpanel" aria-labelledby="tab-chain">
-                <div class="glass-panel rounded-xl overflow-hidden">
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-[10px]">
-                            <thead class="sticky-header">
-                                <tr class="bg-slate-800 text-gray-400">
-                                    <th colspan="6" class="py-2 px-3 text-center text-green-500 font-bold border-r border-white/5">CALLS</th>
-                                    <th class="py-2 px-3 text-center bg-slate-700 text-white border-r border-white/5">STRIKE</th>
-                                    <th colspan="6" class="py-2 px-3 text-center text-red-500 font-bold">PUTS</th>
-                                </tr>
-                                <tr class="bg-slate-900 text-gray-500">
-                                    <th class="py-2 px-3 text-right">IV</th>
-                                    <th class="py-2 px-3 text-right">Delta</th>
-                                    <th class="py-2 px-3 text-right">Theta</th>
-                                    <th class="py-2 px-3 text-right">LTP</th>
-                                    <th class="py-2 px-3 text-right">OI Chg</th>
-                                    <th class="py-2 px-3 text-right border-r border-white/5">OI</th>
-                                    <th class="py-2 px-3 text-center bg-slate-800"></th>
-                                    <th class="py-2 px-3 text-left">OI</th>
-                                    <th class="py-2 px-3 text-left">OI Chg</th>
-                                    <th class="py-2 px-3 text-left">LTP</th>
-                                    <th class="py-2 px-3 text-left">Theta</th>
-                                    <th class="py-2 px-3 text-left">Delta</th>
-                                    <th class="py-2 px-3 text-left">IV</th>
-                                </tr>
-                            </thead>
-                            <tbody id="optionChainBody" class="divide-y divide-white/5">
-                                <!-- Dynamic content -->
-                            </tbody>
-                        </table>
-                    </div>
+        <!-- 4 New Charts Section -->
+        <div class="space-y-6">
+            <!-- 1. Change in CE Vs Change in PE vs Spot -->
+            <div class="glass-panel rounded-xl p-4 shadow-sm">
+                <h3 class="text-xs font-bold uppercase tracking-wider mb-4 flex justify-between items-center">
+                    Change in CE Vs Change in PE vs Spot
+                    <span class="text-[10px] text-gray-500 font-normal">X: Time | Y1: OI | Y2: Spot</span>
+                </h3>
+                <div class="h-[300px] relative">
+                    <canvas id="ceVsPeChangeChart"></canvas>
                 </div>
             </div>
 
-            <!-- Overview Tab -->
-            <div id="overviewTab" class="tab-pane">
-                <div class="space-y-4">
-                    <div class="glass-panel rounded-xl p-4">
-                        <h3 class="text-xs font-bold uppercase tracking-wider mb-4">Spot vs PCR Confluence</h3>
-                        <div class="h-[350px] relative">
-                            <canvas id="confluenceChart"></canvas>
-                        </div>
-                    </div>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div class="glass-panel rounded-xl p-4">
-                            <h3 class="text-xs font-bold uppercase tracking-wider mb-4">OI Distribution</h3>
-                            <div class="h-[250px] relative">
-                                <canvas id="oiChart"></canvas>
+            <!-- 2. Difference in Put Call OI change Vs Spot -->
+            <div class="glass-panel rounded-xl p-4 shadow-sm">
+                <h3 class="text-xs font-bold uppercase tracking-wider mb-4 flex justify-between items-center">
+                    Difference in Put Call OI change Vs Spot
+                    <span class="text-[10px] text-gray-500 font-normal">X: Time | Y1: OI Diff (PE-CE) | Y2: Spot</span>
+                </h3>
+                <div class="h-[300px] relative">
+                    <canvas id="oiDiffChart"></canvas>
+                </div>
+            </div>
+
+            <!-- 3. Change in OI since session start -->
+            <div class="grid grid-cols-12 gap-4">
+                <!-- Sidebar Summary for Change -->
+                <div class="col-span-12 lg:col-span-2 glass-panel rounded-xl p-4 flex flex-col justify-between min-h-[300px]">
+                    <h4 class="text-[10px] font-black text-gray-500 uppercase mb-4">Change in OI</h4>
+                    <div class="flex-1 flex flex-col justify-around">
+                        <div class="text-center">
+                            <div class="text-[8px] text-gray-500 uppercase font-bold mb-1">CALL</div>
+                            <div id="totalCallOiChg" class="text-lg font-black text-green-500 leading-none">0</div>
+                            <div class="w-full bg-green-500/20 h-24 mt-2 rounded relative overflow-hidden">
+                                <div id="callChgBar" class="absolute bottom-0 w-full bg-green-500" style="height: 0%"></div>
                             </div>
                         </div>
-                        <div class="glass-panel rounded-xl p-4">
-                            <h3 class="text-xs font-bold uppercase tracking-wider mb-4">OI Trends (Total & Chg)</h3>
-                            <div class="h-[250px] relative">
-                                <canvas id="oiTrendMergedChart"></canvas>
+                        <div class="text-center mt-4">
+                            <div class="text-[8px] text-gray-500 uppercase font-bold mb-1">PUT</div>
+                            <div id="totalPutOiChg" class="text-lg font-black text-red-500 leading-none">0</div>
+                            <div class="w-full bg-red-500/20 h-24 mt-2 rounded relative overflow-hidden">
+                                <div id="putChgBar" class="absolute bottom-0 w-full bg-red-500" style="height: 0%"></div>
                             </div>
                         </div>
                     </div>
                 </div>
-            </div>
-
-            <!-- Strategies Tab -->
-            <div id="strategiesTab" class="tab-pane hidden">
-                <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                    <div class="glass-panel rounded-xl p-4">
-                        <h3 class="text-xs font-bold uppercase tracking-wider mb-4">Strategy Builder</h3>
-                        <div class="space-y-3">
-                            <select id="strategyType" class="w-full bg-slate-900 border border-white/10 rounded px-3 py-2 text-xs">
-                                <option value="bull_call_spread">Bull Call Spread</option>
-                                <option value="bear_put_spread">Bear Put Spread</option>
-                                <option value="iron_condor">Iron Condor</option>
-                                <option value="long_straddle">Long Straddle</option>
-                                <option value="long_strangle">Long Strangle</option>
-                                <option value="custom">Custom Strategy</option>
-                            </select>
-
-                            <div id="customLegsContainer" class="hidden space-y-2 border-t border-white/5 pt-2">
-                                <div class="flex justify-between items-center">
-                                    <span class="text-[10px] text-gray-400 uppercase">Legs</span>
-                                    <button id="addLegBtn" class="text-blue-500 text-[10px] font-bold">+ Add Leg</button>
-                                </div>
-                                <div id="legsList" class="space-y-2 max-h-60 overflow-y-auto custom-scrollbar">
-                                    <!-- Dynamic legs -->
-                                </div>
-                            </div>
-
-                            <button id="buildStrategyBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2 rounded transition-all">
-                                Build Strategy
-                            </button>
-                        </div>
-                    </div>
-                    <div class="glass-panel rounded-xl p-4 lg:col-span-2 flex flex-col">
-                        <h3 class="text-xs font-bold uppercase tracking-wider mb-4">Strategy Analysis</h3>
-                        <div id="strategyAnalysis" class="flex-1 overflow-y-auto custom-scrollbar pr-2">
-                            <p class="text-gray-500 text-xs">Select a strategy to see analysis</p>
-                        </div>
-                        <div id="payoffChartContainer" class="hidden mt-4 pt-4 border-t border-white/5 h-[250px] relative">
-                            <canvas id="payoffChart"></canvas>
-                        </div>
+                <!-- Main Histogram for Change -->
+                <div class="col-span-12 lg:col-span-10 glass-panel rounded-xl p-4">
+                    <h3 class="text-xs font-bold uppercase tracking-wider mb-4">Change in OI Per Strike (Session)</h3>
+                    <div class="h-[300px] relative">
+                        <canvas id="strikeWiseOiChangeChart"></canvas>
                     </div>
                 </div>
             </div>
 
-
+            <!-- 4. Total OI -->
+            <div class="grid grid-cols-12 gap-4">
+                <!-- Sidebar Summary for Total -->
+                <div class="col-span-12 lg:col-span-2 glass-panel rounded-xl p-4 flex flex-col justify-between min-h-[300px]">
+                    <h4 class="text-[10px] font-black text-gray-500 uppercase mb-4">Total OI</h4>
+                    <div class="flex-1 flex flex-col justify-around">
+                        <div class="text-center">
+                            <div class="text-[8px] text-gray-500 uppercase font-bold mb-1">CALL</div>
+                            <div id="totalCallOi" class="text-lg font-black text-green-500 leading-none">0</div>
+                            <div class="w-full bg-green-500/20 h-24 mt-2 rounded relative overflow-hidden">
+                                <div id="callTotalBar" class="absolute bottom-0 w-full bg-green-500" style="height: 0%"></div>
+                            </div>
+                        </div>
+                        <div class="text-center mt-4">
+                            <div class="text-[8px] text-gray-500 uppercase font-bold mb-1">PUT</div>
+                            <div id="totalPutOi" class="text-lg font-black text-red-500 leading-none">0</div>
+                            <div class="w-full bg-red-500/20 h-24 mt-2 rounded relative overflow-hidden">
+                                <div id="putTotalBar" class="absolute bottom-0 w-full bg-red-500" style="height: 0%"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Main Histogram for Total -->
+                <div class="col-span-12 lg:col-span-10 glass-panel rounded-xl p-4">
+                    <h3 class="text-xs font-bold uppercase tracking-wider mb-4">Total OI Per Strike</h3>
+                    <div class="h-[300px] relative">
+                        <canvas id="strikeWiseTotalOiChart"></canvas>
+                    </div>
+                </div>
+            </div>
         </div>
     </main>
 

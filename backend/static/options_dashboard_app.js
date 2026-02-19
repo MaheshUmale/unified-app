@@ -10,6 +10,13 @@ class OptionsDashboardManager {
         this.charts = {};
         this.theme = localStorage.getItem('theme') || 'dark';
 
+        this.colors = {
+            ce: '#ef4444', // red-500 (Resistance)
+            pe: '#10b981', // emerald-500 (Support)
+            spot: '#94a3b8', // slate-400
+            diff: '#3b82f6'  // blue-500
+        };
+
         // Chart.js defaults
         if (window.Chart) {
             Chart.defaults.font.family = "'Plus Jakarta Sans', sans-serif";
@@ -61,18 +68,7 @@ class OptionsDashboardManager {
         document.getElementById('backfillBtn').addEventListener('click', () => this.triggerBackfill());
         document.getElementById('optionsThemeToggle').addEventListener('click', () => this.toggleTheme());
 
-        // Navigation
-        document.querySelectorAll('.tab-btn').forEach(btn => {
-            btn.addEventListener('click', () => this.switchTab(btn.dataset.tab));
-        });
-
-        // Sub-modules
-        document.getElementById('strategyBtn')?.addEventListener('click', () => this.switchTab('strategies'));
-        document.getElementById('buildStrategyBtn')?.addEventListener('click', () => this.buildStrategy());
-        document.getElementById('addLegBtn')?.addEventListener('click', () => this.addLeg());
-        document.getElementById('strategyType')?.addEventListener('change', (e) => {
-            document.getElementById('customLegsContainer').classList.toggle('hidden', e.target.value !== 'custom');
-        });
+        // Navigation removed
     }
 
     async switchUnderlying(newUnderlying) {
@@ -89,80 +85,23 @@ class OptionsDashboardManager {
 
     async loadData() {
         try {
-            const [chain, genie, buildup, iv, overview] = await Promise.all([
-                fetch(`/api/options/chain/${this.currentUnderlying}/with-greeks`).then(r => r.json()),
+            const [genie, detailedTrend, oiAnalysis] = await Promise.all([
                 fetch(`/api/options/genie-insights/${this.currentUnderlying}`).then(r => r.json()),
-                fetch(`/api/options/oi-buildup/${this.currentUnderlying}`).then(r => r.json()),
-                fetch(`/api/options/iv-analysis/${this.currentUnderlying}`).then(r => r.json()),
-                this.fetchOverviewData()
+                fetch(`/api/options/oi-trend-detailed/${this.currentUnderlying}`).then(r => r.json()),
+                fetch(`/api/options/oi-analysis/${this.currentUnderlying}`).then(r => r.json())
             ]);
 
-            this.renderOptionChain(chain);
             this.renderGenieCard(genie);
-            this.renderBuildupSummary(buildup);
-            this.renderIVCard(iv);
+            this.renderCEvsPEChangeChart(detailedTrend);
+            this.renderOIDiffChart(detailedTrend);
+            this.renderStrikeWiseCharts(oiAnalysis);
 
-            document.getElementById('dataSource').textContent = chain.source || 'N/A';
+            document.getElementById('dataSource').textContent = 'Live Feed';
             document.getElementById('lastUpdated').textContent = new Date().toLocaleTimeString('en-IN', { hour12: false });
         } catch (e) { console.error("[Options] Load failed:", e); }
     }
 
-    async fetchOverviewData() {
-        const [pcr, oi, sr] = await Promise.all([
-            fetch(`/api/options/pcr-trend/${this.currentUnderlying}`).then(r => r.json()),
-            fetch(`/api/options/oi-analysis/${this.currentUnderlying}`).then(r => r.json()),
-            fetch(`/api/options/support-resistance/${this.currentUnderlying}`).then(r => r.json())
-        ]);
-        this.renderPCRChart(pcr);
-        this.renderOIChart(oi);
-        this.renderOITrendMergedChart(pcr);
-        this.renderPCRGauge(pcr);
-        this.renderOIDivergenceChart(pcr);
-        this.updateSummaryFromOverview(pcr);
-    }
-
-    renderOptionChain(data) {
-        const tbody = document.getElementById('optionChainBody');
-        if (!tbody) return;
-        tbody.innerHTML = '';
-
-        const spot = data.spot_price || 0;
-        document.getElementById('spotPrice').textContent = spot.toLocaleString(undefined, {minimumFractionDigits: 2});
-
-        // Update Expiry Date from first item
-        if (data.chain && data.chain.length > 0) {
-            document.getElementById('expiryDate').textContent = data.chain[0].expiry;
-        }
-
-        const grouped = {};
-        data.chain.forEach(item => {
-            if (!grouped[item.strike]) grouped[item.strike] = { call: null, put: null };
-            grouped[item.strike][item.option_type] = item;
-        });
-
-        Object.keys(grouped).sort((a,b) => a-b).forEach(strike => {
-            const { call, put } = grouped[strike];
-            const isATM = Math.abs(strike - spot) / spot < 0.005;
-            const tr = document.createElement('tr');
-            tr.className = `${isATM ? 'bg-blue-500/10' : ''} hover:bg-white/5 border-b border-white/5`;
-            tr.innerHTML = `
-                <td class="p-2 text-right text-gray-500">${call?.iv || '-'}</td>
-                <td class="p-2 text-right ${call?.delta > 0 ? 'text-green-500' : 'text-red-500'}">${call?.delta?.toFixed(2) || '-'}</td>
-                <td class="p-2 text-right text-gray-600">${call?.theta?.toFixed(2) || '-'}</td>
-                <td class="p-2 text-right font-black text-green-400">${call?.ltp?.toFixed(2) || '-'}</td>
-                <td class="p-2 text-right ${call?.oi_change > 0 ? 'text-green-500' : 'text-red-500'}">${call?.oi_change || '-'}</td>
-                <td class="p-2 text-right border-r border-white/10 font-bold">${call?.oi?.toLocaleString() || '-'}</td>
-                <td class="p-2 text-center strike-cell">${strike}</td>
-                <td class="p-2 font-bold">${put?.oi?.toLocaleString() || '-'}</td>
-                <td class="p-2 ${put?.oi_change > 0 ? 'text-green-500' : 'text-red-500'}">${put?.oi_change || '-'}</td>
-                <td class="p-2 font-black text-red-400">${put?.ltp?.toFixed(2) || '-'}</td>
-                <td class="p-2 text-gray-600">${put?.theta?.toFixed(2) || '-'}</td>
-                <td class="p-2 ${put?.delta > 0 ? 'text-green-500' : 'text-red-500'}">${put?.delta?.toFixed(2) || '-'}</td>
-                <td class="p-2 text-gray-500">${put?.iv || '-'}</td>
-            `;
-            tbody.appendChild(tr);
-        });
-    }
+    // Removed renderOptionChain
 
     renderGenieCard(data) {
         const el = document.getElementById('genieControl');
@@ -179,77 +118,158 @@ class OptionsDashboardManager {
             spotSent.className = `text-[8px] font-black px-1.5 py-0.5 rounded uppercase ${data.sentiment === 'BULLISH' ? 'bg-green-500/20 text-green-500' : data.sentiment === 'BEARISH' ? 'bg-red-500/20 text-red-500' : 'bg-gray-500/20 text-gray-400'}`;
         }
 
-        // Target (Aim)
-        const aim = data.sentiment === 'BULLISH' ? data.boundaries.upper : (data.sentiment === 'BEARISH' ? data.boundaries.lower : '-');
-        document.getElementById('aimSpot').textContent = aim;
+        // Target (Aim) removed from UI
 
-        // Max Pain distance
-        const spot = parseFloat(document.getElementById('spotPrice').textContent.replace(/,/g, ''));
-        if (spot > 0 && data.max_pain > 0) {
-            const diff = data.max_pain - spot;
-            const mpDiffEl = document.getElementById('maxPainDiff');
-            mpDiffEl.textContent = `${diff > 0 ? '+' : ''}${diff.toFixed(2)}`;
-            mpDiffEl.className = `text-[8px] font-black uppercase tracking-tighter ${diff > 0 ? 'text-green-500' : 'text-red-500'}`;
-        }
-
-        document.getElementById('maxPain').textContent = data.max_pain.toLocaleString();
+        // Max Pain
+        const mpEl = document.getElementById('maxPain');
+        if (mpEl) mpEl.textContent = data.max_pain.toLocaleString();
 
         // Sideways badge
         document.getElementById('sidewaysBadge')?.classList.toggle('hidden', !data.sideways_expected);
     }
 
-    renderBuildupSummary(data) {
-        const container = document.getElementById('buildupAnalysis');
-        if (!container) return;
-        container.innerHTML = '';
-        const patterns = data.summary?.pattern_distribution || {};
-        const colors = { 'Long Buildup': 'text-green-500', 'Short Buildup': 'text-red-500', 'Long Unwinding': 'text-orange-500', 'Short Covering': 'text-blue-400' };
+    // Removed buildup and iv rendering
 
-        Object.entries(patterns).forEach(([p, count]) => {
-            const div = document.createElement('div');
-            div.className = 'flex flex-col items-center bg-black/10 rounded py-1 px-2';
-            div.innerHTML = `<div class="text-[7px] text-gray-500 uppercase font-black truncate">${p.replace(' Buildup', '')}</div><div class="text-xs font-black ${colors[p] || 'text-white'}">${count}</div>`;
-            container.appendChild(div);
-        });
-    }
-
-    renderIVCard(data) {
-        const rankEl = document.getElementById('ivRank');
-        if (!rankEl) return;
-        rankEl.textContent = data.iv_rank !== undefined ? data.iv_rank + '%' : '-';
-        document.getElementById('ivValue').textContent = data.current_iv !== undefined ? data.current_iv + '%' : '-';
-        const sig = document.getElementById('ivSignal');
-        if (data.iv_rank > 70) { sig.textContent = 'HIGH'; sig.className = 'text-[8px] font-black bg-red-500/20 text-red-500 px-1.5 py-0.5 rounded'; }
-        else if (data.iv_rank < 30) { sig.textContent = 'LOW'; sig.className = 'text-[8px] font-black bg-green-500/20 text-green-500 px-1.5 py-0.5 rounded'; }
-        else { sig.textContent = 'NORMAL'; sig.className = 'text-[8px] font-black bg-gray-500/20 text-gray-400 px-1.5 py-0.5 rounded'; }
-    }
-
-    renderPCRChart(data) {
-        const ctx = document.getElementById('confluenceChart')?.getContext('2d');
+    renderCEvsPEChangeChart(data) {
+        const ctx = document.getElementById('ceVsPeChangeChart')?.getContext('2d');
         if (!ctx) return;
-        if (this.charts.pcr) this.charts.pcr.destroy();
+        if (this.charts.ceVsPe) this.charts.ceVsPe.destroy();
 
-        const history = (data.history || data || []).filter(h => (Number(h.spot_price) || Number(h.underlying_price)) > 0);
+        const history = data.history || [];
         const labels = history.map(h => new Date(h.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false }));
 
-        this.charts.pcr = new Chart(ctx, {
+        this.charts.ceVsPe = new Chart(ctx, {
             type: 'line',
             data: {
                 labels,
                 datasets: [
-                    { label: 'Spot', data: history.map(h => Number(h.spot_price) || Number(h.underlying_price)), borderColor: this.theme === 'light' ? '#f59e0b' : '#fff', borderDash: [3,3], pointRadius: 0, yAxisID: 'y1' },
-                    { label: 'PCR', data: history.map(h => Number(h.pcr_oi)), borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.1)', fill: true, tension: 0.4, pointRadius: 0, yAxisID: 'y' }
+                    { label: 'CE OI Chg', data: history.map(h => h.ce_oi_change), borderColor: this.colors.ce, backgroundColor: this.colors.ce + '1A', fill: false, tension: 0.3, pointRadius: 0, yAxisID: 'y' },
+                    { label: 'PE OI Chg', data: history.map(h => h.pe_oi_change), borderColor: this.colors.pe, backgroundColor: this.colors.pe + '1A', fill: false, tension: 0.3, pointRadius: 0, yAxisID: 'y' },
+                    { label: 'Spot', data: history.map(h => h.spot_price), borderColor: this.theme === 'light' ? '#f59e0b' : '#fff', borderDash: [5, 5], borderWidth: 1, pointRadius: 0, yAxisID: 'y1' }
+                ]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                scales: {
+                    y: { type: 'linear', position: 'left', title: { display: true, text: 'OI Change', color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                    y1: { type: 'linear', position: 'right', beginAtZero: false, grid: { display: false }, title: { display: true, text: 'Spot Price', color: '#94a3b8' } }
+                },
+                plugins: { legend: { position: 'top', labels: { boxWidth: 10, font: { size: 10 } } } }
+            }
+        });
+    }
+
+    renderOIDiffChart(data) {
+        const ctx = document.getElementById('oiDiffChart')?.getContext('2d');
+        if (!ctx) return;
+        if (this.charts.oiDiff) this.charts.oiDiff.destroy();
+
+        const history = data.history || [];
+        const labels = history.map(h => new Date(h.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false }));
+
+        this.charts.oiDiff = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels,
+                datasets: [
+                    { label: 'PE-CE Diff', data: history.map(h => h.pe_oi_change - h.ce_oi_change), borderColor: this.colors.diff, backgroundColor: this.colors.diff + '1A', fill: true, tension: 0.3, pointRadius: 0, yAxisID: 'y' },
+                    { label: 'Spot', data: history.map(h => h.spot_price), borderColor: this.theme === 'light' ? '#f59e0b' : '#fff', borderDash: [5, 5], borderWidth: 1, pointRadius: 0, yAxisID: 'y1' }
+                ]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                scales: {
+                    y: { type: 'linear', position: 'left', title: { display: true, text: 'OI Difference', color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                    y1: { type: 'linear', position: 'right', beginAtZero: false, grid: { display: false }, title: { display: true, text: 'Spot Price', color: '#94a3b8' } }
+                },
+                plugins: { legend: { position: 'top', labels: { boxWidth: 10, font: { size: 10 } } } }
+            }
+        });
+    }
+
+    renderStrikeWiseCharts(data) {
+        this.renderStrikeWiseOiChange(data);
+        this.renderStrikeWiseTotalOi(data);
+        this.updateSidebars(data.totals);
+    }
+
+    renderStrikeWiseOiChange(data) {
+        const ctx = document.getElementById('strikeWiseOiChangeChart')?.getContext('2d');
+        if (!ctx) return;
+        if (this.charts.strikeOiChg) this.charts.strikeOiChg.destroy();
+
+        const oiData = data.data || [];
+        this.charts.strikeOiChg = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: oiData.map(d => d.strike),
+                datasets: [
+                    { label: 'CE OI Chg', data: oiData.map(d => d.call_oi_change), backgroundColor: this.colors.ce + 'B3' },
+                    { label: 'PE OI Chg', data: oiData.map(d => d.put_oi_change), backgroundColor: this.colors.pe + 'B3' }
                 ]
             },
             options: {
                 responsive: true, maintainAspectRatio: false,
                 scales: {
-                    y: { type: 'linear', position: 'left', title: { display: true, text: 'PCR', color: '#94a3b8' }, ticks: { color: '#94a3b8' } },
-                    y1: { type: 'linear', position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'SPOT', color: '#94a3b8' }, ticks: { color: '#94a3b8' }, beginAtZero: false }
-                },
-                plugins: { legend: { labels: { color: '#94a3b8' } } }
+                    x: { grid: { display: false }, ticks: { font: { size: 9 } } },
+                    y: { grid: { color: 'rgba(255,255,255,0.05)' } }
+                }
             }
         });
+    }
+
+    renderStrikeWiseTotalOi(data) {
+        const ctx = document.getElementById('strikeWiseTotalOiChart')?.getContext('2d');
+        if (!ctx) return;
+        if (this.charts.strikeTotalOi) this.charts.strikeTotalOi.destroy();
+
+        const oiData = data.data || [];
+        this.charts.strikeTotalOi = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: oiData.map(d => d.strike),
+                datasets: [
+                    { label: 'CE Total OI', data: oiData.map(d => d.call_oi), backgroundColor: this.colors.ce + 'B3' },
+                    { label: 'PE Total OI', data: oiData.map(d => d.put_oi), backgroundColor: this.colors.pe + 'B3' }
+                ]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                scales: {
+                    x: { grid: { display: false }, ticks: { font: { size: 9 } } },
+                    y: { grid: { color: 'rgba(255,255,255,0.05)' } }
+                }
+            }
+        });
+    }
+
+    updateSidebars(totals) {
+        if (!totals) return;
+
+        const format = (v) => {
+            if (Math.abs(v) >= 10000000) return (v / 10000000).toFixed(2) + 'Cr';
+            if (Math.abs(v) >= 100000) return (v / 100000).toFixed(2) + 'L';
+            if (Math.abs(v) >= 1000) return (v / 1000).toFixed(1) + 'K';
+            return v;
+        };
+
+        // Change Sidebar
+        document.getElementById('totalCallOiChg').textContent = format(totals.total_call_oi_chg);
+        document.getElementById('totalPutOiChg').textContent = format(totals.total_put_oi_chg);
+
+        const chgMax = Math.max(Math.abs(totals.total_call_oi_chg), Math.abs(totals.total_put_oi_chg), 1);
+        document.getElementById('callChgBar').style.height = (Math.abs(totals.total_call_oi_chg) / chgMax * 100) + '%';
+        document.getElementById('putChgBar').style.height = (Math.abs(totals.total_put_oi_chg) / chgMax * 100) + '%';
+
+        // Total Sidebar
+        document.getElementById('totalCallOi').textContent = format(totals.total_call_oi);
+        document.getElementById('totalPutOi').textContent = format(totals.total_put_oi);
+
+        const totalMax = Math.max(totals.total_call_oi, totals.total_put_oi, 1);
+        document.getElementById('callTotalBar').style.height = (totals.total_call_oi / totalMax * 100) + '%';
+        document.getElementById('putTotalBar').style.height = (totals.total_put_oi / totalMax * 100) + '%';
     }
 
     renderPCRGauge(data) {
@@ -324,76 +344,7 @@ class OptionsDashboardManager {
         }
     }
 
-    renderOIDivergenceChart(data) {
-        const ctx = document.getElementById('oiPriceDivergenceChart')?.getContext('2d');
-        if (!ctx) return;
-        if (this.charts.oiDiv) this.charts.oiDiv.destroy();
-
-        const history = (data.history || data || []);
-        const labels = history.map(h => '');
-
-        this.charts.oiDiv = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels,
-                datasets: [
-                    { label: 'Spot', data: history.map(h => h.spot_price || h.underlying_price), borderColor: '#fbbf24', borderWidth: 1, pointRadius: 0, yAxisID: 'y' },
-                    { label: 'Total OI', data: history.map(h => h.total_oi), borderColor: '#a855f7', borderWidth: 1, pointRadius: 0, yAxisID: 'y1' }
-                ]
-            },
-            options: {
-                responsive: true, maintainAspectRatio: false,
-                scales: { x: { display: false }, y: { display: false }, y1: { display: false } },
-                plugins: { legend: { display: false } }
-            }
-        });
-    }
-
-    renderOITrendMergedChart(data) {
-        const ctx = document.getElementById('oiTrendMergedChart')?.getContext('2d');
-        if (!ctx) return;
-        if (this.charts.oiTrendMerged) this.charts.oiTrendMerged.destroy();
-
-        const history = (data.history || data || []).filter(h => h.total_oi > 0);
-        const labels = history.map(h => new Date(h.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false }));
-
-        this.charts.oiTrendMerged = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels,
-                datasets: [
-                    { label: 'Total OI', data: history.map(h => h.total_oi), borderColor: '#a855f7', backgroundColor: 'rgba(168, 85, 247, 0.1)', fill: true, tension: 0.4, pointRadius: 0, yAxisID: 'y' },
-                    { label: 'OI Change', data: history.map(h => h.total_oi_change), borderColor: '#fbbf24', borderDash: [2,2], tension: 0.4, pointRadius: 0, yAxisID: 'y1' }
-                ]
-            },
-            options: {
-                responsive: true, maintainAspectRatio: false,
-                scales: {
-                    y: { type: 'linear', position: 'left', title: { display: true, text: 'Total OI', color: '#94a3b8' }, ticks: { color: '#94a3b8' } },
-                    y1: { type: 'linear', position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'OI Change', color: '#94a3b8' }, ticks: { color: '#94a3b8' } }
-                },
-                plugins: { legend: { labels: { color: '#94a3b8' } } }
-            }
-        });
-    }
-
-    renderOIChart(data) {
-        const ctx = document.getElementById('oiChart')?.getContext('2d');
-        if (!ctx) return;
-        if (this.charts.oi) this.charts.oi.destroy();
-        const oiData = data.data || [];
-        this.charts.oi = new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: oiData.map(d => d.strike),
-                datasets: [
-                    { label: 'Call OI', data: oiData.map(d => d.call_oi), backgroundColor: 'rgba(34, 197, 94, 0.6)' },
-                    { label: 'Put OI', data: oiData.map(d => d.put_oi), backgroundColor: 'rgba(239, 68, 68, 0.6)' }
-                ]
-            },
-            options: { responsive: true, maintainAspectRatio: false }
-        });
-    }
+    // Removed old charts implementations
 
     renderSupportResistance(data) {
         const container = document.getElementById('supportResistance');
