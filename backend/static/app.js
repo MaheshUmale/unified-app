@@ -620,9 +620,8 @@ class ReplayController {
         this.isActive = true;
         this.isPlaying = false;
         this.fullData = data;
-        // Start at index 10 or 0 to let user select
-        this.currentIndex = Math.min(10, data.length);
-        this.renderState();
+        // Start showing all candles initially so user can click one
+        this.currentIndex = data.length;
         this.updateUI();
     }
 
@@ -632,6 +631,7 @@ class ReplayController {
             this.currentIndex = index + 1;
             this.renderState();
             this.updateUI();
+            console.log("[Replay] Start point set to index:", this.currentIndex);
         }
     }
 
@@ -676,11 +676,15 @@ class ReplayController {
     }
 
     togglePlay() {
+        if (!this.isActive || this.currentIndex >= this.fullData.length) return;
+
         this.isPlaying = !this.isPlaying;
+        console.log("[Replay] Toggle Play:", this.isPlaying);
+
         if (this.isPlaying) {
             this.intervalId = setInterval(() => this.next(), 1000);
         } else {
-            clearInterval(this.intervalId);
+            if (this.intervalId) clearInterval(this.intervalId);
         }
         this.updateUI();
     }
@@ -690,8 +694,9 @@ class ReplayController {
             this.currentIndex++;
             this.renderState();
         } else {
+            console.log("[Replay] End of data reached");
             this.isPlaying = false;
-            clearInterval(this.intervalId);
+            if (this.intervalId) clearInterval(this.intervalId);
         }
         this.updateUI();
     }
@@ -707,9 +712,15 @@ class ReplayController {
     exit() {
         this.isActive = false;
         this.isPlaying = false;
-        clearInterval(this.intervalId);
+        if (this.intervalId) clearInterval(this.intervalId);
         const chart = this.engine.charts[this.engine.activeIdx];
-        if (chart) chart.renderData();
+        if (chart) {
+            chart.renderData();
+            if (chart.fullHistory.indicators_raw) {
+                chart.applyIndicators(chart.fullHistory.indicators_raw, true);
+                chart.updateLegend(chart.fullHistory.indicators_raw);
+            }
+        }
         this.updateUI();
     }
 
@@ -730,12 +741,22 @@ class ReplayController {
 
         const status = document.getElementById('replayStatus');
         if (status) {
-            status.innerText = this.isActive ? `REPLAY: ${this.currentIndex}/${this.fullData.length}` : 'REPLAY';
+            if (this.isActive) {
+                if (this.currentIndex === this.fullData.length) {
+                    status.innerText = "CLICK BAR TO SET START POINT";
+                    status.style.color = "#fbbf24"; // Amber
+                } else {
+                    status.innerText = `REPLAY: ${this.currentIndex}/${this.fullData.length}`;
+                    status.style.color = "";
+                }
+            } else {
+                status.innerText = 'REPLAY';
+            }
         }
 
         ['replayPrevBtn', 'replayPlayBtn', 'replayNextBtn'].forEach(id => {
             const btn = document.getElementById(id);
-            if (btn) btn.disabled = !this.isActive;
+            if (btn) btn.disabled = !this.isActive || this.currentIndex === this.fullData.length;
         });
     }
 }
