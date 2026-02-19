@@ -171,6 +171,10 @@ class ChartInstance {
 
         // Horizontal line drawing support (Shift+Click)
         this.chart.subscribeClick((param) => {
+            if (this.engine.replay.isActive && this.engine.activeIdx === this.index && param.time) {
+                this.engine.replay.setStartPoint(param.time);
+                return;
+            }
             if (param.time && param.point) {
                 const hBtn = document.getElementById('drawingToolBtn');
                 const isHlineActive = hBtn && hBtn.classList.contains('bg-blue-600');
@@ -362,22 +366,30 @@ class ChartInstance {
         }
     }
 
-    applyIndicators(indicators) {
+    applyIndicators(indicators, isFullReplace = false) {
         if (!Array.isArray(indicators)) return;
+        if (isFullReplace) {
+            this.markers = [];
+        }
         indicators.forEach(ind => {
             if (ind.type === 'markers') {
                 if (!Array.isArray(ind.data)) return;
                 const newMarkers = ind.data.map(m => ({
-                    time: Number(m.time), position: m.position, color: m.color, shape: m.shape, text: m.text
+                    time: Number(m.time), position: m.position, color: m.color, shape: m.shape, text: m.text,
+                    sourceId: ind.id
                 }));
 
-                // Merge markers, avoiding exact duplicates
-                const existingTimes = new Set(this.markers.map(m => `${Number(m.time)}_${m.text}`));
-                newMarkers.forEach(m => {
-                    if (!existingTimes.has(`${Number(m.time)}_${m.text}`)) {
-                        this.markers.push(m);
-                    }
-                });
+                if (isFullReplace) {
+                    this.markers.push(...newMarkers);
+                } else {
+                    // Merge markers, avoiding exact duplicates
+                    const existingTimes = new Set(this.markers.map(m => `${Number(m.time)}_${m.text}`));
+                    newMarkers.forEach(m => {
+                        if (!existingTimes.has(`${Number(m.time)}_${m.text}`)) {
+                            this.markers.push(m);
+                        }
+                    });
+                }
 
                 this.markers.sort((a, b) => Number(a.time) - Number(b.time));
                 this.applyMarkers();
@@ -391,17 +403,20 @@ class ChartInstance {
                     this.indicatorPriceLines[ind.id].forEach(l => this.mainSeries.removePriceLine(l));
                 }
                 this.indicatorPriceLines[ind.id] = [];
-                ind.data.forEach(lineData => {
-                    const line = this.mainSeries.createPriceLine({
-                        price: lineData.price,
-                        color: lineData.color,
-                        lineWidth: lineData.width || 2,
-                        lineStyle: 2,
-                        axisLabelVisible: !ind.hideLabel,
-                        title: ind.hideLabel ? "" : (lineData.title || ind.title)
+
+                if (!this.hiddenPlots.has(ind.id) && this.showIndicators) {
+                    ind.data.forEach(lineData => {
+                        const line = this.mainSeries.createPriceLine({
+                            price: lineData.price,
+                            color: lineData.color,
+                            lineWidth: lineData.width || 2,
+                            lineStyle: 2,
+                            axisLabelVisible: !ind.hideLabel,
+                            title: ind.hideLabel ? "" : (lineData.title || ind.title)
+                        });
+                        this.indicatorPriceLines[ind.id].push(line);
                     });
-                    this.indicatorPriceLines[ind.id].push(line);
-                });
+                }
                 return;
             }
 
@@ -422,7 +437,12 @@ class ChartInstance {
     }
 
     applyMarkers() {
-        this.mainSeries.setMarkers(this.showIndicators && !this.hiddenPlots.has('__markers__') ? this.markers : []);
+        if (!this.showIndicators) {
+            this.mainSeries.setMarkers([]);
+            return;
+        }
+        const visibleMarkers = this.markers.filter(m => !this.hiddenPlots.has(m.sourceId));
+        this.mainSeries.setMarkers(visibleMarkers);
     }
 
     addHorizontalLine(price, color = '#3b82f6') {
@@ -532,13 +552,36 @@ class ChartInstance {
     updateLegend(indicators) {
         if (!this.legend) return;
         this.legend.innerHTML = '';
-        if (!this.showIndicators) return;
+        if (!this.showIndicators || !indicators) return;
 
         indicators.forEach(ind => {
-            if (this.hiddenPlots.has(ind.id)) return;
-
+            const isHidden = this.hiddenPlots.has(ind.id);
             const item = document.createElement('div');
-            item.className = 'flex items-center gap-2 px-2 py-0.5 rounded bg-black/40 backdrop-blur-sm border border-white/5';
+            item.className = `flex items-center gap-2 px-2 py-0.5 rounded cursor-pointer transition-all ${isHidden ? 'opacity-40 bg-black/20' : 'bg-black/40 hover:bg-black/60'} backdrop-blur-sm border border-white/5`;
+            item.style.pointerEvents = 'auto'; // Ensure it can be clicked
+            item.title = isHidden ? 'Show Indicator' : 'Hide Indicator';
+
+            item.onclick = (e) => {
+                e.stopPropagation();
+                if (this.hiddenPlots.has(ind.id)) {
+                    this.hiddenPlots.delete(ind.id);
+                } else {
+                    this.hiddenPlots.add(ind.id);
+                }
+
+                // Use sliced indicators if in replay
+                let targetIndicators = this.fullHistory.indicators_raw;
+                if (this.engine.replay.isActive) {
+                    const currentTs = this.engine.replay.fullData[this.engine.replay.currentIndex - 1]?.time || 0;
+                    targetIndicators = targetIndicators.map(i => ({
+                        ...i,
+                        data: i.data ? i.data.filter(d => Number(d.time) <= Number(currentTs)) : []
+                    }));
+                }
+
+                this.applyIndicators(targetIndicators, true);
+                this.updateLegend(targetIndicators);
+            };
 
             const dot = document.createElement('div');
             dot.className = 'w-1.5 h-1.5 rounded-full';
@@ -575,17 +618,28 @@ class ReplayController {
             return;
         }
         this.isActive = true;
+        this.isPlaying = false;
         this.fullData = data;
-        // Start halfway through the data for demo
-        this.currentIndex = Math.floor(data.length / 2);
+        // Start at index 10 or 0 to let user select
+        this.currentIndex = Math.min(10, data.length);
         this.renderState();
         this.updateUI();
+    }
+
+    setStartPoint(time) {
+        const index = this.fullData.findIndex(c => Number(c.time) >= Number(time));
+        if (index !== -1) {
+            this.currentIndex = index + 1;
+            this.renderState();
+            this.updateUI();
+        }
     }
 
     renderState() {
         const chart = this.engine.charts[this.engine.activeIdx];
         if (!chart) return;
 
+        const currentTs = this.fullData[this.currentIndex - 1]?.time || 0;
         const slice = this.fullData.slice(0, this.currentIndex);
         const coloredCandles = slice.map(c => ({
             ...c,
@@ -603,6 +657,19 @@ class ReplayController {
                 color: c.close >= c.open ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'
             }));
             chart.volumeSeries.setData(volumes);
+
+            // Sliced Indicators
+            if (chart.fullHistory.indicators_raw) {
+                const slicedIndicators = chart.fullHistory.indicators_raw.map(ind => {
+                    if (!ind.data || !Array.isArray(ind.data)) return ind;
+                    return {
+                        ...ind,
+                        data: ind.data.filter(d => Number(d.time) <= Number(currentTs))
+                    };
+                });
+                chart.applyIndicators(slicedIndicators, true);
+                chart.updateLegend(slicedIndicators);
+            }
         } catch (e) {
             console.error("[Replay] renderState failed:", e);
         }
@@ -620,25 +687,8 @@ class ReplayController {
 
     next() {
         if (this.currentIndex < this.fullData.length) {
-            const candle = this.fullData[this.currentIndex++];
-            const chart = this.engine.charts[this.engine.activeIdx];
-
-            const coloredUpdate = {
-                ...candle,
-                time: Number(candle.time),
-                color: chart.getColorByRvol(candle),
-                borderColor: chart.getColorByRvol(candle),
-                wickColor: chart.getColorByRvol(candle)
-            };
-            try {
-                chart.mainSeries.update(coloredUpdate);
-                chart.volumeSeries.update({
-                    time: Number(candle.time), value: candle.volume,
-                    color: candle.close >= candle.open ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'
-                });
-            } catch (e) {
-                console.warn("[Replay] update failed:", e.message);
-            }
+            this.currentIndex++;
+            this.renderState();
         } else {
             this.isPlaying = false;
             clearInterval(this.intervalId);
