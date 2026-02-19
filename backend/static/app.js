@@ -68,7 +68,9 @@ class DataManager {
 
     async fetchHistory(symbol, interval) {
         try {
-            const res = await fetch(`/api/tv/intraday/${encodeURIComponent(symbol)}?interval=${interval}`);
+            const settings = JSON.parse(localStorage.getItem('pro_analysis_settings') || '{}');
+            const params = new URLSearchParams({ interval, ...settings });
+            const res = await fetch(`/api/tv/intraday/${encodeURIComponent(symbol)}?${params.toString()}`);
             const data = await res.json();
             if (data && data.candles) {
                 // API returns [ts, o, h, l, c, v] in descending or ascending order?
@@ -554,31 +556,29 @@ class ChartInstance {
         this.legend.innerHTML = '';
         if (!this.showIndicators || !indicators) return;
 
-        indicators.forEach(ind => {
+        const proPatterns = ['ema_', 'volume_', 'evwma', 'dyn_pivot'];
+        const normalIndicators = indicators.filter(ind => !proPatterns.some(p => ind.id.toLowerCase().startsWith(p)));
+        const proIndicators = indicators.filter(ind => proPatterns.some(p => ind.id.toLowerCase().startsWith(p)));
+
+        const renderItem = (ind, parent) => {
             const isHidden = this.hiddenPlots.has(ind.id);
             const item = document.createElement('div');
             item.className = `flex items-center gap-2 px-2 py-0.5 rounded cursor-pointer transition-all ${isHidden ? 'opacity-40 bg-black/20' : 'bg-black/40 hover:bg-black/60'} backdrop-blur-sm border border-white/5`;
-            item.style.pointerEvents = 'auto'; // Ensure it can be clicked
+            item.style.pointerEvents = 'auto';
             item.title = isHidden ? 'Show Indicator' : 'Hide Indicator';
 
             item.onclick = (e) => {
                 e.stopPropagation();
-                if (this.hiddenPlots.has(ind.id)) {
-                    this.hiddenPlots.delete(ind.id);
-                } else {
-                    this.hiddenPlots.add(ind.id);
-                }
+                if (this.hiddenPlots.has(ind.id)) this.hiddenPlots.delete(ind.id);
+                else this.hiddenPlots.add(ind.id);
 
-                // Use sliced indicators if in replay
                 let targetIndicators = this.fullHistory.indicators_raw;
                 if (this.engine.replay.isActive) {
                     const currentTs = this.engine.replay.fullData[this.engine.replay.currentIndex - 1]?.time || 0;
                     targetIndicators = targetIndicators.map(i => ({
-                        ...i,
-                        data: i.data ? i.data.filter(d => Number(d.time) <= Number(currentTs)) : []
+                        ...i, data: i.data ? i.data.filter(d => Number(d.time) <= Number(currentTs)) : []
                     }));
                 }
-
                 this.applyIndicators(targetIndicators, true);
                 this.updateLegend(targetIndicators);
             };
@@ -593,8 +593,43 @@ class ChartInstance {
 
             item.appendChild(dot);
             item.appendChild(text);
-            this.legend.appendChild(item);
-        });
+            parent.appendChild(item);
+        };
+
+        normalIndicators.forEach(ind => renderItem(ind, this.legend));
+
+        if (proIndicators.length > 0) {
+            const container = document.createElement('div');
+            container.className = 'flex items-center gap-1';
+            container.style.pointerEvents = 'auto';
+
+            const proHeader = document.createElement('div');
+            const allHidden = proIndicators.every(ind => this.hiddenPlots.has(ind.id));
+            proHeader.className = `flex items-center gap-2 px-2 py-0.5 rounded cursor-pointer transition-all ${allHidden ? 'opacity-40 bg-blue-500/10' : 'bg-blue-600/40 hover:bg-blue-600/60'} backdrop-blur-sm border border-blue-500/20`;
+            proHeader.innerHTML = `<span class="text-[9px] font-black text-blue-300 uppercase italic">PRO-ANALYSIS</span>`;
+            proHeader.onclick = (e) => {
+                e.stopPropagation();
+                const targetState = !allHidden;
+                proIndicators.forEach(ind => {
+                    if (targetState) this.hiddenPlots.add(ind.id);
+                    else this.hiddenPlots.delete(ind.id);
+                });
+                this.applyIndicators(this.fullHistory.indicators_raw, true);
+                this.updateLegend(this.fullHistory.indicators_raw);
+            };
+
+            const gear = document.createElement('button');
+            gear.className = 'p-1 rounded bg-black/40 hover:bg-white/10 text-gray-400 transition-colors border border-white/5';
+            gear.innerHTML = `<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>`;
+            gear.onclick = (e) => {
+                e.stopPropagation();
+                this.engine.showSettingsModal();
+            };
+
+            container.appendChild(proHeader);
+            container.appendChild(gear);
+            this.legend.appendChild(container);
+        }
     }
 
     destroy() {
@@ -946,6 +981,20 @@ class MultiChartEngine {
                 window.open(url, '_blank');
             }
         });
+
+        // Analysis Settings Modal
+        document.getElementById('applyAnalysisBtn')?.addEventListener('click', () => this.applyAnalysisSettings());
+        document.getElementById('resetAnalysisBtn')?.addEventListener('click', () => {
+            localStorage.removeItem('pro_analysis_settings');
+            document.getElementById('analysisSettingsModal').classList.add('hidden');
+            this.charts.forEach(c => c.switchSymbol(c.symbol, c.interval));
+        });
+        document.getElementById('closeAnalysisBtn')?.addEventListener('click', () => {
+            document.getElementById('analysisSidebar').classList.add('hidden');
+        });
+        document.getElementById('closeSettingsBtn')?.addEventListener('click', () => {
+            document.getElementById('analysisSettingsModal').classList.add('hidden');
+        });
     }
 
     saveLayout() {
@@ -1042,6 +1091,36 @@ class MultiChartEngine {
                 grid: { vertLines: { color: grid }, horzLines: { color: grid } }
             });
         });
+    }
+
+    showSettingsModal() {
+        const modal = document.getElementById('analysisSettingsModal');
+        if (!modal) return;
+
+        const settings = JSON.parse(localStorage.getItem('pro_analysis_settings') || '{}');
+        const inputs = modal.querySelectorAll('input');
+        inputs.forEach(input => {
+            if (settings[input.id] !== undefined) {
+                input.value = settings[input.id];
+            }
+        });
+
+        modal.classList.remove('hidden');
+    }
+
+    applyAnalysisSettings() {
+        const modal = document.getElementById('analysisSettingsModal');
+        const inputs = modal.querySelectorAll('input');
+        const settings = {};
+        inputs.forEach(input => {
+            settings[input.id] = input.value;
+        });
+
+        localStorage.setItem('pro_analysis_settings', JSON.stringify(settings));
+        modal.classList.add('hidden');
+
+        // Refresh all charts
+        this.charts.forEach(c => c.switchSymbol(c.symbol, c.interval));
     }
 
     setLoading(show) {

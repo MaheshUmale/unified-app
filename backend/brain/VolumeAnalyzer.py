@@ -12,10 +12,13 @@ class VolumeAnalyzer:
         # Thresholds from Pine Script
         self.BUBBLE_THRESHOLD = 2.5
         self.BUBBLE_DELTA = 0.75
+        self.RAY_WICK_RATIO = 1.5
+        self.MAX_RAYS = 50
 
-    def analyze(self, candles):
+    def analyze(self, candles, settings=None):
         """
         candles: list of [ts, o, h, l, c, v]
+        settings: dict containing overrides for lengths and thresholds
         Returns: {
             'rvol': [float], # same length as candles
             'markers': [],   # list of marker objects
@@ -23,34 +26,41 @@ class VolumeAnalyzer:
             'volume_rays': [] # NEW: Requested Ray Levels
         }
         """
-        if len(candles) < 20:
+        # Apply setting overrides
+        s = settings or {}
+        rvol_len = int(s.get('rvol_len', self.rvol_len))
+        bubble_long_len = int(s.get('bubble_long_len', self.bubble_long_len))
+        bubble_short_len = int(s.get('bubble_short_len', self.bubble_short_len))
+        node_std_len = int(s.get('node_std_len', self.node_std_len))
+        bubble_threshold = float(s.get('bubble_threshold', self.BUBBLE_THRESHOLD))
+        ray_wick_ratio = float(s.get('ray_wick_ratio', self.RAY_WICK_RATIO))
+        max_rays = int(s.get('max_rays', self.MAX_RAYS))
+        rvol_threshold = float(s.get('rvol_threshold', 2.0))
+
+        if len(candles) < max(rvol_len, bubble_long_len, node_std_len):
             return {'rvol': [1.0] * len(candles), 'markers': [], 'lines': [], 'volume_rays': []}
 
         df = pd.DataFrame(candles, columns=['ts', 'o', 'h', 'l', 'c', 'v'])
 
         # 1. RVOL Calculation
-        df['v_sma20'] = df['v'].rolling(window=self.rvol_len).mean()
+        df['v_sma20'] = df['v'].rolling(window=rvol_len).mean()
         df['rvol'] = df['v'] / df['v_sma20'].replace(0, 1)
 
         # 2. Bubble & Ray Calculation
-        df['v_sma100'] = df['v'].rolling(window=self.bubble_long_len).mean()
-        df['v_sma10'] = df['v'].rolling(window=self.bubble_short_len).mean()
+        df['v_sma100'] = df['v'].rolling(window=bubble_long_len).mean()
+        df['v_sma10'] = df['v'].rolling(window=bubble_short_len).mean()
         df['v_avg_bubble'] = (df['v_sma100'] + df['v_sma10']) / 2
         df['bubble_ratio'] = df['v'] / df['v_avg_bubble'].replace(0, 1)
 
         # 3. Normalized Volume (for High Volume Nodes)
         df['bubble_ratio'] = df['bubble_ratio'].fillna(0.0)
-        df['v_sma48'] = df['v'].rolling(window=self.node_std_len).mean()
-        df['v_std48'] = df['v'].rolling(window=self.node_std_len).std()
+        df['v_sma48'] = df['v'].rolling(window=node_std_len).mean()
+        df['v_std48'] = df['v'].rolling(window=node_std_len).std()
         df['v_norm'] = (df['v'] - df['v_sma48']) / df['v_std48'].replace(0, 1)
 
         markers = []
         lines = []
         volume_rays = []
-
-        # Wick calculation helper
-        # upper_wick = high - max(open, close)
-        # lower_wick = min(open, close) - low
 
         for i in range(len(df)):
             row = df.iloc[i]
@@ -58,20 +68,17 @@ class VolumeAnalyzer:
             rvol = row['rvol']
 
             # Identify high volume candle for Ray/Level logic
-            # User mentioned "HIGH RVOL CANDLES" and "VOLUME BUBBLES are supposed to be starting point"
-            if ratio > self.BUBBLE_THRESHOLD or rvol > 2.0:
+            if ratio > bubble_threshold or rvol > rvol_threshold:
                 # Starting point logic
                 o, h, l, c = row['o'], row['h'], row['l'], row['c']
                 uw = h - max(o, c)
                 lw = min(o, c) - l
 
-                # if upper wick is longer than 1.5X lower wick then at "HIGH"
-                # ELSE if lower wick is longer than 1.5X higher wick then "LOW"
-                # else CLOSE
-                if uw > 1.5 * lw:
+                # Use settings for ratio threshold
+                if uw > ray_wick_ratio * lw:
                     start_price = h
                     level_type = "Resistance"
-                elif lw > 1.5 * uw:
+                elif lw > ray_wick_ratio * uw:
                     start_price = l
                     level_type = "Support"
                 else:
@@ -89,7 +96,7 @@ class VolumeAnalyzer:
                     "time": int(row['ts'])
                 })
 
-                # Add bubble marker as well
+                # Add bubble marker
                 markers.append({
                     "time": int(row['ts']),
                     "position": "belowBar" if is_up else "aboveBar",
@@ -99,10 +106,9 @@ class VolumeAnalyzer:
                     "id": f"bubble_{i}"
                 })
 
-            # High Volume Nodes (Existing logic)
+            # High Volume Nodes
             v_norm = row['v_norm']
-            step = (v_norm - self.BUBBLE_THRESHOLD) / self.BUBBLE_DELTA
-            if step >= 4:
+            if v_norm > bubble_threshold + 1.5: # Simple threshold for lines
                 price = h if c < o else l
                 lines.append({
                     "price": float(price),
@@ -111,11 +117,11 @@ class VolumeAnalyzer:
                     "time": int(row['ts'])
                 })
 
-        # Limit to last 50 rays as requested
-        volume_rays = sorted(volume_rays, key=lambda x: x['time'])[-50:]
+        # Limit rays
+        volume_rays = sorted(volume_rays, key=lambda x: x['time'])[-max_rays:]
 
-        # 4. EVWMA Calculation (Existing)
-        evma_len = 5
+        # 4. EVWMA Calculation
+        evma_len = int(s.get('evwma_len', 5))
         df['shares_sum'] = df['v'].rolling(window=evma_len).sum()
         evma = [np.nan] * len(df)
         for i in range(1, len(df)):
@@ -128,9 +134,9 @@ class VolumeAnalyzer:
             else:
                 evma[i] = prev_val
 
-        # 5. Dynamic Pivot Calculation (Existing)
-        force_len = 20
-        pivot_len = 10
+        # 5. Dynamic Pivot Calculation
+        force_len = int(s.get('pivot_force_len', 20))
+        pivot_len = int(s.get('pivot_len', 10))
         df['pC'] = df['c'] - df['o']
         df['mB'] = df['pC'].abs().rolling(window=force_len).max()
         df['sc'] = df['pC'].abs() / df['mB'].replace(0, 1)
