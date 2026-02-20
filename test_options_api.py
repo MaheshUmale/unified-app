@@ -1,6 +1,6 @@
 import requests
 
-BASE_URL = "http://localhost:3000"
+BASE_URL = "http://127.0.0.1:3000"
 
 def test_endpoint(path):
     try:

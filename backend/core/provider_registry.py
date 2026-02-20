@@ -68,10 +68,10 @@ def initialize_default_providers():
         live_stream_registry.register("upstox", UpstoxLiveStreamProvider(), priority=20)
 
     # Options Data
-    options_data_registry.register("trendlyne", TrendlyneOptionsProvider(), priority=10)
+    options_data_registry.register("trendlyne", TrendlyneOptionsProvider(), priority=20)
     options_data_registry.register("nse", NSEOptionsProvider(), priority=5)
     if UPSTOX_ACCESS_TOKEN:
-        options_data_registry.register("upstox", UpstoxOptionsProvider(), priority=20)
+        options_data_registry.register("upstox", UpstoxOptionsProvider(), priority=10)
 
     # Historical Data
     # TradingView is preferred for charts due to reliable volume and multiple timeframes

@@ -258,14 +258,14 @@ class OptionsManager:
         time_to_expiry = days_to_expiry / 365.0
         
         for strike_str, strike_data in oi_data.items():
-            strike = float(strike_str)
+            strike = safe_float(strike_str)
             call_sym = self.symbol_map_cache.get(underlying, {}).get(f"{strike}_call")
             put_sym = self.symbol_map_cache.get(underlying, {}).get(f"{strike}_put")
             
             # Call option data
-            call_ltp = float(strike_data.get('callLtp', 0) or strike_data.get('callLastPrice', 0))
-            call_oi = int(strike_data.get('callOi', 0))
-            call_oi_change = int(strike_data.get('callOiChange', 0))
+            call_ltp = safe_float(strike_data.get('callLtp') or strike_data.get('callLastPrice'))
+            call_oi = safe_int(strike_data.get('callOi'))
+            call_oi_change = safe_int(strike_data.get('callOiChange'))
             
             # Calculate Greeks for call
             call_greeks = greeks_calculator.calculate_all_greeks(
@@ -281,7 +281,7 @@ class OptionsManager:
                 'option_type': 'call',
                 'oi': call_oi,
                 'oi_change': call_oi_change,
-                'volume': int(strike_data.get('callVol', 0) or strike_data.get('callVolume', 0)),
+                'volume': safe_int(strike_data.get('callVol') or strike_data.get('callVolume')),
                 'ltp': call_ltp,
                 'iv': call_greeks['implied_volatility'],
                 'delta': call_greeks['delta'],
@@ -294,9 +294,9 @@ class OptionsManager:
             })
             
             # Put option data
-            put_ltp = float(strike_data.get('putLtp', 0) or strike_data.get('putLastPrice', 0))
-            put_oi = int(strike_data.get('putOi', 0))
-            put_oi_change = int(strike_data.get('putOiChange', 0))
+            put_ltp = safe_float(strike_data.get('putLtp') or strike_data.get('putLastPrice'))
+            put_oi = safe_int(strike_data.get('putOi'))
+            put_oi_change = safe_int(strike_data.get('putOiChange'))
             
             # Calculate Greeks for put
             put_greeks = greeks_calculator.calculate_all_greeks(
@@ -312,7 +312,7 @@ class OptionsManager:
                 'option_type': 'put',
                 'oi': put_oi,
                 'oi_change': put_oi_change,
-                'volume': int(strike_data.get('putVol', 0) or strike_data.get('putVolume', 0)),
+                'volume': safe_int(strike_data.get('putVol') or strike_data.get('putVolume')),
                 'ltp': put_ltp,
                 'iv': put_greeks['implied_volatility'],
                 'delta': put_greeks['delta'],
@@ -526,6 +526,7 @@ class OptionsManager:
             return
         
         spot_price = await self.get_spot_price(underlying)
+        rows_inserted = False
         
         try:
             if underlying not in self.symbol_map_cache or not self.symbol_map_cache[underlying]:
@@ -536,7 +537,7 @@ class OptionsManager:
             oi_data, default_expiry, oi_source = await self._fetch_oi_data(underlying)
             
             if not oi_data:
-                return await self._take_snapshot_tv(underlying)
+                return await self._take_snapshot_tv(underlying, spot_price=spot_price)
             
             rows = self._process_oi_data(
                 oi_data, underlying, default_expiry, wss_data, spot_price, oi_source
@@ -547,6 +548,8 @@ class OptionsManager:
                 self.previous_chains[underlying] = rows.copy()
                 
                 db.insert_options_snapshot(rows)
+                rows_inserted = True
+
                 # Use the same timestamp as in rows
                 snap_ts = rows[0]['timestamp'] if rows else datetime.now(pytz.utc)
                 await self._calculate_pcr(underlying, snap_ts, rows, spot_price)
@@ -558,7 +561,9 @@ class OptionsManager:
                 
         except Exception as e:
             logger.error(f"Error in taking snapshot for {underlying}: {e}")
-            await self._take_snapshot_tv(underlying)
+            # ONLY fallback to TV if we haven't already inserted rows to prevent zigzags (duplicate entries)
+            if not rows_inserted:
+                await self._take_snapshot_tv(underlying, spot_price=spot_price)
     
     async def get_spot_price(self, underlying: str) -> float:
         """Get current spot price with multi-layer fallback."""
@@ -676,14 +681,14 @@ class OptionsManager:
             time_to_expiry = 0.03  # Default ~11 days
         
         for strike_str, strike_data in oi_data.items():
-            strike = float(strike_str)
+            strike = safe_float(strike_str)
             c_sym = self.symbol_map_cache.get(underlying, {}).get(f"{strike}_call")
             p_sym = self.symbol_map_cache.get(underlying, {}).get(f"{strike}_put")
             c_wss = wss_data.get(c_sym, {}) if c_sym else {}
             p_wss = wss_data.get(p_sym, {}) if p_sym else {}
             
             # Call option
-            call_ltp = c_wss.get('lp', 0.0) or float(strike_data.get('callLtp', 0) or 0)
+            call_ltp = safe_float(c_wss.get('lp')) or safe_float(strike_data.get('callLtp'))
             call_greeks = greeks_calculator.calculate_all_greeks(
                 spot_price, strike, time_to_expiry, 0.20, 'call', call_ltp
             )
@@ -695,9 +700,9 @@ class OptionsManager:
                 'expiry': expiry_date,
                 'strike': strike,
                 'option_type': 'call',
-                'oi': int(strike_data.get('callOi', 0)),
-                'oi_change': int(strike_data.get('callOiChange', 0)),
-                'volume': c_wss.get('volume', 0) or int(strike_data.get('callVol', 0) or 0),
+                'oi': safe_int(strike_data.get('callOi')),
+                'oi_change': safe_int(strike_data.get('callOiChange')),
+                'volume': safe_int(c_wss.get('volume')) or safe_int(strike_data.get('callVol')),
                 'ltp': call_ltp,
                 'iv': call_greeks['implied_volatility'],
                 'delta': call_greeks['delta'],
@@ -710,7 +715,7 @@ class OptionsManager:
             })
             
             # Put option
-            put_ltp = p_wss.get('lp', 0.0) or float(strike_data.get('putLtp', 0) or 0)
+            put_ltp = safe_float(p_wss.get('lp')) or safe_float(strike_data.get('putLtp'))
             put_greeks = greeks_calculator.calculate_all_greeks(
                 spot_price, strike, time_to_expiry, 0.20, 'put', put_ltp
             )
@@ -722,9 +727,9 @@ class OptionsManager:
                 'expiry': expiry_date,
                 'strike': strike,
                 'option_type': 'put',
-                'oi': int(strike_data.get('putOi', 0)),
-                'oi_change': int(strike_data.get('putOiChange', 0)),
-                'volume': p_wss.get('volume', 0) or int(strike_data.get('putVol', 0) or 0),
+                'oi': safe_int(strike_data.get('putOi')),
+                'oi_change': safe_int(strike_data.get('putOiChange')),
+                'volume': safe_int(p_wss.get('volume')) or safe_int(strike_data.get('putVol')),
                 'ltp': put_ltp,
                 'iv': put_greeks['implied_volatility'],
                 'delta': put_greeks['delta'],
@@ -762,7 +767,7 @@ class OptionsManager:
         if triggered:
             logger.info(f"Triggered {len(triggered)} alerts for {underlying}")
     
-    async def _take_snapshot_tv(self, underlying: str):
+    async def _take_snapshot_tv(self, underlying: str, spot_price: float = 0):
         """Fallback to TradingView data via Registry."""
         # Use first provider that gives a chain (usually trendlyne or nse adapter)
         provider = options_data_registry.get_primary()
@@ -770,7 +775,9 @@ class OptionsManager:
         if not data or 'symbols' not in data:
             return
         
-        spot_price = await self.get_spot_price(underlying)
+        if not spot_price:
+            spot_price = await self.get_spot_price(underlying)
+
         timestamp = datetime.now(pytz.utc)
         rows = []
         
@@ -861,7 +868,7 @@ class OptionsManager:
         
         if rows:
             db.insert_options_snapshot(rows)
-            await self._calculate_pcr(underlying, timestamp, rows)
+            await self._calculate_pcr(underlying, timestamp, rows, spot_price=spot_price)
             logger.info(f"Saved TV snapshot for {underlying} with {len(rows)} rows")
             
             if underlying in self.wss_clients:

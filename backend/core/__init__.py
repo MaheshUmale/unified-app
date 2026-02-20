@@ -5,33 +5,32 @@ Uses lazy loading to prevent circular dependencies.
 from typing import Any
 
 def __getattr__(name: str) -> Any:
+    import importlib
     if name == 'options_manager':
-        from core.options_manager import options_manager
-        return options_manager
+        mod = importlib.import_module('core.options_manager')
+        return getattr(mod, 'options_manager')
     if name == 'data_engine':
-        from core import data_engine
-        return data_engine
+        return importlib.import_module('core.data_engine')
     if name == 'symbol_mapper':
-        from core.symbol_mapper import symbol_mapper
-        return symbol_mapper
+        mod = importlib.import_module('core.symbol_mapper')
+        return getattr(mod, 'symbol_mapper')
     if name == 'greeks_calculator':
-        from core.greeks_calculator import greeks_calculator
-        return greeks_calculator
+        mod = importlib.import_module('core.greeks_calculator')
+        return getattr(mod, 'greeks_calculator')
     if name == 'iv_analyzer':
-        from core.iv_analyzer import iv_analyzer
-        return iv_analyzer
+        mod = importlib.import_module('core.iv_analyzer')
+        return getattr(mod, 'iv_analyzer')
     if name == 'oi_buildup_analyzer':
-        from core.oi_buildup_analyzer import oi_buildup_analyzer
-        return oi_buildup_analyzer
+        mod = importlib.import_module('core.oi_buildup_analyzer')
+        return getattr(mod, 'oi_buildup_analyzer')
     if name == 'strategy_builder':
-        from core.strategy_builder import strategy_builder
-        return strategy_builder
+        mod = importlib.import_module('core.strategy_builder')
+        return getattr(mod, 'strategy_builder')
     if name == 'alert_system':
-        from core.alert_system import alert_system
-        return alert_system
+        mod = importlib.import_module('core.alert_system')
+        return getattr(mod, 'alert_system')
 
     # Check if it's a module in core
-    import importlib
     try:
         return importlib.import_module(f"core.{name}")
     except ImportError:
