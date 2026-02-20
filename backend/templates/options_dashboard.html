@@ -121,6 +121,16 @@
                     <div id="genieDistribution" class="text-[10px] font-bold text-gray-500 uppercase">-</div>
                 </div>
             </div>
+            <!-- PCR Trend Sparkline -->
+            <div class="flex-1 max-w-[180px] h-10 px-4 border-l border-white/5 hidden lg:block">
+                <div class="flex justify-between items-center mb-0.5">
+                    <span class="text-[8px] text-gray-500 font-black uppercase">PCR Trend</span>
+                    <span id="currentPcrValue" class="text-[10px] font-black text-blue-500">-</span>
+                </div>
+                <div class="h-6">
+                    <canvas id="pcrTrendChart"></canvas>
+                </div>
+            </div>
             <div class="flex items-center gap-8">
                 <div class="text-right">
                     <div class="text-[9px] text-gray-500 font-black uppercase">Spot Price</div>
