@@ -86,16 +86,18 @@ class OptionsDashboardManager {
 
     async loadData() {
         try {
-            const [genie, detailedTrend, oiAnalysis] = await Promise.all([
+            const [genie, detailedTrend, oiAnalysis, pcrTrend] = await Promise.all([
                 fetch(`/api/options/genie-insights/${this.currentUnderlying}`).then(r => r.json()),
                 fetch(`/api/options/oi-trend-detailed/${this.currentUnderlying}`).then(r => r.json()),
-                fetch(`/api/options/oi-analysis/${this.currentUnderlying}`).then(r => r.json())
+                fetch(`/api/options/oi-analysis/${this.currentUnderlying}`).then(r => r.json()),
+                fetch(`/api/options/pcr-trend/${this.currentUnderlying}`).then(r => r.json())
             ]);
 
             this.renderGenieCard(genie);
             this.renderCEvsPEChangeChart(detailedTrend);
             this.renderOIDiffChart(detailedTrend);
             this.renderStrikeWiseCharts(oiAnalysis);
+            this.renderPCRTrend(pcrTrend);
 
             document.getElementById('dataSource').textContent = 'Live Feed';
             document.getElementById('lastUpdated').textContent = new Date().toLocaleTimeString('en-IN', { hour12: false });
@@ -158,6 +160,53 @@ class OptionsDashboardManager {
                     y1: { type: 'linear', position: 'right', beginAtZero: false, grid: { display: false }, ticks: { font: { size: 8 } } }
                 },
                 plugins: { legend: { position: 'top', labels: { boxWidth: 8, font: { size: 8 } } } }
+            }
+        });
+    }
+
+    renderPCRTrend(data) {
+        const ctx = document.getElementById('pcrTrendChart')?.getContext('2d');
+        if (!ctx) return;
+        if (this.charts.pcrTrend) this.charts.pcrTrend.destroy();
+
+        const history = data.history || [];
+        if (history.length === 0) return;
+
+        const lastValue = history[history.length - 1].pcr_oi;
+        const pcrEl = document.getElementById('currentPcrValue');
+        if (pcrEl) {
+            pcrEl.textContent = lastValue.toFixed(2);
+            pcrEl.className = `text-[10px] font-black ${lastValue > 1 ? 'text-green-500' : lastValue < 0.7 ? 'text-red-500' : 'text-blue-500'}`;
+        }
+
+        const labels = history.map(h => new Date(h.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false }));
+
+        this.charts.pcrTrend = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels,
+                datasets: [{
+                    data: history.map(h => h.pcr_oi),
+                    borderColor: '#3b82f6',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 0,
+                    borderWidth: 1.5
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { display: false }, tooltip: { enabled: true } },
+                scales: {
+                    x: { display: false },
+                    y: {
+                        display: true,
+                        position: 'right',
+                        grid: { display: false },
+                        ticks: { display: true, font: { size: 7 }, count: 2, color: '#94a3b8' }
+                    }
+                }
             }
         });
     }
