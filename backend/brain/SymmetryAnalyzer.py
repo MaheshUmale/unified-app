@@ -8,10 +8,29 @@ logger = logging.getLogger(__name__)
 
 class SymmetryAnalyzer:
     """
-    Implements Triple-Stream Symmetry & Panic Strategy.
-    Monitors Index Spot, ATM Call, and ATM Put simultaneously.
+    Implements the Triple-Stream Symmetry & Panic Strategy (inspired by MaheshUmale/ENGINE).
+
+    This strategy monitors three data streams concurrently on a 1-minute timeframe:
+    1. Primary: Index Spot (e.g., NIFTY 50)
+    2. Secondary A: ATM Call (CE)
+    3. Secondary B: ATM Put (PE)
+
+    The core logic focuses on the shift from a 'Wall' (Seller Resistance/Support)
+    to a 'Void' (Short Covering) by using the Index as the map and the Options as the truth.
+
+    Phases:
+    - Phase I: Structural Identification - Identify swing highs/lows in the Index.
+    - Phase II: Pullback & Decay Filter - Monitor for bullish divergence in option prices.
+    - Phase III: Triple-Symmetry Execution - Trigger BUY when Index, CE, and PE align.
+    - Phase IV: Guardrails - Prevent entry during absorption or fake breakouts.
     """
     def __init__(self, underlying="NSE:NIFTY"):
+        """
+        Initialize the analyzer for a specific underlying.
+
+        Args:
+            underlying (str): The symbol of the index (e.g., 'NSE:NIFTY').
+        """
         self.underlying = underlying
         self.reference_levels = {'High': None, 'Low': None}
         self.swing_window = 15
@@ -19,8 +38,16 @@ class SymmetryAnalyzer:
 
     def identify_swing(self, subset_df):
         """
-        Identify Significant Swings where a 'Wall' exists.
-        Returns the data of the peak/trough candle.
+        Identify Significant Swings (Walls) where the market pivoted.
+
+        A 'Wall' is defined when the Index hits a new high (or low) in the current
+        window and subsequently pulls back.
+
+        Args:
+            subset_df (pd.DataFrame): DataFrame containing 'h_idx', 'l_idx', and 'ts' columns.
+
+        Returns:
+            dict: {type: 'High'|'Low', data: Series} representing the peak/trough candle, or None.
         """
         if len(subset_df) < 3:
             return None
@@ -46,8 +73,19 @@ class SymmetryAnalyzer:
 
     def check_decay_filter(self, current_index_price, current_ce_price, ref_level):
         """
-        Phase II: The Pullback & Decay Filter (Anti-Theta)
-        If Index returns to Ref_Price_Index but Current_Price_CE is higher than Ref_Price_CE
+        Phase II: Pullback & Decay Filter (Anti-Theta).
+
+        Determines if the Call Option is showing 'Relative Strength' despite time decay.
+        If the Index returns to a previous Reference High, but the Call price is
+        now higher than it was at that peak, it indicates aggressive institutional buying.
+
+        Args:
+            current_index_price (float): Current Index Spot price.
+            current_ce_price (float): Current ATM Call price.
+            ref_level (dict): The active Reference High level.
+
+        Returns:
+            bool: True if Bullish Divergence is detected.
         """
         if not ref_level or ref_level['type'] != 'High':
             return False
@@ -59,9 +97,23 @@ class SymmetryAnalyzer:
 
     def analyze(self, idx_candles, ce_candles, pe_candles, oi_data=None):
         """
-        Generate signals based on Triple-Symmetry.
-        idx_candles, ce_candles, pe_candles: list of [ts, o, h, l, c, v]
-        oi_data: dict {ts: {'ce_oi_chg':, 'pe_oi_chg':}}
+        Phase III: Triple-Symmetry Execution & Phase IV: Guardrails.
+
+        Generates trading signals by verifying that the Index, Call, and Put
+        instruments are moving in synchronized 'Symmetry'.
+
+        Execution Logic:
+        - BUY_CE: Index > Ref_High AND CE > Ref_High_CE AND PE < Ref_Low_PE AND OI_Panic.
+        - BUY_PE: Index < Ref_Low AND PE > Ref_High_PE AND CE < Ref_Low_CE AND OI_Panic.
+
+        Args:
+            idx_candles (list): List of Index candles [ts, o, h, l, c, v].
+            ce_candles (list): List of ATM Call candles.
+            pe_candles (list): List of ATM Put candles.
+            oi_data (dict, optional): Mapping of timestamp to {'ce_oi_chg', 'pe_oi_chg'}.
+
+        Returns:
+            list: Generated signals with entry, SL, TP, and confluence details.
         """
         if not idx_candles or not ce_candles or not pe_candles:
             return []
