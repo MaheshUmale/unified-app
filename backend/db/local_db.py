@@ -207,6 +207,26 @@ class LocalDB:
                 VALUES (?, ?, ?, CURRENT_TIMESTAMP)
             """, (instrument_key, hrn, meta_json))
 
+    def bulk_update_metadata(self, batch: List[Dict[str, Any]]):
+        """Bulk updates instrument metadata from a list of dicts."""
+        if not batch: return
+        try:
+            data = []
+            for item in batch:
+                data.append({
+                    'instrument_key': item['instrument_key'],
+                    'hrn': item['hrn'],
+                    'meta': json.dumps(item['meta'])
+                })
+            df = pd.DataFrame(data)
+            with self._execute_lock:
+                self.conn.execute("""
+                    INSERT OR REPLACE INTO metadata (instrument_key, hrn, meta, updated_at)
+                    SELECT instrument_key, hrn, meta, CURRENT_TIMESTAMP FROM df
+                """)
+        except Exception as e:
+            logger.error(f"Bulk metadata update failed: {e}")
+
     def get_metadata(self, instrument_key: str) -> Optional[Dict[str, Any]]:
         with self._execute_lock:
             res = self.conn.execute("SELECT hrn, meta FROM metadata WHERE instrument_key = ?", (instrument_key,)).fetchone()
