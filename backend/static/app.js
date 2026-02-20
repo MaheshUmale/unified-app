@@ -112,6 +112,7 @@ class ChartInstance {
         this.showOIProfile = false;
         this.showIndicators = true; // Enabled by default
         this.oiLines = [];
+        this.activeSymmetrySignal = null;
 
         this.initChart();
     }
@@ -329,6 +330,7 @@ class ChartInstance {
             time: this.lastCandle.time, value: this.lastCandle.volume,
             color: this.lastCandle.close >= this.lastCandle.open ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'
         });
+        if (this.activeSymmetrySignal) this.updateSymmetryPnL();
     }
 
     handleChartUpdate(data) {
@@ -360,6 +362,7 @@ class ChartInstance {
                             time: c.time, value: c.volume,
                             color: c.close >= c.open ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'
                         });
+                        if (this.activeSymmetrySignal) this.updateSymmetryPnL();
                     } catch (e) {
                         console.warn(`[Chart] Update failed at ${c.time}:`, e.message);
                     }
@@ -380,6 +383,9 @@ class ChartInstance {
             this.markers = [];
         }
         indicators.forEach(ind => {
+            if (ind.id === 'symmetry_signals') {
+                this.handleSymmetrySignals(ind.data);
+            }
             if (ind.type === 'markers') {
                 if (!Array.isArray(ind.data)) return;
                 const newMarkers = ind.data.map(m => ({
@@ -442,6 +448,79 @@ class ChartInstance {
             this.indicatorSeries[ind.id].setData(cleanData);
             this.indicatorSeries[ind.id].applyOptions({ visible: this.showIndicators && !this.hiddenPlots.has(ind.id) });
         });
+    }
+
+    handleSymmetrySignals(data) {
+        if (!data || data.length === 0) {
+            this.activeSymmetrySignal = null;
+            this.updateSymmetryUI();
+            return;
+        }
+        // Take the latest signal
+        const latest = data[data.length - 1];
+        this.activeSymmetrySignal = latest;
+
+        // Add SL/TP lines
+        this.indicatorPriceLines = this.indicatorPriceLines || {};
+        if (this.indicatorPriceLines['sym_sl']) {
+            this.mainSeries.removePriceLine(this.indicatorPriceLines['sym_sl']);
+        }
+        if (this.indicatorPriceLines['sym_tp']) {
+            this.mainSeries.removePriceLine(this.indicatorPriceLines['sym_tp']);
+        }
+
+        if (latest.sl && this.showIndicators) {
+            this.indicatorPriceLines['sym_sl'] = this.mainSeries.createPriceLine({
+                price: latest.sl, color: '#ef4444', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'SYM SL'
+            });
+        }
+        if (latest.tp && this.showIndicators) {
+            this.indicatorPriceLines['sym_tp'] = this.mainSeries.createPriceLine({
+                price: latest.tp, color: '#3b82f6', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'SYM TP'
+            });
+        }
+
+        this.updateSymmetryUI();
+    }
+
+    updateSymmetryUI() {
+        if (this.index !== this.engine.activeIdx) return;
+
+        const activeEl = document.getElementById('symmetryActiveSignal');
+        const noEl = document.getElementById('noSymmetrySignal');
+        if (!activeEl || !noEl) return;
+
+        if (this.activeSymmetrySignal) {
+            activeEl.classList.remove('hidden');
+            noEl.classList.add('hidden');
+
+            document.getElementById('symType').innerText = this.activeSymmetrySignal.signal_type || 'BUY';
+            document.getElementById('symScore').innerText = `Score: ${this.activeSymmetrySignal.score}/4`;
+            document.getElementById('symSL').innerText = (this.activeSymmetrySignal.sl || 0).toFixed(2);
+            document.getElementById('symTP').innerText = (this.activeSymmetrySignal.tp || 0).toFixed(2);
+
+            // Initial PnL
+            this.updateSymmetryPnL();
+        } else {
+            activeEl.classList.add('hidden');
+            noEl.classList.remove('hidden');
+        }
+    }
+
+    updateSymmetryPnL() {
+        if (!this.activeSymmetrySignal || !this.lastCandle) return;
+
+        const currentPrice = this.lastCandle.close;
+        const entryPrice = this.activeSymmetrySignal.entry_price || currentPrice;
+
+        // For an option buyer, PnL is always (Current - Entry) regardless of Call or Put
+        const pnlPct = ((currentPrice - entryPrice) / entryPrice) * 100;
+
+        const pnlEl = document.getElementById('symPnL');
+        if (pnlEl) {
+            pnlEl.innerText = `${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%`;
+            pnlEl.className = `text-xs font-black ${pnlPct >= 0 ? 'text-green-500' : 'text-red-500'}`;
+        }
     }
 
     applyMarkers() {
@@ -1062,6 +1141,7 @@ class MultiChartEngine {
             w.classList.toggle('active', i === idx);
         });
         this.updateUI();
+        if (this.charts[idx]) this.charts[idx].updateSymmetryUI();
     }
 
     updateUI() {
