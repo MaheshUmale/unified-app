@@ -21,6 +21,7 @@ class OptionsDashboardManager {
         if (window.Chart) {
             Chart.defaults.font.family = "'Plus Jakarta Sans', sans-serif";
             Chart.defaults.color = '#94a3b8';
+            Chart.defaults.font.size = 9;
         }
 
         this.init();
@@ -152,10 +153,11 @@ class OptionsDashboardManager {
                 responsive: true, maintainAspectRatio: false,
                 interaction: { mode: 'index', intersect: false },
                 scales: {
-                    y: { type: 'linear', position: 'left', title: { display: true, text: 'OI Change', color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } },
-                    y1: { type: 'linear', position: 'right', beginAtZero: false, grid: { display: false }, title: { display: true, text: 'Spot Price', color: '#94a3b8' } }
+                    x: { ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 8 } },
+                    y: { type: 'linear', position: 'left', ticks: { font: { size: 8 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                    y1: { type: 'linear', position: 'right', beginAtZero: false, grid: { display: false }, ticks: { font: { size: 8 } } }
                 },
-                plugins: { legend: { position: 'top', labels: { boxWidth: 10, font: { size: 10 } } } }
+                plugins: { legend: { position: 'top', labels: { boxWidth: 8, font: { size: 8 } } } }
             }
         });
     }
@@ -181,10 +183,11 @@ class OptionsDashboardManager {
                 responsive: true, maintainAspectRatio: false,
                 interaction: { mode: 'index', intersect: false },
                 scales: {
-                    y: { type: 'linear', position: 'left', title: { display: true, text: 'OI Difference', color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } },
-                    y1: { type: 'linear', position: 'right', beginAtZero: false, grid: { display: false }, title: { display: true, text: 'Spot Price', color: '#94a3b8' } }
+                    x: { ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 8 } },
+                    y: { type: 'linear', position: 'left', ticks: { font: { size: 8 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                    y1: { type: 'linear', position: 'right', beginAtZero: false, grid: { display: false }, ticks: { font: { size: 8 } } }
                 },
-                plugins: { legend: { position: 'top', labels: { boxWidth: 10, font: { size: 10 } } } }
+                plugins: { legend: { position: 'top', labels: { boxWidth: 8, font: { size: 8 } } } }
             }
         });
     }
@@ -213,9 +216,10 @@ class OptionsDashboardManager {
             options: {
                 responsive: true, maintainAspectRatio: false,
                 scales: {
-                    x: { grid: { display: false }, ticks: { font: { size: 9 } } },
-                    y: { grid: { color: 'rgba(255,255,255,0.05)' } }
-                }
+                    x: { grid: { display: false }, ticks: { font: { size: 8 }, maxRotation: 45 } },
+                    y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { font: { size: 8 } } }
+                },
+                plugins: { legend: { display: false } }
             }
         });
     }
@@ -238,9 +242,10 @@ class OptionsDashboardManager {
             options: {
                 responsive: true, maintainAspectRatio: false,
                 scales: {
-                    x: { grid: { display: false }, ticks: { font: { size: 9 } } },
-                    y: { grid: { color: 'rgba(255,255,255,0.05)' } }
-                }
+                    x: { grid: { display: false }, ticks: { font: { size: 8 }, maxRotation: 45 } },
+                    y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { font: { size: 8 } } }
+                },
+                plugins: { legend: { display: false } }
             }
         });
     }
@@ -260,16 +265,16 @@ class OptionsDashboardManager {
         document.getElementById('totalPutOiChg').textContent = format(totals.total_put_oi_chg);
 
         const chgMax = Math.max(Math.abs(totals.total_call_oi_chg), Math.abs(totals.total_put_oi_chg), 1);
-        document.getElementById('callChgBar').style.height = (Math.abs(totals.total_call_oi_chg) / chgMax * 100) + '%';
-        document.getElementById('putChgBar').style.height = (Math.abs(totals.total_put_oi_chg) / chgMax * 100) + '%';
+        document.getElementById('callChgBar').style.width = (Math.abs(totals.total_call_oi_chg) / chgMax * 100) + '%';
+        document.getElementById('putChgBar').style.width = (Math.abs(totals.total_put_oi_chg) / chgMax * 100) + '%';
 
         // Total Sidebar
         document.getElementById('totalCallOi').textContent = format(totals.total_call_oi);
         document.getElementById('totalPutOi').textContent = format(totals.total_put_oi);
 
         const totalMax = Math.max(totals.total_call_oi, totals.total_put_oi, 1);
-        document.getElementById('callTotalBar').style.height = (totals.total_call_oi / totalMax * 100) + '%';
-        document.getElementById('putTotalBar').style.height = (totals.total_put_oi / totalMax * 100) + '%';
+        document.getElementById('callTotalBar').style.width = (totals.total_call_oi / totalMax * 100) + '%';
+        document.getElementById('putTotalBar').style.width = (totals.total_put_oi / totalMax * 100) + '%';
     }
 
     renderPCRGauge(data) {

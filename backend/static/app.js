@@ -282,6 +282,9 @@ class ChartInstance {
         // Block live updates during Replay for the active chart
         if (this.engine.replay.isActive && this.engine.activeIdx === this.index) return;
 
+        // Discard if data is totally invalid
+        if (!quote || typeof quote !== 'object') return;
+
         const price = parseFloat(quote.last_price);
         if (isNaN(price) || price <= 0) return;
 
@@ -303,11 +306,14 @@ class ChartInstance {
 
         if (!this.lastCandle || candleTime > this.lastCandle.time) {
             this.lastCandle = { time: candleTime, open: price, high: price, low: price, close: price, volume: ltq };
-        } else {
+        } else if (candleTime === this.lastCandle.time) {
             this.lastCandle.close = price;
             this.lastCandle.high = Math.max(this.lastCandle.high, price);
             this.lastCandle.low = Math.min(this.lastCandle.low, price);
             this.lastCandle.volume += ltq;
+        } else {
+            // Out of order tick, discard for chart update but could be stored if needed
+            return;
         }
 
         this.fullHistory.candles.set(this.lastCandle.time, { ...this.lastCandle });
@@ -339,24 +345,24 @@ class ChartInstance {
                 const c = { time: ts, open: v[1], high: v[2], low: v[3], close: v[4], volume: v[5], rvol: v[6] || 1.0 };
                 this.fullHistory.candles.set(c.time, c);
 
-                const coloredUpdate = {
-                    ...c,
-                    color: this.getColorByRvol(c),
-                    borderColor: this.getColorByRvol(c),
-                    wickColor: this.getColorByRvol(c)
-                };
-
-                try {
-                    this.mainSeries.update(coloredUpdate);
-                    this.volumeSeries.update({
-                        time: c.time, value: c.volume,
-                        color: c.close >= c.open ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'
-                    });
-                } catch (e) {
-                    console.warn("[Chart] Update failed (likely out of order):", e.message);
-                }
-
+                // Safety: Only update series if time is >= last seen time
                 if (!this.lastCandle || c.time >= this.lastCandle.time) {
+                    const coloredUpdate = {
+                        ...c,
+                        color: this.getColorByRvol(c),
+                        borderColor: this.getColorByRvol(c),
+                        wickColor: this.getColorByRvol(c)
+                    };
+
+                    try {
+                        this.mainSeries.update(coloredUpdate);
+                        this.volumeSeries.update({
+                            time: c.time, value: c.volume,
+                            color: c.close >= c.open ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'
+                        });
+                    } catch (e) {
+                        console.warn(`[Chart] Update failed at ${c.time}:`, e.message);
+                    }
                     this.lastCandle = c;
                 }
             });
@@ -1101,7 +1107,8 @@ class MultiChartEngine {
         const inputs = modal.querySelectorAll('input');
         inputs.forEach(input => {
             if (settings[input.id] !== undefined) {
-                input.value = settings[input.id];
+                if (input.type === 'checkbox') input.checked = settings[input.id];
+                else input.value = settings[input.id];
             }
         });
 
@@ -1113,7 +1120,7 @@ class MultiChartEngine {
         const inputs = modal.querySelectorAll('input');
         const settings = {};
         inputs.forEach(input => {
-            settings[input.id] = input.value;
+            settings[input.id] = input.type === 'checkbox' ? input.checked : input.value;
         });
 
         localStorage.setItem('pro_analysis_settings', JSON.stringify(settings));
