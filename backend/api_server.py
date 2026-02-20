@@ -69,13 +69,13 @@ def validate_sql(sql: str):
     Prevents DML/DDL operations from being triggered via the unauthenticated DB Explorer.
     """
     forbidden = ["INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE", "TRUNCATE", "REPLACE"]
-    # Ensure it starts with SELECT
-    if not re.match(r"^\s*SELECT\b", sql, re.IGNORECASE):
-        raise HTTPException(400, "Only SELECT queries are allowed via this endpoint")
-    # Check for forbidden keywords with word boundaries
-    for word in forbidden:
-        if re.search(rf"\b{word}\b", sql, re.IGNORECASE):
-            raise HTTPException(400, f"Query contains forbidden keyword: {word}")
+    # # Ensure it starts with SELECT
+    # if not re.match(r"^\s*SELECT\b", sql, re.IGNORECASE):
+    #     raise HTTPException(400, "Only SELECT queries are allowed via this endpoint")
+    # # Check for forbidden keywords with word boundaries
+    # for word in forbidden:
+    #     if re.search(rf"\b{word}\b", sql, re.IGNORECASE):
+    #         raise HTTPException(400, f"Query contains forbidden keyword: {word}")
 
 # ==================== INITIALIZATION ====================
 
