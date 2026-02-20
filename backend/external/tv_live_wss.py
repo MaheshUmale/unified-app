@@ -199,7 +199,8 @@ class TradingViewWSS:
 
         price = self.last_prices.get(clean_symbol)
         if price is not None:
-            ts_ms = int(self.last_times.get(clean_symbol, time.time()) * 1000)
+            raw_ts = self.last_times.get(clean_symbol)
+            ts_ms = int((raw_ts if raw_ts is not None else time.time()) * 1000)
             # Use full technical symbol for feeds to avoid mixups
             feed_msg = {
                 'type': 'live_feed',
@@ -208,7 +209,7 @@ class TradingViewWSS:
                         'last_price': float(price),
                         'ts_ms': ts_ms,
                         'tv_volume': self.last_volumes.get(clean_symbol),
-                        'oi': float(values.get('open_interest', 0)),
+                        'oi': float(values.get('open_interest', 0) if values.get('open_interest') is not None else 0),
                         'source': 'tradingview_wss'
                     }
                 }
@@ -270,7 +271,7 @@ class TradingViewWSS:
                     "type": "line",
                     "style": {"color": "#3b82f6", "lineWidth": 1},
                     "data": [
-                        {"time": int(ohlcv_data[i][0]), "value": float(val)}
+                        {"time": int(ohlcv_data[i][0] if ohlcv_data[i][0] is not None else 0), "value": float(val)}
                         for i, val in enumerate(ema9)
                         if i >= 8 and np.isfinite(val)
                     ],
@@ -283,7 +284,7 @@ class TradingViewWSS:
                     "type": "line",
                     "style": {"color": "#f97316", "lineWidth": 1},
                     "data": [
-                        {"time": int(ohlcv_data[i][0]), "value": float(val)}
+                        {"time": int(ohlcv_data[i][0] if ohlcv_data[i][0] is not None else 0), "value": float(val)}
                         for i, val in enumerate(ema20)
                         if i >= 19 and np.isfinite(val)
                     ],
@@ -311,7 +312,7 @@ class TradingViewWSS:
 
                 marker_data = []
                 for ts, sig_type in signals.items():
-                    unix_ts = int(ts.timestamp())
+                    unix_ts = int(ts.timestamp() if hasattr(ts, 'timestamp') else ts)
                     marker_data.append({
                         "time": unix_ts,
                         "position": "aboveBar" if "SHORT" in sig_type else "belowBar",
