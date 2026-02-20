@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional, Union
 from db.local_db import db, LocalDBJSONEncoder
 from core.symbol_mapper import symbol_mapper
+from core.utils import safe_int, safe_float
 from core.provider_registry import live_stream_registry
 
 logger = logging.getLogger(__name__)
@@ -147,11 +148,10 @@ def on_message(message: Union[Dict, str]):
                 # Only generate ticks from the most granular (primary) interval to avoid double-counting
                 if payload.get('ohlcv') and interval == get_primary_interval(instrument_key):
                     last_ohlcv = payload['ohlcv'][-1]
-                    # Robust type casting
-                    raw_ts = last_ohlcv[0] if last_ohlcv[0] is not None else time.time()
-                    ts_ms = int(raw_ts * 1000)
-                    price = float(last_ohlcv[4]) if last_ohlcv[4] is not None else 0.0
-                    volume = float(last_ohlcv[5]) if last_ohlcv[5] is not None else 0.0
+                    # Robust type casting using helpers
+                    ts_ms = safe_int(last_ohlcv[0] * 1000 if last_ohlcv[0] is not None else time.time() * 1000)
+                    price = safe_float(last_ohlcv[4])
+                    volume = safe_float(last_ohlcv[5])
 
                     # Deduplicate: only process if price or volume or timestamp changed
                     prev = last_processed_tick.get(instrument_key, {})
@@ -178,15 +178,10 @@ def on_message(message: Union[Dict, str]):
         for inst_key, feed_datum in feeds_map.items():
             # Standard Quote Feed Deduplication (in addition to Chart)
             if feed_datum.get('source') != 'tv_chart_fallback':
-                # Robust type casting for quote fields
-                raw_ts = feed_datum.get('ts_ms')
-                ts_ms = int(raw_ts if raw_ts is not None else time.time() * 1000)
-
-                raw_price = feed_datum.get('last_price')
-                price = float(raw_price if raw_price is not None else 0.0)
-
-                raw_vol = feed_datum.get('tv_volume')
-                volume = float(raw_vol if raw_vol is not None else 0.0)
+                # Robust type casting for quote fields using helpers
+                ts_ms = safe_int(feed_datum.get('ts_ms') or time.time() * 1000)
+                price = safe_float(feed_datum.get('last_price'))
+                volume = safe_float(feed_datum.get('tv_volume'))
 
                 prev = last_processed_tick.get(inst_key, {})
                 if ts_ms == prev.get('ts_ms') and price == prev.get('price') and volume == prev.get('volume'):
@@ -194,16 +189,14 @@ def on_message(message: Union[Dict, str]):
                 last_processed_tick[inst_key] = {'ts_ms': ts_ms, 'price': price, 'volume': volume}
 
             # Use technical symbol as is
-            raw_lp = feed_datum.get('last_price')
             feed_datum.update({
                 'instrumentKey': inst_key,
                 'date': today_str,
-                'last_price': float(raw_lp if raw_lp is not None else 0.0),
+                'last_price': safe_float(feed_datum.get('last_price')),
                 'source': feed_datum.get('source', 'tv_wss')
             })
 
-            raw_ts_val = feed_datum.get('ts_ms')
-            ts_val = int(raw_ts_val if raw_ts_val is not None else time.time() * 1000)
+            ts_val = safe_int(feed_datum.get('ts_ms') or time.time() * 1000)
             if 0 < ts_val < 10000000000: ts_val *= 1000
             feed_datum['ts_ms'] = ts_val
 
@@ -224,7 +217,7 @@ def on_message(message: Union[Dict, str]):
                 curr_vol = feed_datum.get('upstox_volume')
 
             if curr_vol is not None:
-                curr_vol = float(curr_vol)
+                curr_vol = safe_float(curr_vol)
                 prev_vol = latest_total_volumes.get(tracker_key, 0)
 
                 if prev_vol > 0:
@@ -253,7 +246,7 @@ def on_message(message: Union[Dict, str]):
                 logger.warning(f"Extreme volume detected for {inst_key}: {delta_vol}. Clamping.")
                 delta_vol = 100 if is_index else delta_vol % 10000
 
-            feed_datum['ltq'] = int(delta_vol)
+            feed_datum['ltq'] = safe_int(delta_vol)
             sym_feeds[inst_key] = feed_datum
 
         # Throttled UI Emission

@@ -10,6 +10,7 @@ import requests
 import numpy as np
 from config import TV_COOKIE
 from core.symbol_mapper import symbol_mapper
+from core.utils import safe_int, safe_float
 
 logger = logging.getLogger(__name__)
 
@@ -199,17 +200,16 @@ class TradingViewWSS:
 
         price = self.last_prices.get(clean_symbol)
         if price is not None:
-            raw_ts = self.last_times.get(clean_symbol)
-            ts_ms = int((raw_ts if raw_ts is not None else time.time()) * 1000)
+            ts_ms = safe_int((self.last_times.get(clean_symbol) or time.time()) * 1000)
             # Use full technical symbol for feeds to avoid mixups
             feed_msg = {
                 'type': 'live_feed',
                 'feeds': {
                     clean_symbol: {
-                        'last_price': float(price),
+                        'last_price': safe_float(price),
                         'ts_ms': ts_ms,
-                        'tv_volume': self.last_volumes.get(clean_symbol),
-                        'oi': float(values.get('open_interest', 0) if values.get('open_interest') is not None else 0),
+                        'tv_volume': safe_float(self.last_volumes.get(clean_symbol)),
+                        'oi': safe_float(values.get('open_interest')),
                         'source': 'tradingview_wss'
                     }
                 }
@@ -271,7 +271,7 @@ class TradingViewWSS:
                     "type": "line",
                     "style": {"color": "#3b82f6", "lineWidth": 1},
                     "data": [
-                        {"time": int(ohlcv_data[i][0] if ohlcv_data[i][0] is not None else 0), "value": float(val)}
+                        {"time": safe_int(ohlcv_data[i][0]), "value": safe_float(val)}
                         for i, val in enumerate(ema9)
                         if i >= 8 and np.isfinite(val)
                     ],
@@ -284,7 +284,7 @@ class TradingViewWSS:
                     "type": "line",
                     "style": {"color": "#f97316", "lineWidth": 1},
                     "data": [
-                        {"time": int(ohlcv_data[i][0] if ohlcv_data[i][0] is not None else 0), "value": float(val)}
+                        {"time": safe_int(ohlcv_data[i][0]), "value": safe_float(val)}
                         for i, val in enumerate(ema20)
                         if i >= 19 and np.isfinite(val)
                     ],
@@ -302,7 +302,7 @@ class TradingViewWSS:
                         "title": "Zones",
                         "data": [
                             {
-                                "price": float(zone['price']),
+                                "price": safe_float(zone['price']),
                                 "color": "rgba(59, 130, 246, 0.4)",
                                 "lineStyle": 2,
                                 "title": ""
@@ -312,7 +312,7 @@ class TradingViewWSS:
 
                 marker_data = []
                 for ts, sig_type in signals.items():
-                    unix_ts = int(ts.timestamp() if hasattr(ts, 'timestamp') else ts)
+                    unix_ts = safe_int(ts.timestamp() if hasattr(ts, 'timestamp') else ts)
                     marker_data.append({
                         "time": unix_ts,
                         "position": "aboveBar" if "SHORT" in sig_type else "belowBar",

@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from datetime import datetime
+from core.utils import safe_int, safe_float
 
 class VolumeAnalyzer:
     def __init__(self, rvol_len=20, bubble_long_len=100, bubble_short_len=10, node_std_len=48):
@@ -28,14 +29,6 @@ class VolumeAnalyzer:
         """
         # Apply setting overrides
         s = settings or {}
-
-        def safe_int(val, default):
-            try: return int(val) if val is not None else default
-            except: return default
-
-        def safe_float(val, default):
-            try: return float(val) if val is not None else default
-            except: return default
 
         rvol_len = safe_int(s.get('rvol_len'), self.rvol_len)
         bubble_long_len = safe_int(s.get('bubble_long_len'), self.bubble_long_len)

@@ -212,9 +212,13 @@ class GreeksCalculator:
         result = []
         for item in chain_data:
             try:
-                strike = float(item.get('strike', 0))
+                raw_strike = item.get('strike')
+                strike = float(raw_strike if raw_strike is not None else 0.0)
+
                 option_type = item.get('option_type', 'call')
-                ltp = float(item.get('ltp', 0))
+
+                raw_ltp = item.get('ltp')
+                ltp = float(raw_ltp if raw_ltp is not None else 0.0)
                 
                 # Estimate IV from LTP if available, else use default
                 iv = 0.20  # Default 20%

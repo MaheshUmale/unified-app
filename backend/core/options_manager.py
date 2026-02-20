@@ -16,6 +16,7 @@ from config import OPTIONS_UNDERLYINGS, SNAPSHOT_CONFIG
 from db.local_db import db
 from core.interfaces import ILiveStreamProvider
 from core.provider_registry import options_data_registry, historical_data_registry, live_stream_registry
+from core.utils import safe_int, safe_float
 from external.tv_options_wss import OptionsWSS
 
 # Import new modules
@@ -356,20 +357,23 @@ class OptionsManager:
             if 'feeds' in data:
                 for symbol, tick in data['feeds'].items():
                     # Map back to what handle_wss_data expects
-                    raw_ltq = tick.get('ltq')
-                    raw_uv = tick.get('upstox_volume')
-
-                    # Ensure volume is not None
-                    volume = raw_ltq if raw_ltq is not None else (raw_uv if raw_uv is not None else 0)
+                    # Check all possible volume fields
+                    volume = safe_int(tick.get('ltq') or tick.get('upstox_volume') or tick.get('tv_volume'))
 
                     self.handle_wss_data(underlying, {
                         'symbol': symbol,
-                        'lp': tick.get('last_price', 0.0),
+                        'lp': safe_float(tick.get('last_price')),
                         'volume': volume,
-                        'bid': tick.get('bid'),
-                        'ask': tick.get('ask')
+                        'bid': safe_float(tick.get('bid')),
+                        'ask': safe_float(tick.get('ask'))
                     })
             else:
+                # Handle single object feed (usually from OptionsWSS)
+                # Ensure fields are safely cast before passing to handle_wss_data
+                data['lp'] = safe_float(data.get('lp'))
+                data['volume'] = safe_int(data.get('volume') or data.get('ltq') or data.get('tv_volume'))
+                data['bid'] = safe_float(data.get('bid'))
+                data['ask'] = safe_float(data.get('ask'))
                 self.handle_wss_data(underlying, data)
 
         # Subscribe to all available live streamers for redundancy
@@ -407,15 +411,14 @@ class OptionsManager:
         symbol = data.get('symbol')
         if not symbol: return
         
-        lp = data.get('lp')
-        if lp and underlying in self.monitored_symbols and symbol in self.monitored_symbols[underlying]:
+        lp = safe_float(data.get('lp'))
+        if lp > 0 and underlying in self.monitored_symbols and symbol in self.monitored_symbols[underlying]:
             # Record tick for monitored symbol to ensure chart trace
-            raw_vol = data.get('volume')
             tick = {
                 'instrumentKey': symbol,
-                'ts_ms': int(time.time() * 1000),
+                'ts_ms': safe_int(time.time() * 1000),
                 'last_price': lp,
-                'ltq': raw_vol if raw_vol is not None else 0,
+                'ltq': safe_int(data.get('volume')),
                 'source': 'options_wss'
             }
             db.insert_ticks([tick])

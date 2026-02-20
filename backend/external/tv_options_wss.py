@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional, Callable
 from config import TV_COOKIE
 from core.interfaces import ILiveStreamProvider
+from core.utils import safe_int, safe_float
 
 logger = logging.getLogger(__name__)
 
@@ -135,10 +136,10 @@ class OptionsWSS(ILiveStreamProvider):
                         self.callback({
                             'symbol': symbol,
                             'status': status,
-                            'lp': values.get('lp', 0.0),
-                            'volume': values.get('volume', 0),
-                            'bid': values.get('bid'),
-                            'ask': values.get('ask')
+                            'lp': safe_float(values.get('lp')),
+                            'volume': safe_int(values.get('volume')),
+                            'bid': safe_float(values.get('bid')),
+                            'ask': safe_float(values.get('ask'))
                         })
         except Exception as e:
             logger.error(f"Error in Options Quote WSS message handling: {e}")
