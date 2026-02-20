@@ -13,6 +13,23 @@ from brain.SymmetryAnalyzer import SymmetryAnalyzer
 from core.provider_registry import historical_data_registry, initialize_default_providers
 from core.options_manager import options_manager
 
+"""
+Triple-Stream Symmetry & Panic Strategy Backtester.
+
+This utility allows users to evaluate the performance of the Symmetry strategy
+on historical market data stored in the local DuckDB. It simulates trade execution,
+calculates PnL for each signal, and provides an aggregate performance report.
+
+Usage:
+    export PYTHONPATH=$PYTHONPATH:$(pwd)/backend
+    python backend/backtest_symmetry.py --underlying NSE:NIFTY --count 1000
+
+Parameters:
+    --underlying: The index symbol to test (default: NSE:NIFTY)
+    --interval: Data granularity (default: '1')
+    --count: Number of historical candles to fetch (default: 500)
+"""
+
 async def run_backtest(underlying="NSE:NIFTY", interval='1', count=500):
     print(f"=== Symmetry Strategy Backtest: {underlying} ===")
     initialize_default_providers()
@@ -118,4 +135,11 @@ async def run_backtest(underlying="NSE:NIFTY", interval='1', count=500):
     print(f"Avg PnL per trade: {res_df['pnl%'].mean():.2f}%")
 
 if __name__ == "__main__":
-    asyncio.run(run_backtest())
+    import argparse
+    parser = argparse.ArgumentParser(description="Run Symmetry Strategy Backtest")
+    parser.add_argument("--underlying", type=str, default="NSE:NIFTY", help="Index symbol")
+    parser.add_argument("--interval", type=str, default="1", help="Timeframe")
+    parser.add_argument("--count", type=int, default=500, help="Number of candles")
+
+    args = parser.parse_args()
+    asyncio.run(run_backtest(underlying=args.underlying, interval=args.interval, count=args.count))

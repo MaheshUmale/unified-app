@@ -40,6 +40,12 @@ A minimal, high-performance trading terminal featuring TradingView charting, rea
   - **OI Profile Overlay**: Toggleable vertical histogram directly on the chart showing Call vs Put Open Interest across all strikes.
   - **Analysis Center Sidebar**: Integrated panel showing OiGenie predictions (institutional control), OI Buildup Pulse, and real-time Scalper metrics.
   - **Synchronized Replay**: Historical replay mode now fully synchronizes with historical OI and PCR data, simulating the exact market state for strategy refinement.
+- **Triple-Stream Symmetry & Panic Strategy**:
+  - Implements the "Wall-to-Void" algorithm for index scalping.
+  - **Symmetry Detection**: Synchronizes Index Spot, ATM Call, and ATM Put price action.
+  - **Panic Filter**: Real-time OI Delta tracking to detect seller unwinding (short covering).
+  - **Decay Divergence**: Detects bullish momentum by identifying option prices that resist theta decay.
+  - **Automated Visualization**: Direct marking of BUY_CE/BUY_PE signals on the chart with dynamic SL and TP price lines.
 - **Efficient Backend**: Built with FastAPI and DuckDB for low-latency data handling and persistence.
 - **Enhanced Data Engine**: Integrated enterprise-grade TradingView module featuring:
   - **Intelligent Caching**: Multi-layered cache for historical and real-time data.
@@ -155,19 +161,44 @@ python3 backend/api_server.py
   - **OiGenie**: Detects whether buyers or sellers are in control and predicts potential sideways movement.
   - **OI Buildup Pulse**: Real-time census of Long/Short buildup and covering across all strikes.
   - **Scalper Pulse**: If the NSE Confluence Scalper is running, its live metrics and confluence dots will appear here.
+- **Symmetry & Panic Pulse**: A dedicated real-time tracker for the Symmetry strategy, showing the active signal type, confluence score, and live PnL relative to the entry price.
 
-### 8. Settings & Customization
+### 8. Triple-Stream Symmetry Strategy
+The terminal includes a native implementation of the Triple-Stream Symmetry & Panic strategy (inspired by MaheshUmale/ENGINE):
+- **Phase I (Reference Level)**: Detects significant swing highs/lows ("Walls") in the index and records the corresponding option prices.
+- **Phase II (Pullback)**: Monitors the index return to the reference level.
+- **Phase III (The Trigger)**: Executes when the Index, ATM Call, and ATM Put reach a state of symmetry (e.g., Index > High, CE > High, PE < Low) combined with OI panic.
+- **Phase IV (Guardrails)**: Built-in absorption traps and asymmetry filters to prevent false breakouts.
+
+To view Symmetry signals:
+1. Select an Index symbol (e.g., `NSE:NIFTY`).
+2. Ensure the timeframe is set to `1M`.
+3. Check the **Analysis** toggle in the header.
+4. Signals will appear as markers on the chart. SL and TP levels will be drawn as horizontal dashed lines.
+
+### 9. Strategy Backtesting
+You can evaluate the Symmetry strategy using the provided backtest utility:
+```bash
+export PYTHONPATH=$PYTHONPATH:$(pwd)/backend
+python backend/backtest_symmetry.py
+```
+This script simulates the strategy over historical DuckDB data and provides a detailed performance report including:
+- Win Rate %
+- Total Cumulative PnL %
+- Individual Trade Logs (Entry, Exit, Outcome, PnL)
+
+### 10. Settings & Customization
 - **Theme Management**: Use the **Moon/Sun** icon in the header to toggle between **Modern Dark Mode** and **High-Visibility Light Theme**.
 - **Theming Logic**: The application uses a unified CSS variable engine (`--bg-main`, `--text-primary`, etc.) ensuring consistent colors across all charts, tables, and dashboards.
 - **Typography**: Optimized for readability using the **Plus Jakarta Sans** font family, with distinct weights for data (600) and headers (800).
 - **Layout Persistence**: Your layout configuration, selected symbols, timeframes, and drawings are automatically saved to `localStorage`. They will be restored exactly as you left them when you return to the application.
 
-### 9. Changing Features & Config
+### 11. Changing Features & Config
 - **Market Hours**: Most analysis tools default to Indian Standard Time (IST). Ensure your system clock is accurate for optimal real-time synchronization.
 - **Data Intervals**: Toggle between 1M, 5M, 15M, and 1H intervals in the terminal header. Note that Options Snapshot data defaults to a 5-minute granularity.
 - **DB Inspection**: Use the `/db-viewer` to run raw SQL queries if you need to extract custom datasets or verify snapshot integrity.
 
-### 10. Advanced Configuration (backend/config.py)
+### 12. Advanced Configuration (backend/config.py)
 Advanced users can tune the system by modifying `backend/config.py`:
 - **Greeks Config**: Adjust the `risk_free_rate` (default 10%) or `default_volatility` for Black-Scholes calculations.
 - **IV Thresholds**: Change `high_iv_threshold` (default 70) and `low_iv_threshold` (30) to customize IV Rank signals.
