@@ -356,10 +356,16 @@ class OptionsManager:
             if 'feeds' in data:
                 for symbol, tick in data['feeds'].items():
                     # Map back to what handle_wss_data expects
+                    raw_ltq = tick.get('ltq')
+                    raw_uv = tick.get('upstox_volume')
+
+                    # Ensure volume is not None
+                    volume = raw_ltq if raw_ltq is not None else (raw_uv if raw_uv is not None else 0)
+
                     self.handle_wss_data(underlying, {
                         'symbol': symbol,
-                        'lp': tick.get('last_price'),
-                        'volume': tick.get('ltq') or tick.get('upstox_volume'),
+                        'lp': tick.get('last_price', 0.0),
+                        'volume': volume,
                         'bid': tick.get('bid'),
                         'ask': tick.get('ask')
                     })
@@ -404,11 +410,12 @@ class OptionsManager:
         lp = data.get('lp')
         if lp and underlying in self.monitored_symbols and symbol in self.monitored_symbols[underlying]:
             # Record tick for monitored symbol to ensure chart trace
+            raw_vol = data.get('volume')
             tick = {
                 'instrumentKey': symbol,
                 'ts_ms': int(time.time() * 1000),
                 'last_price': lp,
-                'ltq': data.get('volume', 0),
+                'ltq': raw_vol if raw_vol is not None else 0,
                 'source': 'options_wss'
             }
             db.insert_ticks([tick])
