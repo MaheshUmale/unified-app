@@ -6,6 +6,7 @@ import upstox_client
 from upstox_client.feeder.market_data_streamer_v3 import MarketDataStreamerV3
 from config import UPSTOX_ACCESS_TOKEN
 from core.symbol_mapper import symbol_mapper
+from core.utils import safe_int, safe_float
 
 logger = logging.getLogger(__name__)
 
@@ -101,12 +102,11 @@ class UpstoxWSS:
 
                     if index_ff:
                         ltpc = index_ff.get('ltpc', {})
-                        raw_ltt = ltpc.get('ltt')
-                        ltt = int(raw_ltt if raw_ltt is not None else 0)
+                        ltt = safe_int(ltpc.get('ltt'))
                         # Upstox ltt is in seconds, convert to ms
-                        ts_ms = ltt * 1000 if ltt < 1e12 else ltt
+                        ts_ms = ltt * 1000 if 0 < ltt < 1e12 else ltt
                         feed_data = {
-                            'last_price': float(ltpc.get('ltp') if ltpc.get('ltp') is not None else 0),
+                            'last_price': safe_float(ltpc.get('ltp')),
                             'ts_ms': ts_ms,
                             'ltq': 0, # Indices don't have LTQ usually
                             'upstox_volume': 0
@@ -114,32 +114,29 @@ class UpstoxWSS:
                     elif market_ff:
                         ltpc = market_ff.get('ltpc', {})
                         market_pic = market_ff.get('marketPic', {})
-                        raw_ltt = ltpc.get('ltt', market_pic.get('ltt'))
-                        ltt = int(raw_ltt if raw_ltt is not None else 0)
-                        ts_ms = ltt * 1000 if ltt < 1e12 else ltt
+                        ltt = safe_int(ltpc.get('ltt', market_pic.get('ltt')))
+                        ts_ms = ltt * 1000 if 0 < ltt < 1e12 else ltt
                         feed_data = {
-                            'last_price': float(ltpc.get('ltp') if ltpc.get('ltp') is not None else market_pic.get('ltp', 0)),
-                            'ltq': int(market_pic.get('ltq') if market_pic.get('ltq') is not None else 0),
+                            'last_price': safe_float(ltpc.get('ltp') if ltpc.get('ltp') is not None else market_pic.get('ltp')),
+                            'ltq': safe_int(market_pic.get('ltq')),
                             'ts_ms': ts_ms,
-                            'upstox_volume': float(market_pic.get('vtt') if market_pic.get('vtt') is not None else 0)
+                            'upstox_volume': safe_float(market_pic.get('vtt'))
                         }
                     else:
                         # Fallback for other potential fullFeed structures
                         market_pic = full_feed.get('marketPic', {})
-                        raw_ltt = market_pic.get('ltt')
-                        ltt = int(raw_ltt if raw_ltt is not None else 0)
-                        ts_ms = ltt * 1000 if ltt < 1e12 else ltt
+                        ltt = safe_int(market_pic.get('ltt'))
+                        ts_ms = ltt * 1000 if 0 < ltt < 1e12 else ltt
                         feed_data = {
-                            'last_price': float(market_pic.get('ltp') if market_pic.get('ltp') is not None else 0),
-                            'ltq': int(market_pic.get('ltq') if market_pic.get('ltq') is not None else 0),
+                            'last_price': safe_float(market_pic.get('ltp')),
+                            'ltq': safe_int(market_pic.get('ltq')),
                             'ts_ms': ts_ms,
-                            'upstox_volume': float(market_pic.get('vtt') if market_pic.get('vtt') is not None else 0)
+                            'upstox_volume': safe_float(market_pic.get('vtt'))
                         }
                 elif ltpc_feed:
-                    raw_ltt = ltpc_feed.get('ltt')
-                    ltt = int(raw_ltt if raw_ltt is not None else 0)
-                    ts_ms = ltt * 1000 if ltt < 1e12 else ltt
-                    feed_data = {'last_price': float(ltpc_feed.get('ltp') if ltpc_feed.get('ltp') is not None else 0), 'ts_ms': ts_ms}
+                    ltt = safe_int(ltpc_feed.get('ltt'))
+                    ts_ms = ltt * 1000 if 0 < ltt < 1e12 else ltt
+                    feed_data = {'last_price': safe_float(ltpc_feed.get('ltp')), 'ts_ms': ts_ms}
 
                 if feed_data and feed_data.get('last_price', 0) > 0:
                     feed_data['source'] = 'upstox_wss'

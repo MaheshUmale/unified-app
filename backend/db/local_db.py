@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional
 import threading
 import pandas as pd
+from core.utils import safe_int, safe_float
 
 logger = logging.getLogger(__name__)
 
@@ -175,15 +176,10 @@ class LocalDB:
         if not ticks: return
         data = []
         for t in ticks:
-            # Robust type casting with fallbacks for None values
-            raw_price = t.get('last_price')
-            price = float(raw_price if raw_price is not None else 0.0)
-
-            raw_qty = t.get('ltq')
-            qty = int(raw_qty if raw_qty is not None else 0)
-
-            raw_ts = t.get('ts_ms')
-            ts_ms = int(raw_ts if raw_ts is not None else 0)
+            # Robust type casting using shared utilities
+            price = safe_float(t.get('last_price'))
+            qty = safe_int(t.get('ltq'))
+            ts_ms = safe_int(t.get('ts_ms'))
 
             data.append({
                 'date': t.get('date', datetime.now().strftime('%Y-%m-%d')),
@@ -262,10 +258,18 @@ class LocalDB:
             'oi', 'oi_change', 'volume', 'ltp', 'iv', 'delta', 'gamma', 'theta',
             'vega', 'intrinsic_value', 'time_value', 'source'
         ]
-        # Ensure all columns exist in data
+        # Ensure all columns exist in data and have correct types
         for item in data:
             for c in cols:
-                if c not in item: item[c] = None
+                if c not in item:
+                    item[c] = None
+
+            # Robust type casting for critical numeric fields to prevent downstream failures
+            item['oi'] = safe_int(item.get('oi'))
+            item['oi_change'] = safe_int(item.get('oi_change'))
+            item['volume'] = safe_int(item.get('volume'))
+            item['strike'] = safe_float(item.get('strike'))
+            item['ltp'] = safe_float(item.get('ltp'))
 
         df = pd.DataFrame(data)[cols]
         with self._execute_lock:
@@ -273,9 +277,13 @@ class LocalDB:
 
     def insert_pcr_history(self, record: Dict[str, Any]):
         cols = ['timestamp', 'underlying', 'pcr_oi', 'pcr_vol', 'pcr_oi_change', 'underlying_price', 'max_pain', 'spot_price', 'total_oi', 'total_oi_change']
-        # Ensure all columns exist in record
+
+        # Ensure all columns exist and use safe casting
         for c in cols:
-            if c not in record: record[c] = 0
+            if 'pcr' in c or 'price' in c or 'pain' in c:
+                record[c] = safe_float(record.get(c))
+            else:
+                record[c] = safe_int(record.get(c))
 
         df = pd.DataFrame([record])[cols]
         with self._execute_lock:

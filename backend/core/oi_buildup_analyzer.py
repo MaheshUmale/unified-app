@@ -299,13 +299,13 @@ class OIBuildupAnalyzer:
         """Detects aggressive selling and distribution by smart money."""
         # Aggressive distribution: Heavy Call writing at strikes near or above spot
         # or heavy Put unwinding.
-        calls = [c for c in chain_data if c.get('option_type') == 'call' and c.get('strike') >= spot_price]
+        calls = [c for c in chain_data if c.get('option_type') == 'call' and (c.get('strike') or 0) >= spot_price]
 
         # Sort by OI change to find most aggressive writing
-        aggressive_writing = sorted(calls, key=lambda x: x.get('oi_change', 0), reverse=True)
+        aggressive_writing = sorted(calls, key=lambda x: x.get('oi_change') or 0, reverse=True)
 
         top_distribution_strikes = aggressive_writing[:3]
-        is_aggressive = any(s.get('oi_change', 0) > 100000 for s in top_distribution_strikes)
+        is_aggressive = any((s.get('oi_change') or 0) > 100000 for s in top_distribution_strikes)
 
         return {
             'is_aggressive_distribution': is_aggressive,
@@ -315,8 +315,8 @@ class OIBuildupAnalyzer:
 
     def detect_market_control(self, chain_data: List[Dict[str, Any]]) -> str:
         """Identifies if buyers or sellers are firmly in control."""
-        total_call_oi_chg = sum(c.get('oi_change', 0) for c in chain_data if c.get('option_type') == 'call')
-        total_put_oi_chg = sum(c.get('oi_change', 0) for c in chain_data if c.get('option_type') == 'put')
+        total_call_oi_chg = sum(c.get('oi_change') or 0 for c in chain_data if c.get('option_type') == 'call')
+        total_put_oi_chg = sum(c.get('oi_change') or 0 for c in chain_data if c.get('option_type') == 'put')
 
         if total_put_oi_chg > total_call_oi_chg * 1.5:
             return "BUYERS_IN_CONTROL"
@@ -377,23 +377,23 @@ class OIBuildupAnalyzer:
         
         # Filter: Resistance should be above spot, Support should be below spot
         if spot_price > 0:
-            calls = [c for c in calls if c.get('strike') >= spot_price]
-            puts = [p for p in puts if p.get('strike') <= spot_price]
+            calls = [c for c in calls if (c.get('strike') or 0) >= spot_price]
+            puts = [p for p in puts if (p.get('strike') or 0) <= spot_price]
 
         # Fallback: if filtered results are empty, use original set (or top/bottom of chain)
         # However, for "Institutional" levels, empty is often more accurate if spot is at extremes.
         # We'll stick to filtered, but ensure they aren't completely empty if possible.
 
         # Sort by OI
-        calls_by_oi = sorted(calls, key=lambda x: x.get('oi', 0), reverse=True)
-        puts_by_oi = sorted(puts, key=lambda x: x.get('oi', 0), reverse=True)
+        calls_by_oi = sorted(calls, key=lambda x: x.get('oi') or 0, reverse=True)
+        puts_by_oi = sorted(puts, key=lambda x: x.get('oi') or 0, reverse=True)
         
         # Highest call OI = Resistance (writers expect price to stay below)
         resistance = [
             {
                 'strike': c.get('strike'),
-                'oi': c.get('oi'),
-                'oi_change': c.get('oi_change'),
+                'oi': c.get('oi') or 0,
+                'oi_change': c.get('oi_change') or 0,
                 'strength': self._calculate_level_strength(c)
             }
             for c in calls_by_oi[:top_n]
@@ -403,8 +403,8 @@ class OIBuildupAnalyzer:
         support = [
             {
                 'strike': p.get('strike'),
-                'oi': p.get('oi'),
-                'oi_change': p.get('oi_change'),
+                'oi': p.get('oi') or 0,
+                'oi_change': p.get('oi_change') or 0,
                 'strength': self._calculate_level_strength(p)
             }
             for p in puts_by_oi[:top_n]
@@ -417,8 +417,8 @@ class OIBuildupAnalyzer:
     
     def _calculate_level_strength(self, item: Dict[str, Any]) -> str:
         """Calculate strength of a support/resistance level."""
-        oi = item.get('oi', 0)
-        oi_change = item.get('oi_change', 0)
+        oi = item.get('oi') or 0
+        oi_change = item.get('oi_change') or 0
         
         if oi > 1000000 and oi_change > 50000:
             return 'very_strong'
