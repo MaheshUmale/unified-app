@@ -250,7 +250,8 @@ async def get_intraday(
 
         # Prioritize Upstox for BSE (delay) and all Indices (speed/sync)
         providers = historical_data_registry.get_all()
-        is_index = "INDEX" in clean_key or clean_key in symbol_mapper._reverse_cache or "BSE:" in clean_key
+        hrn = symbol_mapper.get_hrn(clean_key)
+        is_index = "INDEX" in clean_key or hrn in ["NIFTY", "BANKNIFTY", "FINNIFTY", "INDIA VIX"] or "BSE:" in clean_key
         if is_index:
             providers = sorted(providers, key=lambda p: 20 if "Upstox" in type(p).__name__ else 10, reverse=True)
 
@@ -301,6 +302,75 @@ async def get_intraday(
                         "data": psych_markers
                     })
             except Exception: pass
+
+            # Symmetry Analysis for Indices (Triple-Stream Symmetry & Panic)
+            if is_index and interval == '1':
+                try:
+                    from brain.SymmetryAnalyzer import SymmetryAnalyzer
+                    # Determine ATM strike
+                    last_spot = candles[-1][4]
+                    strike_interval = 50 if "NIFTY" in clean_key and "BANK" not in clean_key else 100
+                    atm_strike = round(last_spot / strike_interval) * strike_interval
+
+                    # Ensure symbols are cached
+                    if clean_key not in options_manager.symbol_map_cache:
+                        await options_manager._refresh_wss_symbols(clean_key)
+
+                    ce_sym = options_manager.symbol_map_cache.get(clean_key, {}).get(f"{float(atm_strike)}_call") or \
+                             options_manager.symbol_map_cache.get(clean_key, {}).get(f"{int(atm_strike)}_call")
+                    pe_sym = options_manager.symbol_map_cache.get(clean_key, {}).get(f"{float(atm_strike)}_put") or \
+                             options_manager.symbol_map_cache.get(clean_key, {}).get(f"{int(atm_strike)}_put")
+
+                    if ce_sym and pe_sym:
+                        # Fetch candles for CE and PE in parallel
+                        ce_task = historical_data_registry.get_primary().get_hist_candles(ce_sym, '1', 1000)
+                        pe_task = historical_data_registry.get_primary().get_hist_candles(pe_sym, '1', 1000)
+                        ce_candles, pe_candles = await asyncio.gather(ce_task, pe_task)
+
+                        if ce_candles and pe_candles:
+                            # Fetch OI change data from DuckDB for 'Panic' filter
+                            oi_dict = {}
+                            try:
+                                # Match timestamps to candle granularity (1m)
+                                snaps = await asyncio.to_thread(db.query, """
+                                    SELECT timestamp, symbol, oi_change FROM options_snapshots
+                                    WHERE symbol IN (?, ?)
+                                    ORDER BY timestamp ASC
+                                """, (ce_sym, pe_sym))
+                                for s in snaps:
+                                    ts = int(pd.to_datetime(s['timestamp']).timestamp())
+                                    if ts not in oi_dict: oi_dict[ts] = {}
+                                    if s['symbol'] == ce_sym: oi_dict[ts]['ce_oi_chg'] = s['oi_change']
+                                    else: oi_dict[ts]['pe_oi_chg'] = s['oi_change']
+                            except Exception as e:
+                                logger.warning(f"OI Data fetch failed for symmetry: {e}")
+
+                            analyzer = SymmetryAnalyzer(clean_key)
+                            symmetry_signals = analyzer.analyze(candles, ce_candles, pe_candles, oi_data=oi_dict)
+
+                            if symmetry_signals:
+                                sym_markers = []
+                                for sig in symmetry_signals:
+                                    sym_markers.append({
+                                        "time": int(sig['time']),
+                                        "position": "belowBar" if sig['type'] == 'BUY_CE' else "aboveBar",
+                                        "color": "#10b981" if sig['type'] == 'BUY_CE' else "#ef4444",
+                                        "shape": "arrowUp" if sig['type'] == 'BUY_CE' else "arrowDown",
+                                        "text": f"SYM:{sig['type']} (S:{sig['score']})",
+                                        "id": f"sym_{sig['time']}_{sig['type']}",
+                                        "sl": sig.get('sl'),
+                                        "tp": sig.get('tp'),
+                                        "score": sig.get('score'),
+                                        "signal_type": sig['type'],
+                                        "entry_price": sig.get('price')
+                                    })
+
+                                indicators.append({
+                                    "id": "symmetry_signals", "type": "markers", "title": "Symmetry Signals",
+                                    "data": sym_markers
+                                })
+                except Exception as e:
+                    logger.error(f"Symmetry analysis error for {clean_key}: {e}")
 
             # RVOL & High Volume Node Indicators
             try:
