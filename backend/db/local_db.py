@@ -292,22 +292,38 @@ class LocalDB:
             item['ltp'] = safe_float(item.get('ltp'))
 
         df = pd.DataFrame(data)[cols]
+        # Explicitly convert timestamp to naive datetime objects to avoid DuckDB conversion errors
+        if 'timestamp' in df.columns:
+            df['timestamp'] = pd.to_datetime(df['timestamp']).dt.tz_localize(None)
+
         with self._execute_lock:
-            self.conn.execute(f"INSERT INTO options_snapshots ({', '.join(cols)}) SELECT * FROM df")
+            # Register the dataframe to ensure types are correctly mapped
+            self.conn.register('df_view', df)
+            self.conn.execute(f"INSERT INTO options_snapshots ({', '.join(cols)}) SELECT * FROM df_view")
+            self.conn.unregister('df_view')
 
     def insert_pcr_history(self, record: Dict[str, Any]):
         cols = ['timestamp', 'underlying', 'pcr_oi', 'pcr_vol', 'pcr_oi_change', 'underlying_price', 'max_pain', 'spot_price', 'total_oi', 'total_oi_change']
 
-        # Ensure all columns exist and use safe casting
+        # Ensure all columns exist and use safe casting for numeric fields
         for c in cols:
+            if c in ['timestamp', 'underlying']:
+                continue
             if 'pcr' in c or 'price' in c or 'pain' in c:
                 record[c] = safe_float(record.get(c))
             else:
                 record[c] = safe_int(record.get(c))
 
         df = pd.DataFrame([record])[cols]
+        # Explicitly convert timestamp to naive datetime objects to avoid DuckDB conversion errors
+        if 'timestamp' in df.columns:
+            df['timestamp'] = pd.to_datetime(df['timestamp']).dt.tz_localize(None)
+
         with self._execute_lock:
-            self.conn.execute(f"INSERT INTO pcr_history ({', '.join(cols)}) SELECT * FROM df")
+            # Register the dataframe to ensure types are correctly mapped
+            self.conn.register('df_view_pcr', df)
+            self.conn.execute(f"INSERT INTO pcr_history ({', '.join(cols)}) SELECT * FROM df_view_pcr")
+            self.conn.unregister('df_view_pcr')
 
     def cleanup_old_data(self, days: int = 30):
         """Deletes ticks older than X days to keep the DB size manageable."""
