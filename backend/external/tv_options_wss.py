@@ -135,8 +135,8 @@ class OptionsWSS(ILiveStreamProvider):
                         self.callback({
                             'symbol': symbol,
                             'status': status,
-                            'lp': values.get('lp'),
-                            'volume': values.get('volume'),
+                            'lp': values.get('lp', 0.0),
+                            'volume': values.get('volume', 0),
                             'bid': values.get('bid'),
                             'ask': values.get('ask')
                         })

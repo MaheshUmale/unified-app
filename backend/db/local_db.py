@@ -175,14 +175,22 @@ class LocalDB:
         if not ticks: return
         data = []
         for t in ticks:
-            price = t.get('last_price', 0)
-            qty = t.get('ltq', 0)
+            # Robust type casting with fallbacks for None values
+            raw_price = t.get('last_price')
+            price = float(raw_price if raw_price is not None else 0.0)
+
+            raw_qty = t.get('ltq')
+            qty = int(raw_qty if raw_qty is not None else 0)
+
+            raw_ts = t.get('ts_ms')
+            ts_ms = int(raw_ts if raw_ts is not None else 0)
+
             data.append({
                 'date': t.get('date', datetime.now().strftime('%Y-%m-%d')),
                 'instrumentKey': t.get('instrumentKey'),
-                'ts_ms': int(t.get('ts_ms', 0)),
-                'price': float(price),
-                'qty': int(qty),
+                'ts_ms': ts_ms,
+                'price': price,
+                'qty': qty,
                 'source': t.get('source', 'live'),
                 'full_feed': json.dumps(t, cls=LocalDBJSONEncoder)
             })
