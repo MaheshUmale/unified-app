@@ -405,7 +405,44 @@ async def get_oi_analysis(underlying: str):
                SUM(CASE WHEN option_type = 'put' THEN oi_change ELSE 0 END) as put_oi_change
         FROM options_snapshots WHERE underlying = ? AND timestamp = ? GROUP BY strike ORDER BY strike ASC
     """, (underlying, ts), json_serialize=True)
-    return {"timestamp": ts, "data": data}
+
+    # Get aggregate totals for sidebars
+    totals = await asyncio.to_thread(db.query, """
+        SELECT
+            SUM(CASE WHEN option_type = 'call' THEN oi ELSE 0 END) as total_call_oi,
+            SUM(CASE WHEN option_type = 'put' THEN oi ELSE 0 END) as total_put_oi,
+            SUM(CASE WHEN option_type = 'call' THEN oi_change ELSE 0 END) as total_call_oi_chg,
+            SUM(CASE WHEN option_type = 'put' THEN oi_change ELSE 0 END) as total_put_oi_chg
+        FROM options_snapshots WHERE underlying = ? AND timestamp = ?
+    """, (underlying, ts), json_serialize=True)
+
+    return {
+        "timestamp": ts,
+        "data": data,
+        "totals": totals[0] if totals else {
+            "total_call_oi": 0, "total_put_oi": 0,
+            "total_call_oi_chg": 0, "total_put_oi_chg": 0
+        }
+    }
+
+@fastapi_app.get("/api/options/oi-trend-detailed/{underlying}")
+async def get_oi_trend_detailed(underlying: str):
+    """Provides CE vs PE OI Change and Spot Price over time for the current session."""
+    history = await asyncio.to_thread(db.query, """
+        SELECT
+            s.timestamp,
+            SUM(CASE WHEN s.option_type = 'call' THEN s.oi_change ELSE 0 END) as ce_oi_change,
+            SUM(CASE WHEN s.option_type = 'put' THEN s.oi_change ELSE 0 END) as pe_oi_change,
+            MAX(p.spot_price) as spot_price
+        FROM options_snapshots s
+        LEFT JOIN pcr_history p ON s.underlying = p.underlying AND s.timestamp = p.timestamp
+        WHERE s.underlying = ?
+        AND CAST(s.timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata' AS DATE) =
+            (SELECT CAST(MAX(timestamp) AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata' AS DATE) FROM options_snapshots WHERE underlying = ?)
+        GROUP BY s.timestamp
+        ORDER BY s.timestamp ASC
+    """, (underlying, underlying), json_serialize=True)
+    return {"history": history}
 
 @fastapi_app.get("/api/options/genie-insights/{underlying}")
 async def get_genie_insights(underlying: str): return await options_manager.get_genie_insights(underlying)
