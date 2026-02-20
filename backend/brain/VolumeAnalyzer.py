@@ -28,14 +28,23 @@ class VolumeAnalyzer:
         """
         # Apply setting overrides
         s = settings or {}
-        rvol_len = int(s.get('rvol_len', self.rvol_len))
-        bubble_long_len = int(s.get('bubble_long_len', self.bubble_long_len))
-        bubble_short_len = int(s.get('bubble_short_len', self.bubble_short_len))
-        node_std_len = int(s.get('node_std_len', self.node_std_len))
-        bubble_threshold = float(s.get('bubble_threshold', self.BUBBLE_THRESHOLD))
-        ray_wick_ratio = float(s.get('ray_wick_ratio', self.RAY_WICK_RATIO))
-        max_rays = int(s.get('max_rays', self.MAX_RAYS))
-        rvol_threshold = float(s.get('rvol_threshold', 2.0))
+
+        def safe_int(val, default):
+            try: return int(val) if val is not None else default
+            except: return default
+
+        def safe_float(val, default):
+            try: return float(val) if val is not None else default
+            except: return default
+
+        rvol_len = safe_int(s.get('rvol_len'), self.rvol_len)
+        bubble_long_len = safe_int(s.get('bubble_long_len'), self.bubble_long_len)
+        bubble_short_len = safe_int(s.get('bubble_short_len'), self.bubble_short_len)
+        node_std_len = safe_int(s.get('node_std_len'), self.node_std_len)
+        bubble_threshold = safe_float(s.get('bubble_threshold'), self.BUBBLE_THRESHOLD)
+        ray_wick_ratio = safe_float(s.get('ray_wick_ratio'), self.RAY_WICK_RATIO)
+        max_rays = safe_int(s.get('max_rays'), self.MAX_RAYS)
+        rvol_threshold = safe_float(s.get('rvol_threshold'), 2.0)
 
         if len(candles) < max(rvol_len, bubble_long_len, node_std_len):
             return {'rvol': [1.0] * len(candles), 'markers': [], 'lines': [], 'volume_rays': []}

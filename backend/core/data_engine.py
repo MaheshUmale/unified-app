@@ -147,9 +147,11 @@ def on_message(message: Union[Dict, str]):
                 # Only generate ticks from the most granular (primary) interval to avoid double-counting
                 if payload.get('ohlcv') and interval == get_primary_interval(instrument_key):
                     last_ohlcv = payload['ohlcv'][-1]
-                    ts_ms = int(last_ohlcv[0] * 1000)
-                    price = float(last_ohlcv[4])
-                    volume = float(last_ohlcv[5])
+                    # Robust type casting
+                    raw_ts = last_ohlcv[0] if last_ohlcv[0] is not None else time.time()
+                    ts_ms = int(raw_ts * 1000)
+                    price = float(last_ohlcv[4]) if last_ohlcv[4] is not None else 0.0
+                    volume = float(last_ohlcv[5]) if last_ohlcv[5] is not None else 0.0
 
                     # Deduplicate: only process if price or volume or timestamp changed
                     prev = last_processed_tick.get(instrument_key, {})
@@ -176,9 +178,15 @@ def on_message(message: Union[Dict, str]):
         for inst_key, feed_datum in feeds_map.items():
             # Standard Quote Feed Deduplication (in addition to Chart)
             if feed_datum.get('source') != 'tv_chart_fallback':
-                ts_ms = int(feed_datum.get('ts_ms', 0))
-                price = float(feed_datum.get('last_price', 0))
-                volume = float(feed_datum.get('tv_volume', 0))
+                # Robust type casting for quote fields
+                raw_ts = feed_datum.get('ts_ms')
+                ts_ms = int(raw_ts if raw_ts is not None else time.time() * 1000)
+
+                raw_price = feed_datum.get('last_price')
+                price = float(raw_price if raw_price is not None else 0.0)
+
+                raw_vol = feed_datum.get('tv_volume')
+                volume = float(raw_vol if raw_vol is not None else 0.0)
 
                 prev = last_processed_tick.get(inst_key, {})
                 if ts_ms == prev.get('ts_ms') and price == prev.get('price') and volume == prev.get('volume'):
@@ -186,14 +194,16 @@ def on_message(message: Union[Dict, str]):
                 last_processed_tick[inst_key] = {'ts_ms': ts_ms, 'price': price, 'volume': volume}
 
             # Use technical symbol as is
+            raw_lp = feed_datum.get('last_price')
             feed_datum.update({
                 'instrumentKey': inst_key,
                 'date': today_str,
-                'last_price': float(feed_datum.get('last_price', 0)),
+                'last_price': float(raw_lp if raw_lp is not None else 0.0),
                 'source': feed_datum.get('source', 'tv_wss')
             })
 
-            ts_val = feed_datum.get('ts_ms', int(time.time() * 1000))
+            raw_ts_val = feed_datum.get('ts_ms')
+            ts_val = int(raw_ts_val if raw_ts_val is not None else time.time() * 1000)
             if 0 < ts_val < 10000000000: ts_val *= 1000
             feed_datum['ts_ms'] = ts_val
 
@@ -213,7 +223,7 @@ def on_message(message: Union[Dict, str]):
             if curr_vol is None:
                 curr_vol = feed_datum.get('upstox_volume')
 
-            if curr_vol is not None and float(curr_vol) > 0:
+            if curr_vol is not None:
                 curr_vol = float(curr_vol)
                 prev_vol = latest_total_volumes.get(tracker_key, 0)
 
