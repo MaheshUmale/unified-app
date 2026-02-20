@@ -107,9 +107,9 @@
     </header>
 
     <!-- Main Content -->
-    <main class="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+    <main class="flex-1 overflow-hidden p-3 flex flex-col gap-3">
         <!-- Genie Insights Card (Only one kept as requested) -->
-        <div class="glass-panel rounded-xl p-4 border-l-4 border-blue-500 flex items-center justify-between shadow-md">
+        <div class="glass-panel rounded-xl p-3 border-l-4 border-blue-500 flex items-center justify-between shadow-sm shrink-0">
             <div class="flex-1">
                 <div class="text-[10px] text-blue-500 font-black uppercase tracking-widest flex items-center gap-3">
                     OiGenie Market Control
@@ -137,89 +137,77 @@
             </div>
         </div>
 
-        <!-- 4 New Charts Section -->
-        <div class="space-y-6">
+        <!-- Compact 2x2 Grid Section -->
+        <div class="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-2 gap-3">
             <!-- 1. Change in CE Vs Change in PE vs Spot -->
-            <div class="glass-panel rounded-xl p-4 shadow-sm">
-                <h3 class="text-xs font-bold uppercase tracking-wider mb-4 flex justify-between items-center">
-                    Change in CE Vs Change in PE vs Spot
-                    <span class="text-[10px] text-gray-500 font-normal">X: Time | Y1: OI | Y2: Spot</span>
+            <div class="glass-panel rounded-xl p-3 shadow-sm flex flex-col min-h-0">
+                <h3 class="text-[10px] font-black uppercase tracking-wider mb-2 flex justify-between items-center text-gray-400 shrink-0">
+                    CE vs PE OI Change Flow
+                    <span class="text-[9px] font-normal opacity-60">X: Time | Y: OI Chg</span>
                 </h3>
-                <div class="h-[300px] relative">
+                <div class="flex-1 min-h-0 relative">
                     <canvas id="ceVsPeChangeChart"></canvas>
                 </div>
             </div>
 
             <!-- 2. Difference in Put Call OI change Vs Spot -->
-            <div class="glass-panel rounded-xl p-4 shadow-sm">
-                <h3 class="text-xs font-bold uppercase tracking-wider mb-4 flex justify-between items-center">
-                    Difference in Put Call OI change Vs Spot
-                    <span class="text-[10px] text-gray-500 font-normal">X: Time | Y1: OI Diff (PE-CE) | Y2: Spot</span>
+            <div class="glass-panel rounded-xl p-3 shadow-sm flex flex-col min-h-0">
+                <h3 class="text-[10px] font-black uppercase tracking-wider mb-2 flex justify-between items-center text-gray-400 shrink-0">
+                    OI Change Multi-Trend
+                    <span class="text-[9px] font-normal opacity-60">X: Time | Y: PE-CE Diff</span>
                 </h3>
-                <div class="h-[300px] relative">
+                <div class="flex-1 min-h-0 relative">
                     <canvas id="oiDiffChart"></canvas>
                 </div>
             </div>
 
-            <!-- 3. Change in OI since session start -->
-            <div class="grid grid-cols-12 gap-4">
-                <!-- Sidebar Summary for Change -->
-                <div class="col-span-12 lg:col-span-2 glass-panel rounded-xl p-4 flex flex-col justify-between min-h-[300px]">
-                    <h4 class="text-[10px] font-black text-gray-500 uppercase mb-4">Change in OI</h4>
-                    <div class="flex-1 flex flex-col justify-around">
-                        <div class="text-center">
-                            <div class="text-[8px] text-gray-500 uppercase font-bold mb-1">CALL</div>
-                            <div id="totalCallOiChg" class="text-lg font-black text-green-500 leading-none">0</div>
-                            <div class="w-full bg-green-500/20 h-24 mt-2 rounded relative overflow-hidden">
-                                <div id="callChgBar" class="absolute bottom-0 w-full bg-green-500" style="height: 0%"></div>
-                            </div>
+            <!-- 3. Change in OI Per Strike (Compact Card) -->
+            <div class="glass-panel rounded-xl p-3 shadow-sm flex flex-col min-h-0">
+                <div class="flex justify-between items-start mb-1 shrink-0">
+                    <h3 class="text-[10px] font-black uppercase tracking-wider text-gray-400">Strike-wise OI Change</h3>
+                    <div class="flex gap-4">
+                        <div class="text-right">
+                            <div class="text-[8px] text-gray-500 uppercase font-black">Call Chg</div>
+                            <div id="totalCallOiChg" class="text-xs font-black text-red-500 leading-none">0</div>
                         </div>
-                        <div class="text-center mt-4">
-                            <div class="text-[8px] text-gray-500 uppercase font-bold mb-1">PUT</div>
-                            <div id="totalPutOiChg" class="text-lg font-black text-red-500 leading-none">0</div>
-                            <div class="w-full bg-red-500/20 h-24 mt-2 rounded relative overflow-hidden">
-                                <div id="putChgBar" class="absolute bottom-0 w-full bg-red-500" style="height: 0%"></div>
-                            </div>
+                        <div class="text-right border-l border-white/5 pl-4">
+                            <div class="text-[8px] text-gray-500 uppercase font-black">Put Chg</div>
+                            <div id="totalPutOiChg" class="text-xs font-black text-green-500 leading-none">0</div>
                         </div>
                     </div>
                 </div>
-                <!-- Main Histogram for Change -->
-                <div class="col-span-12 lg:col-span-10 glass-panel rounded-xl p-4">
-                    <h3 class="text-xs font-bold uppercase tracking-wider mb-4">Change in OI Per Strike (Session)</h3>
-                    <div class="h-[300px] relative">
-                        <canvas id="strikeWiseOiChangeChart"></canvas>
-                    </div>
+                <div class="flex-1 min-h-0 relative">
+                    <canvas id="strikeWiseOiChangeChart"></canvas>
+                </div>
+                <!-- Mini Progress Bars at Bottom -->
+                <div class="flex gap-2 mt-1 shrink-0">
+                    <div class="flex-1 h-1 bg-red-500/20 rounded-full overflow-hidden"><div id="callChgBar" class="h-full bg-red-500" style="width: 0%"></div></div>
+                    <div class="flex-1 h-1 bg-green-500/20 rounded-full overflow-hidden"><div id="putChgBar" class="h-full bg-green-500" style="width: 0%"></div></div>
                 </div>
             </div>
 
-            <!-- 4. Total OI -->
-            <div class="grid grid-cols-12 gap-4">
-                <!-- Sidebar Summary for Total -->
-                <div class="col-span-12 lg:col-span-2 glass-panel rounded-xl p-4 flex flex-col justify-between min-h-[300px]">
-                    <h4 class="text-[10px] font-black text-gray-500 uppercase mb-4">Total OI</h4>
-                    <div class="flex-1 flex flex-col justify-around">
-                        <div class="text-center">
-                            <div class="text-[8px] text-gray-500 uppercase font-bold mb-1">CALL</div>
-                            <div id="totalCallOi" class="text-lg font-black text-green-500 leading-none">0</div>
-                            <div class="w-full bg-green-500/20 h-24 mt-2 rounded relative overflow-hidden">
-                                <div id="callTotalBar" class="absolute bottom-0 w-full bg-green-500" style="height: 0%"></div>
-                            </div>
+            <!-- 4. Total OI Per Strike (Compact Card) -->
+            <div class="glass-panel rounded-xl p-3 shadow-sm flex flex-col min-h-0">
+                <div class="flex justify-between items-start mb-1 shrink-0">
+                    <h3 class="text-[10px] font-black uppercase tracking-wider text-gray-400">Strike-wise Total OI</h3>
+                    <div class="flex gap-4">
+                        <div class="text-right">
+                            <div class="text-[8px] text-gray-500 uppercase font-black">Total Call</div>
+                            <div id="totalCallOi" class="text-xs font-black text-red-500 leading-none">0</div>
                         </div>
-                        <div class="text-center mt-4">
-                            <div class="text-[8px] text-gray-500 uppercase font-bold mb-1">PUT</div>
-                            <div id="totalPutOi" class="text-lg font-black text-red-500 leading-none">0</div>
-                            <div class="w-full bg-red-500/20 h-24 mt-2 rounded relative overflow-hidden">
-                                <div id="putTotalBar" class="absolute bottom-0 w-full bg-red-500" style="height: 0%"></div>
-                            </div>
+                        <div class="text-right border-l border-white/5 pl-4">
+                            <div class="text-[8px] text-gray-500 uppercase font-black">Total Put</div>
+                            <div id="totalPutOi" class="text-xs font-black text-green-500 leading-none">0</div>
                         </div>
                     </div>
                 </div>
-                <!-- Main Histogram for Total -->
-                <div class="col-span-12 lg:col-span-10 glass-panel rounded-xl p-4">
-                    <h3 class="text-xs font-bold uppercase tracking-wider mb-4">Total OI Per Strike</h3>
-                    <div class="h-[300px] relative">
-                        <canvas id="strikeWiseTotalOiChart"></canvas>
-                    </div>
+                <div class="flex-1 min-h-0 relative">
+                    <canvas id="strikeWiseTotalOiChart"></canvas>
+                </div>
+                <!-- Mini Progress Bars at Bottom -->
+                <div class="flex gap-2 mt-1 shrink-0">
+                    <div class="flex-1 h-1 bg-red-500/20 rounded-full overflow-hidden"><div id="callTotalBar" class="h-full bg-red-500" style="width: 0%"></div></div>
+                    <div class="flex-1 h-1 bg-green-500/20 rounded-full overflow-hidden"><div id="putTotalBar" class="h-full bg-green-500" style="width: 0%"></div></div>
                 </div>
             </div>
         </div>
