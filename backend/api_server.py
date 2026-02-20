@@ -88,6 +88,10 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing ProTrade Terminal Services...")
     global main_loop
     
+    # Sync instruments from Upstox in the background
+    from core.instrument_manager import instrument_manager
+    asyncio.create_task(instrument_manager.fetch_and_store_instruments())
+
     initialize_default_providers()
     main_loop = asyncio.get_running_loop()
     

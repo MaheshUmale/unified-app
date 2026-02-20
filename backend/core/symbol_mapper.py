@@ -78,18 +78,23 @@ class SymbolMapper:
     def _generate_hrn(self, instrument_key: str, meta: Dict[str, Any]) -> str:
         """
         Generates HRN from metadata.
-        meta keys: symbol, type, strike, expiry
+        meta keys: symbol, type, strike, expiry, trading_symbol
         """
-        symbol = meta.get('symbol', '').upper()
+        # Prefer trading_symbol for EQ/EQUITY as 'symbol' is often the long company name
+        itype = meta.get('type', '').upper()
+        if itype in ['EQ', 'EQUITY'] and meta.get('trading_symbol'):
+            symbol = meta.get('trading_symbol', '').upper()
+        else:
+            symbol = meta.get('symbol', '').upper()
+
         if "NIFTY 50" in symbol: symbol = "NIFTY"
         if "NIFTY BANK" in symbol: symbol = "BANKNIFTY"
         if "NIFTY FIN SERVICE" in symbol: symbol = "FINNIFTY"
 
-        itype = meta.get('type', '')
         strike = meta.get('strike')
         expiry = meta.get('expiry') # YYYY-MM-DD
 
-        if itype == 'INDEX':
+        if itype in ['INDEX', 'EQ', 'EQUITY', 'TB']:
             return symbol
 
         if itype == 'FUT':
